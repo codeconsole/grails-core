@@ -21,10 +21,12 @@ package org.grails.datastore.gorm.query.transform;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,8 +37,10 @@ import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.CodeVisitorSupport;
 import org.codehaus.groovy.ast.DynamicVariable;
 import org.codehaus.groovy.ast.FieldNode;
+import org.codehaus.groovy.ast.InnerClassNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.PropertyNode;
@@ -47,7 +51,9 @@ import org.codehaus.groovy.ast.expr.CastExpression;
 import org.codehaus.groovy.ast.expr.ClassExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.DeclarationExpression;
+import org.codehaus.groovy.ast.expr.EmptyExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.ListExpression;
@@ -55,6 +61,7 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression;
 import org.codehaus.groovy.ast.expr.TernaryExpression;
+import org.codehaus.groovy.ast.expr.TupleExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.BreakStatement;
@@ -62,11 +69,13 @@ import org.codehaus.groovy.ast.stmt.CaseStatement;
 import org.codehaus.groovy.ast.stmt.CatchStatement;
 import org.codehaus.groovy.ast.stmt.ContinueStatement;
 import org.codehaus.groovy.ast.stmt.DoWhileStatement;
+import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.ForStatement;
 import org.codehaus.groovy.ast.stmt.IfStatement;
 import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.ast.stmt.SwitchStatement;
+import org.codehaus.groovy.ast.stmt.SynchronizedStatement;
 import org.codehaus.groovy.ast.stmt.ThrowStatement;
 import org.codehaus.groovy.ast.stmt.TryCatchStatement;
 import org.codehaus.groovy.ast.stmt.WhileStatement;
@@ -109,8 +118,9 @@ import org.grails.datastore.mapping.reflect.AstUtils;
  * user input, so a {@code GString} whose interpolations are all constant text is treated exactly
  * like a plain {@code String} literal. Constant text is: a literal; a {@code static final} field
  * initialised from constant text; a ternary or Elvis expression choosing between constant text; a
- * {@code +} concatenation, {@code GString}, cast or {@code .toString()} of constant text; and a
- * local variable that only ever held constant text on every path reaching the use. This is what
+ * {@code switch} expression, or any closure called on the spot, whose every result is constant
+ * text; a {@code +} concatenation, {@code GString}, cast or {@code .toString()} of constant text;
+ * and a local variable that only ever held constant text on every path reaching the use. This is what
  * lets query text be assembled from fixed HQL fragments chosen at runtime, which a {@code GString}
  * passed directly to GORM could not express (GORM would bind the fragment as a parameter value):
  *
@@ -138,11 +148,24 @@ import org.grails.datastore.mapping.reflect.AstUtils;
  * end of every path. A {@code catch} block starts from the merge of every state its {@code try}
  * block passed through, since an exception may leave the block after any statement, and a
  * {@code finally} block is checked against every path into it. A loop body or closure body may
- * run any number of times, so it is re-walked from the merged loop-head state until that state
- * is stable before findings are reported: an assignment late in the body is seen by a use
- * earlier in it, which the next iteration reaches. {@code break}, {@code continue} and, in a
- * closure, {@code return} carry their state to the exit or head they jump to, and a path ending
- * in such a jump or in {@code throw} contributes nothing to the state after the statement.
+ * run any number of times, so a body that assigns a local declared outside it is re-walked from
+ * the merged loop-head state until that state is stable before findings are reported: an
+ * assignment late in the body is seen by a use earlier in it, which the next iteration reaches.
+ * {@code break}, {@code continue} and, in a closure, {@code return} carry their state to the
+ * exit or head they jump to, and a path ending in such a jump or in {@code throw} contributes
+ * nothing to the state after the statement. A jump or an exception that leaves a {@code try}
+ * statement runs its {@code finally} block first, so it carries the state that block ends with
+ * when walked from every path into it. Locals are tracked per declaration, so a later local,
+ * parameter or loop variable that reuses a name never inherits the state of an earlier one.
+ *
+ * <p>Some assignments can run at a point the walk cannot place: inside a closure or the code of
+ * an anonymous inner class, which may run at any later point; inside another expression, such
+ * as a ternary or Elvis branch, an {@code &&} or {@code ||} operand, a method argument or a loop
+ * condition; or through multiple assignment. Where the walk cannot know what a local holds - a
+ * local assigned in any of these ways, anywhere; inside a closure, a local declared outside it;
+ * and inside an anonymous inner class, a local of the method enclosing it - the local holds the
+ * worst that any assignment to it in the method stores. It is constant text only when every
+ * assignment is, and flattened when any assignment flattens a {@code GString} into it.
  *
  * <p>This is a build-breaking error for the local-variable case above, because the detection is
  * precise: every flattening point is visible in the method being compiled. Two related patterns
@@ -162,8 +185,13 @@ import org.grails.datastore.mapping.reflect.AstUtils;
  *     instrument. Concatenating only constant text, as defined above, is not a finding.</li>
  * </ul>
  *
+ * <p>A query method is recognised when it is called on a domain class, or on {@code this}, written
+ * or implied, in a domain class or in a class nested in one that has no method of that name
+ * itself, since Groovy sends such a call on to the enclosing class.
+ *
  * <p>Both warnings share the same {@link #SUPPRESS_WARNINGS_VALUE} suppression as the error case.
- * The suppression applies to the enclosing method or class, or - more narrowly - to a single
+ * The suppression applies to the enclosing method or class (for a nested class, also to any class
+ * or method it is declared in, as with a closure), or - more narrowly - to a single
  * local variable or field declaration: {@code @SuppressWarnings("GormUnsafeQueryString") String
  * query = ...} marks that variable as reviewed for the rest of the method, whatever it is later
  * assigned, and leaves every other variable checked. A reviewed variable is also treated as
@@ -179,9 +207,10 @@ import org.grails.datastore.mapping.reflect.AstUtils;
  *     {@code +}/{@code +=}/{@code GString} composition only - not collections (for example
  *     fragments gathered in a {@code List} and joined), method calls, or non-final fields.</li>
  *     <li>Flow-sensitivity applies to locals only; field tracking is last-write-wins in source
- *     order. A closure body is analysed with the state at the point the closure is defined, so a
- *     local reassigned between the definition and the call is not seen inside it. Reachability
- *     is approximated: a path is treated as not continuing only when its block ends in
+ *     order. A local judged by every assignment to it (see above) is judged by the assignments
+ *     that can no longer reach the use too, so a local flattened and then reset to constant text
+ *     is still reported where a closure created after the reset reads it. Reachability is
+ *     approximated: a path is treated as not continuing only when its block ends in
  *     {@code return}, {@code throw}, {@code break} or {@code continue}.</li>
  *     <li>Field tracking only recognizes a directly-interpolated {@code GString} initializer or
  *     {@code this.field = ...} assignment - it does not follow aliasing chains or
@@ -195,30 +224,39 @@ import org.grails.datastore.mapping.reflect.AstUtils;
 public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
 
     /**
-     * What a tracked local variable currently holds, from this check's point of view.
+     * What a tracked local variable currently holds, from this check's point of view, from the
+     * safest to the least safe: where two paths meet, the later of the two survives the merge.
      */
     private enum Origin {
-        /** Not derived from an interpolated GString or unsafe concatenation - nothing to track. */
-        NONE,
         /** Constant text (see the class Javadoc) - can never carry runtime data, so safe anywhere. */
         CONSTANT,
+        /** Not derived from an interpolated GString or unsafe concatenation - nothing to track. */
+        NONE,
         /** Still a real {@link groovy.lang.GString} - safe if passed directly to a query method. */
         LIVE_GSTRING,
-        /** Already coerced to a plain {@code String} - unsafe if it reaches a query method. */
-        FLATTENED,
         /** Built via {@code +} concatenation of a non-constant value, no GString involved. */
-        CONCATENATED
+        CONCATENATED,
+        /** Already coerced to a plain {@code String} - unsafe if it reaches a query method. */
+        FLATTENED;
+
+        Origin or(Origin other) {
+            return other != null && other.compareTo(this) > 0 ? other : this;
+        }
     }
 
     /**
      * What kind of unsafe query argument was found at a candidate call site, and therefore how
-     * severely (and with what message) to report it.
+     * severely (and with what message) to report it, from the least to the most severe.
      */
     private enum Finding {
         NONE,
-        FLATTENED_GSTRING,
+        UNSAFE_CONCATENATION,
         FLATTENED_FIELD,
-        UNSAFE_CONCATENATION
+        FLATTENED_GSTRING;
+
+        Finding or(Finding other) {
+            return other.compareTo(this) > 0 ? other : this;
+        }
     }
 
     /**
@@ -256,13 +294,35 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     }
 
     private final SourceUnit sourceUnit;
-    private final Map<String, ASTNode> flattenedStringVars = new HashMap<>();
-    private final Map<String, ASTNode> liveGStringVars = new HashMap<>();
-    private final Map<String, ASTNode> concatenatedStringVars = new HashMap<>();
-    private final Set<String> constantTextVars = new HashSet<>();
-    private final Set<String> suppressedVars = new HashSet<>();
+    /**
+     * Local tracking state, keyed by {@link #keyOf}: the declaration a local resolves to, so a
+     * later local, parameter or loop variable reusing a name is never confused with an earlier one.
+     */
+    private final Map<Object, ASTNode> flattenedStringVars = new HashMap<>();
+    private final Map<Object, ASTNode> liveGStringVars = new HashMap<>();
+    private final Map<Object, ASTNode> concatenatedStringVars = new HashMap<>();
+    private final Set<Object> constantTextVars = new HashSet<>();
     private final Map<String, ASTNode> flattenedFields = new HashMap<>();
     private final Set<String> resolvingFields = new HashSet<>();
+    /** What the pre-scan of the code being walked found; see {@link CodeFacts}. */
+    private CodeFacts facts = new CodeFacts();
+    /**
+     * While {@link #settleConstants} or {@link #settleOrigins} runs, the locals assumed to hold
+     * only constant text; {@code null} otherwise.
+     */
+    private Set<Object> assumedConstant;
+    /**
+     * While {@link #settleOrigins} runs, the worst each local is assumed to hold so far;
+     * {@code null} otherwise.
+     */
+    private Map<Object, Origin> assumedOrigins;
+    /**
+     * For an anonymous inner class being visited, what the pre-scan finds in each method enclosing
+     * it, innermost first (see {@link #enclosingFactsOf}); empty otherwise.
+     */
+    private List<CodeFacts> enclosingFacts = Collections.emptyList();
+    /** The closures being walked, innermost first. */
+    private final Deque<ClosureExpression> closures = new ArrayDeque<>();
     /**
      * The loops, {@code switch} statements and closure bodies being walked, innermost first, that
      * a {@code break}, {@code continue} or {@code return} can carry its state to.
@@ -274,6 +334,12 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
      * can carry to a {@code catch} or {@code finally} block.
      */
     private final List<TrackingSnapshot> exceptionalStates = new ArrayList<>();
+    /**
+     * The {@code try} statements with a {@code finally} block whose {@code try} or {@code catch}
+     * blocks are being walked, innermost first, holding the jumps out of them until the
+     * {@code finally} block has run.
+     */
+    private final Deque<FinallyFrame> finallyFrames = new ArrayDeque<>();
     /** Above zero while a body is re-walked to settle its state; findings are reported only at zero. */
     private int silentPasses;
     private ClassNode currentClassNode;
@@ -292,6 +358,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     public void visitClass(ClassNode node) {
         try {
             this.currentClassNode = node;
+            this.enclosingFacts = enclosingFactsOf(node);
             // Pre-scan field initializers so a field flattened here is already tracked no matter
             // which order the base class visits fields vs. methods in.
             for (FieldNode field : node.getFields()) {
@@ -300,18 +367,74 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
             super.visitClass(node);
         } finally {
             this.currentClassNode = null;
+            this.enclosingFacts = Collections.emptyList();
             clearTracking();
             flattenedFields.clear();
         }
     }
 
+    /**
+     * For an anonymous inner class, what the pre-scan finds in each method enclosing it, innermost
+     * first. The class's code may run at any point after it is created, so a local of an enclosing
+     * method that it uses is judged by every assignment to that local there.
+     */
+    private List<CodeFacts> enclosingFactsOf(ClassNode node) {
+        Deque<MethodNode> methods = new ArrayDeque<>();
+        for (ClassNode type = node; isAnonymous(type) && type.getEnclosingMethod() != null;
+                type = type.getEnclosingMethod().getDeclaringClass()) {
+            methods.push(type.getEnclosingMethod());
+        }
+        List<CodeFacts> enclosing = new ArrayList<>();
+        // Outermost first, since a method's facts depend on those of the methods enclosing it.
+        for (MethodNode method : methods) {
+            enclosingFacts = new ArrayList<>(enclosing);
+            enclosing.add(0, scan(method.getParameters(), method.getCode()));
+        }
+        return enclosing;
+    }
+
+    private static boolean isAnonymous(ClassNode type) {
+        return type instanceof InnerClassNode && ((InnerClassNode) type).isAnonymous();
+    }
+
     @Override
-    public void visitMethod(MethodNode node) {
+    protected void visitConstructorOrMethod(MethodNode node, boolean isConstructor) {
         this.currentMethodNode = node;
+        analyse(node.getParameters(), node.getCode());
         try {
-            super.visitMethod(node);
+            super.visitConstructorOrMethod(node, isConstructor);
         } finally {
             this.currentMethodNode = null;
+            clearTracking();
+        }
+    }
+
+    @Override
+    public void visitField(FieldNode node) {
+        analyse(Parameter.EMPTY_ARRAY, node.getInitialExpression());
+        try {
+            super.visitField(node);
+        } finally {
+            clearTracking();
+        }
+    }
+
+    @Override
+    public void visitProperty(PropertyNode node) {
+        analyse(Parameter.EMPTY_ARRAY, node.getInitialExpression(), node.getGetterBlock(), node.getSetterBlock());
+        try {
+            super.visitProperty(node);
+        } finally {
+            clearTracking();
+        }
+    }
+
+    @Override
+    protected void visitObjectInitializerStatements(ClassNode node) {
+        analyse(Parameter.EMPTY_ARRAY, node.getObjectInitializerStatements().toArray(new ASTNode[0]));
+        try {
+            super.visitObjectInitializerStatements(node);
+        } finally {
             clearTracking();
         }
     }
@@ -321,27 +444,123 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         liveGStringVars.clear();
         concatenatedStringVars.clear();
         constantTextVars.clear();
-        suppressedVars.clear();
+        closures.clear();
+        facts = new CodeFacts();
+    }
+
+    /** Pre-scans the code about to be walked, taking {@code parameters}, with {@link #scan}. */
+    private void analyse(Parameter[] parameters, ASTNode... roots) {
+        facts = scan(parameters, roots);
+    }
+
+    /**
+     * Pre-scans code taking {@code parameters} (see {@link CodeFacts}) and settles which locals
+     * hold only constant text, and the worst each local holds, however its assignments are ordered.
+     */
+    private CodeFacts scan(Parameter[] parameters, ASTNode... roots) {
+        CodeFacts scanned = new CodeFacts();
+        scanned.owned.addAll(Arrays.asList(parameters));
+        for (ASTNode root : roots) {
+            if (root != null) {
+                root.visit(scanned);
+            }
+        }
+        CodeFacts previous = facts;
+        facts = scanned;
+        try {
+            settleConstants();
+            settleOrigins();
+        } finally {
+            facts = previous;
+        }
+        return scanned;
+    }
+
+    /**
+     * Computes {@link CodeFacts#constant}: starting from every local declared in the code, drops
+     * each one with an assignment that is not constant text, assuming the locals still in the set
+     * hold constant text, until nothing more is dropped.
+     */
+    private void settleConstants() {
+        Set<Object> constant = new HashSet<>(facts.declared);
+        assumedConstant = constant;
+        try {
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (Write write : facts.writes) {
+                    if (constant.contains(write.key) && !facts.suppressed.contains(write.key) &&
+                            (write.value == null || !isConstantText(write.value))) {
+                        constant.remove(write.key);
+                        changed = true;
+                    }
+                }
+            }
+        } finally {
+            assumedConstant = null;
+        }
+        facts.constant.addAll(constant);
+    }
+
+    /**
+     * Computes {@link CodeFacts#origins}: the worst that any assignment in the code stores in each
+     * local it assigns, judging every local it reads the same way, until nothing gets worse. This
+     * is what a local holds at a point the walk cannot follow it to (see
+     * {@link #isJudgedByEveryAssignment}).
+     */
+    private void settleOrigins() {
+        Map<Object, Origin> origins = new HashMap<>();
+        for (Object key : facts.declared) {
+            origins.put(key, facts.constant.contains(key) ? Origin.CONSTANT : Origin.NONE);
+        }
+        assumedConstant = facts.constant;
+        assumedOrigins = origins;
+        try {
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (Write write : facts.writes) {
+                    if (facts.suppressed.contains(write.key)) {
+                        continue;
+                    }
+                    Origin current = origins.getOrDefault(write.key, Origin.NONE);
+                    Origin worst = current.or(write.value == null ? Origin.NONE : classify(write.value, write.type));
+                    if (worst != current || !origins.containsKey(write.key)) {
+                        origins.put(write.key, worst);
+                        changed |= worst != current;
+                    }
+                }
+            }
+        } finally {
+            assumedConstant = null;
+            assumedOrigins = null;
+        }
+        facts.origins.putAll(origins);
+    }
+
+    /**
+     * The key a local's tracking state is held under: the declaration the compiler resolved the
+     * reference to (the declaring {@link VariableExpression}, a {@link Parameter}, or a field), or
+     * the name for a dynamic variable or a reference the compiler did not resolve.
+     */
+    private static Object keyOf(VariableExpression variable) {
+        Variable accessed = variable.getAccessedVariable();
+        if (accessed == null || accessed instanceof DynamicVariable) {
+            return variable.getName();
+        }
+        return accessed;
     }
 
     @Override
     public void visitDeclarationExpression(DeclarationExpression expression) {
-        // getVariableExpression() is null for multiple-assignment declarations, e.g. def (a, b) = [...]
-        VariableExpression variableExpression = expression.isMultipleAssignmentDeclaration() ?
-                null : expression.getVariableExpression();
-        if (variableExpression != null) {
-            String name = variableExpression.getName();
-            if (isSuppressedNode(expression)) {
-                // The declaration has been reviewed: the variable stays unchecked for the rest of
-                // the method, whatever it is later assigned.
-                suppressedVars.add(name);
-                untrack(name);
-            }
-            else {
-                // A fresh, unannotated declaration of the same name re-arms the check for it.
-                suppressedVars.remove(name);
-                track(name, expression.getRightExpression(), variableExpression.getType(), expression);
-            }
+        // A declaration that carries the suppression has been reviewed: the variable stays
+        // unchecked for the rest of the method, whatever it is later assigned (see track).
+        if (expression.isMultipleAssignmentDeclaration()) {
+            forgetTargets(expression.getTupleExpression());
+        }
+        else {
+            VariableExpression variableExpression = expression.getVariableExpression();
+            track(keyOf(variableExpression), expression.getRightExpression(), variableExpression.getType(), expression);
         }
         super.visitDeclarationExpression(expression);
     }
@@ -353,26 +572,58 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         if (operation == Types.ASSIGN) {
             if (left instanceof VariableExpression) {
                 VariableExpression leftVariable = (VariableExpression) left;
-                track(leftVariable.getName(), expression.getRightExpression(), leftVariable.getType(), expression);
+                track(keyOf(leftVariable), expression.getRightExpression(), leftVariable.getType(), expression);
             }
             else if (isThisFieldReference(left)) {
                 trackField(fieldNameOf(left), expression.getRightExpression(), expression);
+            }
+            else if (left instanceof TupleExpression) {
+                forgetTargets((TupleExpression) left);
             }
         }
         else if (operation == Types.PLUS_EQUAL && left instanceof VariableExpression) {
             // x += y is x = x + y: classify the equivalent concatenation so constant text stays
             // constant, a live GString operand flattens, and a flattened one stays flattened.
             VariableExpression leftVariable = (VariableExpression) left;
-            Token plus = Token.newSymbol(Types.PLUS, expression.getLineNumber(), expression.getColumnNumber());
-            BinaryExpression concatenation = new BinaryExpression(left, plus, expression.getRightExpression());
-            track(leftVariable.getName(), concatenation, leftVariable.getType(), expression);
+            track(keyOf(leftVariable), plusEqualAsConcatenation(expression), leftVariable.getType(), expression);
         }
         else if (Types.ofType(operation, Types.ASSIGNMENT_OPERATOR) && left instanceof VariableExpression) {
             // Any other compound assignment is not string building this check understands, so
             // the variable can no longer be relied on as constant text.
-            constantTextVars.remove(((VariableExpression) left).getName());
+            constantTextVars.remove(keyOf((VariableExpression) left));
         }
         super.visitBinaryExpression(expression);
+    }
+
+    /**
+     * Forgets what the targets of a multiple assignment held. The pre-scan pairs each target with
+     * the value it is assigned (see {@link #elementAssigned}) and counts the assignment as one the
+     * walk cannot place, so a target is judged by every assignment to it from here on.
+     */
+    private void forgetTargets(TupleExpression targets) {
+        for (Expression target : targets.getExpressions()) {
+            if (target instanceof VariableExpression) {
+                untrack(keyOf((VariableExpression) target));
+            }
+        }
+    }
+
+    /**
+     * The value a multiple assignment from {@code value} gives the variable at {@code index}: the
+     * element of a list literal in that position, or {@code null} past its end. From anything other
+     * than a list literal the value is unknown, so {@code null} is returned instead, for data.
+     */
+    private static Expression elementAssigned(Expression value, int index) {
+        if (!(value instanceof ListExpression)) {
+            return null;
+        }
+        List<Expression> elements = ((ListExpression) value).getExpressions();
+        return index < elements.size() ? elements.get(index) : ConstantExpression.NULL;
+    }
+
+    private static BinaryExpression plusEqualAsConcatenation(BinaryExpression expression) {
+        Token plus = Token.newSymbol(Types.PLUS, expression.getLineNumber(), expression.getColumnNumber());
+        return new BinaryExpression(expression.getLeftExpression(), plus, expression.getRightExpression());
     }
 
     /**
@@ -427,29 +678,47 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
      * Visits a {@code try} statement. An exception can leave the {@code try} block after any
      * statement, so each {@code catch} block starts from the merge of every state the block
      * passed through (accumulated by {@link #visitStatement}). The {@code finally} block runs
-     * after any of those states, or any state a {@code catch} block passed through, and is
-     * checked against all of them; but only a {@code try} or {@code catch} block that completes
-     * normally continues past the statement, so the state afterwards is derived from those paths
-     * alone.
+     * after any of those states, any state a {@code catch} block passed through, or any state a
+     * jump out of the statement leaves with, and is checked against all of them. Only a
+     * {@code try} or {@code catch} block that completes normally continues past the statement,
+     * so the state afterwards is derived from those paths alone. Every other way out - a jump,
+     * which lands only once the {@code finally} block has run, or an exception - leaves with the
+     * state the {@code finally} block ends with when walked from every path into it.
      */
     @Override
     public void visitTryCatchFinally(TryCatchStatement statement) {
         visitStatement(statement);
-        TrackingSnapshot inTry = accumulateStates(() -> {
-            for (Statement resource : statement.getResourceStatements()) {
-                resource.visit(this);
-            }
-            statement.getTryStatement().visit(this);
-        });
-        TrackingSnapshot afterTry = snapshot();
-        TrackingSnapshot normalExits = normalExit(statement.getTryStatement(), afterTry);
-        TrackingSnapshot intoFinally = inTry;
-        for (CatchStatement catchStatement : statement.getCatchStatements()) {
-            restore(inTry);
-            intoFinally = merge(intoFinally, accumulateStates(() -> catchStatement.visit(this)));
-            normalExits = merge(normalExits, normalExit(catchStatement.getCode(), snapshot()));
-        }
         Statement finallyStatement = statement.getFinallyStatement();
+        FinallyFrame frame = finallyStatement.isEmpty() ? null : new FinallyFrame(jumpTargets);
+        if (frame != null) {
+            finallyFrames.push(frame);
+        }
+        TrackingSnapshot normalExits;
+        TrackingSnapshot intoFinally;
+        try {
+            TrackingSnapshot inTry = accumulateStates(() -> {
+                for (Statement resource : statement.getResourceStatements()) {
+                    resource.visit(this);
+                }
+                statement.getTryStatement().visit(this);
+            });
+            normalExits = normalExit(statement.getTryStatement(), snapshot());
+            intoFinally = inTry;
+            for (CatchStatement catchStatement : statement.getCatchStatements()) {
+                restore(inTry);
+                intoFinally = merge(intoFinally, accumulateStates(() -> catchStatement.visit(this)));
+                normalExits = merge(normalExits, normalExit(catchStatement.getCode(), snapshot()));
+            }
+        } finally {
+            if (frame != null) {
+                finallyFrames.pop();
+            }
+        }
+        if (frame == null) {
+            restore(normalExits, intoFinally);
+            return;
+        }
+        intoFinally = merge(intoFinally, frame.jumpStates);
         TrackingSnapshot afterFinally = null;
         if (normalExits != null) {
             silentPasses++;
@@ -459,7 +728,16 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
                 silentPasses--;
             }
         }
-        walkFrom(intoFinally, finallyStatement);
+        // In a silent pass the findings of this walk are dropped, so it is needed only for the
+        // state it ends with, when a jump or an enclosing handler takes it. Skipping it otherwise
+        // keeps nested finally blocks from being walked an exponential number of times.
+        if (silentPasses == 0 || afterFinally == null || !frame.jumps.isEmpty() || !exceptionalStates.isEmpty()) {
+            TrackingSnapshot abruptExit = walkFrom(intoFinally, finallyStatement);
+            addExceptionalState(abruptExit);
+            for (Jump jump : frame.jumps) {
+                jump(jump.target, jump.toHead, abruptExit);
+            }
+        }
         restore(afterFinally, snapshot());
     }
 
@@ -486,10 +764,17 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     @Override
     protected void visitStatement(Statement statement) {
         if (!exceptionalStates.isEmpty()) {
-            TrackingSnapshot current = snapshot();
-            for (int i = 0; i < exceptionalStates.size(); i++) {
-                exceptionalStates.set(i, merge(exceptionalStates.get(i), current));
-            }
+            addExceptionalState(snapshot());
+        }
+    }
+
+    /**
+     * Adds {@code state} to every entry of {@link #exceptionalStates}: an exception may leave the
+     * code being walked with it.
+     */
+    private void addExceptionalState(TrackingSnapshot state) {
+        for (int i = 0; i < exceptionalStates.size(); i++) {
+            exceptionalStates.set(i, merge(exceptionalStates.get(i), state));
         }
     }
 
@@ -516,7 +801,10 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
 
     /**
      * A closure body may run any number of times after the closure is defined, so it is walked
-     * like a loop body, with the state at the point of definition.
+     * like a loop body, with the state at the point of definition. Because it may also run at any
+     * later point, after the locals it shares with the enclosing code have been reassigned, those
+     * locals are judged by every assignment to them inside it (see
+     * {@link #isJudgedByEveryAssignment}).
      */
     @Override
     public void visitClosureExpression(ClosureExpression expression) {
@@ -528,33 +816,49 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
                 }
             }
         }
-        visitRepeatedly(new JumpTarget(null, JumpTarget.Kind.CLOSURE), expression.getCode(), false);
+        closures.push(expression);
+        try {
+            visitRepeatedly(new JumpTarget(null, JumpTarget.Kind.CLOSURE), expression.getCode(), false);
+        } finally {
+            closures.pop();
+        }
     }
 
     /**
-     * Walks {@code body}, which may run any number of times. It is first re-walked silently from
-     * the merge of the states that reach its head - the state before it, the state at its end and
-     * at every {@code continue} (or, for a closure, every {@code return}) - until that merged
-     * state stops changing, so a variable assigned data late in the body is unsafe at every use
-     * the next iteration reaches, including the uses before the assignment. The walk from the
-     * settled state is the one that reports findings. This terminates because {@link #merge} only
-     * ever moves a variable towards a less safe category. The state afterwards is the loop-head
-     * state merged with every {@code break}, or for a body that runs at least once the states
-     * leaving its last iteration.
+     * Walks a loop or closure {@code body}, which may run any number of times. When the body
+     * assigns a local declared outside it, it is first re-walked silently from the merge of the
+     * states that reach its head - the state before it, the state at its end and at every
+     * {@code continue} (or, for a closure, every {@code return}) - until that merged state stops
+     * changing, so a variable assigned data late in the body is unsafe at
+     * every use the next iteration reaches, including the uses before the assignment. This
+     * terminates because {@link #merge} only ever moves a variable towards a less safe category.
+     * A body that assigns no such local cannot change the state at its head, so one walk is
+     * enough. Only a walk outside any silent pass reports findings, so a nested loop already
+     * walked silently from its settled head is not walked again. The state afterwards is the
+     * loop-head state merged with every {@code break}, or for a body that runs at least once the
+     * states leaving its last iteration.
      */
     private void visitRepeatedly(JumpTarget target, Statement body, boolean runsAtLeastOnce) {
         TrackingSnapshot head = snapshot();
-        silentPasses++;
-        try {
-            TrackingSnapshot next = iterate(target, head, body);
-            while (!next.sameStateAs(head)) {
-                head = next;
-                next = iterate(target, head, body);
+        if (facts.bodiesAssigningOuterLocals.contains(body)) {
+            silentPasses++;
+            try {
+                TrackingSnapshot next = iterate(target, head, body);
+                while (!next.sameStateAs(head)) {
+                    head = next;
+                    next = iterate(target, head, body);
+                }
+            } finally {
+                silentPasses--;
             }
-        } finally {
-            silentPasses--;
+            // The last silent walk started from the settled head; repeat it only to report.
+            if (silentPasses == 0) {
+                iterate(target, head, body);
+            }
         }
-        iterate(target, head, body);
+        else {
+            iterate(target, head, body);
+        }
         TrackingSnapshot exit = runsAtLeastOnce ?
                 merge(merge(normalExit(body, target.end), target.head), target.exit) :
                 merge(head, target.exit);
@@ -585,7 +889,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         super.visitBreakStatement(statement);
         JumpTarget target = jumpTarget(statement.getLabel(), false);
         if (target != null) {
-            target.exit = merge(target.exit, snapshot());
+            jump(target, false, snapshot());
         }
     }
 
@@ -594,7 +898,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         super.visitContinueStatement(statement);
         JumpTarget target = jumpTarget(statement.getLabel(), true);
         if (target != null) {
-            target.head = merge(target.head, snapshot());
+            jump(target, true, snapshot());
         }
     }
 
@@ -602,11 +906,41 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     public void visitReturnStatement(ReturnStatement statement) {
         super.visitReturnStatement(statement);
         // Returning from a closure ends one run of its body; the next run starts from its head.
+        JumpTarget closure = null;
         for (JumpTarget target : jumpTargets) {
             if (target.kind == JumpTarget.Kind.CLOSURE) {
-                target.head = merge(target.head, snapshot());
+                closure = target;
                 break;
             }
+        }
+        if (closure != null) {
+            jump(closure, true, snapshot());
+        }
+        else if (!finallyFrames.isEmpty()) {
+            // A return from the method lands nowhere this check follows, but the finally blocks
+            // it leaves run first, from the state it returns with.
+            FinallyFrame frame = finallyFrames.peek();
+            frame.jumpStates = merge(frame.jumpStates, snapshot());
+        }
+    }
+
+    /**
+     * Carries {@code state} to the head or the exit of {@code target}. A jump out of a
+     * {@code try} statement with a {@code finally} block lands only once that block has run, so
+     * it is held by the statement's {@link FinallyFrame} instead, and carried on from the state
+     * the {@code finally} block ends with (see {@link #visitTryCatchFinally}).
+     */
+    private void jump(JumpTarget target, boolean toHead, TrackingSnapshot state) {
+        FinallyFrame frame = finallyFrames.peek();
+        if (frame != null && frame.outerTargets.contains(target)) {
+            frame.jumps.add(new Jump(target, toHead));
+            frame.jumpStates = merge(frame.jumpStates, state);
+        }
+        else if (toHead) {
+            target.head = merge(target.head, state);
+        }
+        else {
+            target.exit = merge(target.exit, state);
         }
     }
 
@@ -658,8 +992,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     }
 
     private TrackingSnapshot snapshot() {
-        return new TrackingSnapshot(flattenedStringVars, liveGStringVars, concatenatedStringVars,
-                constantTextVars, suppressedVars);
+        return new TrackingSnapshot(flattenedStringVars, liveGStringVars, concatenatedStringVars, constantTextVars);
     }
 
     private void restore(TrackingSnapshot state) {
@@ -671,8 +1004,6 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         concatenatedStringVars.putAll(state.concatenated);
         constantTextVars.clear();
         constantTextVars.addAll(state.constant);
-        suppressedVars.clear();
-        suppressedVars.addAll(state.suppressed);
     }
 
     /**
@@ -696,7 +1027,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         if (b == null) {
             return a;
         }
-        Set<String> names = new HashSet<>();
+        Set<Object> names = new HashSet<>();
         names.addAll(a.flattened.keySet());
         names.addAll(a.live.keySet());
         names.addAll(a.concatenated.keySet());
@@ -704,11 +1035,11 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         names.addAll(b.live.keySet());
         names.addAll(b.concatenated.keySet());
 
-        Map<String, ASTNode> mergedFlattened = new HashMap<>();
-        Map<String, ASTNode> mergedLive = new HashMap<>();
-        Map<String, ASTNode> mergedConcatenated = new HashMap<>();
+        Map<Object, ASTNode> mergedFlattened = new HashMap<>();
+        Map<Object, ASTNode> mergedLive = new HashMap<>();
+        Map<Object, ASTNode> mergedConcatenated = new HashMap<>();
 
-        for (String name : names) {
+        for (Object name : names) {
             // Unsafe states win pessimistically: if either path leaves this variable unsafe,
             // that state survives the merge regardless of which path actually runs.
             if (a.flattened.containsKey(name) || b.flattened.containsKey(name)) {
@@ -723,32 +1054,25 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         }
 
         // Constant text is the one state that must hold on both paths to survive the merge.
-        Set<String> mergedConstant = new HashSet<>(a.constant);
+        Set<Object> mergedConstant = new HashSet<>(a.constant);
         mergedConstant.retainAll(b.constant);
 
-        // A declaration reviewed on either path stays reviewed: the name is either out of scope
-        // after the statement or was declared (and so re-armed or re-suppressed) on both paths.
-        Set<String> mergedSuppressed = new HashSet<>(a.suppressed);
-        mergedSuppressed.addAll(b.suppressed);
-
-        return new TrackingSnapshot(mergedFlattened, mergedLive, mergedConcatenated, mergedConstant, mergedSuppressed);
+        return new TrackingSnapshot(mergedFlattened, mergedLive, mergedConcatenated, mergedConstant);
     }
 
     private static final class TrackingSnapshot {
 
-        final Map<String, ASTNode> flattened;
-        final Map<String, ASTNode> live;
-        final Map<String, ASTNode> concatenated;
-        final Set<String> constant;
-        final Set<String> suppressed;
+        final Map<Object, ASTNode> flattened;
+        final Map<Object, ASTNode> live;
+        final Map<Object, ASTNode> concatenated;
+        final Set<Object> constant;
 
-        TrackingSnapshot(Map<String, ASTNode> flattened, Map<String, ASTNode> live, Map<String, ASTNode> concatenated,
-                Set<String> constant, Set<String> suppressed) {
+        TrackingSnapshot(Map<Object, ASTNode> flattened, Map<Object, ASTNode> live, Map<Object, ASTNode> concatenated,
+                Set<Object> constant) {
             this.flattened = new HashMap<>(flattened);
             this.live = new HashMap<>(live);
             this.concatenated = new HashMap<>(concatenated);
             this.constant = new HashSet<>(constant);
-            this.suppressed = new HashSet<>(suppressed);
         }
 
         /**
@@ -759,8 +1083,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
             return flattened.keySet().equals(other.flattened.keySet()) &&
                     live.keySet().equals(other.live.keySet()) &&
                     concatenated.keySet().equals(other.concatenated.keySet()) &&
-                    constant.equals(other.constant) &&
-                    suppressed.equals(other.suppressed);
+                    constant.equals(other.constant);
         }
     }
 
@@ -795,34 +1118,335 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     }
 
     /**
-     * Records what {@code variableName} now holds after being assigned {@code rightExpression},
+     * A {@code try} statement with a {@code finally} block whose {@code try} or {@code catch}
+     * blocks are being walked, with the jumps out of it that land only once the {@code finally}
+     * block has run.
+     */
+    private static final class FinallyFrame {
+
+        /** The jump targets enclosing the statement: a jump from inside it to one of these leaves it. */
+        final Set<JumpTarget> outerTargets;
+        /** The jumps out of the statement, each to the head or the exit of one of {@link #outerTargets}. */
+        final List<Jump> jumps = new ArrayList<>();
+        /** The merge of the states the jumps and returns out of the statement leave with. */
+        TrackingSnapshot jumpStates;
+
+        FinallyFrame(Collection<JumpTarget> outerTargets) {
+            this.outerTargets = new HashSet<>(outerTargets);
+        }
+    }
+
+    /** A jump held by a {@link FinallyFrame}: to the head of its target, or to its exit. */
+    private static final class Jump {
+
+        final JumpTarget target;
+        final boolean toHead;
+
+        Jump(JumpTarget target, boolean toHead) {
+            this.target = target;
+            this.toHead = toHead;
+        }
+    }
+
+    /**
+     * An assignment to a local found by the pre-scan: the value assigned, or {@code null} for an
+     * assignment that is not string building this check understands, and the type the local is
+     * declared with.
+     */
+    private static final class Write {
+
+        final Object key;
+        final Expression value;
+        final ClassNode type;
+
+        Write(Object key, Expression value, ClassNode type) {
+            this.key = key;
+            this.value = value;
+            this.type = type;
+        }
+    }
+
+    /**
+     * What a pre-scan of the code about to be walked finds: the facts about its locals that do not
+     * depend on the order its statements run in.
+     */
+    private final class CodeFacts extends CodeVisitorSupport {
+
+        /** Every local declared in the code. */
+        final Set<Object> declared = new HashSet<>();
+        /**
+         * Every local and parameter the code declares, those of its closures and anonymous inner
+         * classes included.
+         */
+        final Set<Object> owned = new HashSet<>();
+        /** Every assignment to a local, declarations with a value included. */
+        final List<Write> writes = new ArrayList<>();
+        /** The locals whose declaration carries the suppression. */
+        final Set<Object> suppressed = new HashSet<>();
+        /**
+         * The locals assigned where the walk cannot place the assignment in order: inside another
+         * expression (a ternary or Elvis branch, an {@code &&} or {@code ||} operand, a method
+         * argument, a loop condition), by multiple assignment, or inside a closure or an anonymous
+         * inner class that does not declare them, which may run at any later point.
+         */
+        final Set<Object> unordered = new HashSet<>();
+        /** The locals and parameters each closure declares. */
+        final Map<ClosureExpression, Set<Object>> closureLocals = new IdentityHashMap<>();
+        /** The innermost closure declaring each local declared inside one. */
+        final Map<Object, ClosureExpression> declaringClosures = new HashMap<>();
+        /**
+         * The locals that hold only constant text however their assignments are ordered, filled
+         * in by {@link #settleConstants} once the scan is complete.
+         */
+        final Set<Object> constant = new HashSet<>();
+        /**
+         * The worst each local or parameter holds however its assignments are ordered, filled in
+         * by {@link #settleOrigins} once the scan is complete.
+         */
+        final Map<Object, Origin> origins = new HashMap<>();
+
+        /** The loop and closure bodies that assign a local declared outside them. */
+        final Set<Statement> bodiesAssigningOuterLocals = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        private final Set<Expression> statementExpressions = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Deque<Set<Object>> closureScopes = new ArrayDeque<>();
+        /** The closure or anonymous inner class creation owning each of {@link #closureScopes}. */
+        private final Deque<Expression> scopeOwners = new ArrayDeque<>();
+        /** The loop and closure bodies being scanned, innermost first. */
+        private final Deque<BodyScope> openBodies = new ArrayDeque<>();
+
+        @Override
+        public void visitExpressionStatement(ExpressionStatement statement) {
+            statementExpressions.add(statement.getExpression());
+            super.visitExpressionStatement(statement);
+        }
+
+        @Override
+        public void visitClosureExpression(ClosureExpression expression) {
+            Set<Object> locals = new HashSet<>();
+            if (expression.getParameters() != null) {
+                locals.addAll(Arrays.asList(expression.getParameters()));
+            }
+            closureLocals.put(expression, locals);
+            owned.addAll(locals);
+            openScope(expression, locals);
+            try {
+                scanBody(expression.getCode(), locals, () -> super.visitClosureExpression(expression));
+            } finally {
+                closeScope();
+            }
+        }
+
+        private void openScope(Expression owner, Set<Object> locals) {
+            scopeOwners.push(owner);
+            closureScopes.push(locals);
+        }
+
+        private void closeScope() {
+            scopeOwners.pop();
+            closureScopes.pop();
+        }
+
+        /**
+         * The class is checked on its own, as a separate class, but its code may run at any point
+         * after it is created, like a closure's, and assign locals declared outside it.
+         */
+        @Override
+        public void visitConstructorCallExpression(ConstructorCallExpression call) {
+            super.visitConstructorCallExpression(call);
+            if (!call.isUsingAnonymousInnerClass()) {
+                return;
+            }
+            ClassNode type = call.getType();
+            Set<Object> locals = new HashSet<>();
+            for (MethodNode method : type.getMethods()) {
+                locals.addAll(Arrays.asList(method.getParameters()));
+            }
+            owned.addAll(locals);
+            openScope(call, locals);
+            try {
+                for (FieldNode field : type.getFields()) {
+                    Expression initial = field.getInitialValueExpression();
+                    if (initial != null) {
+                        initial.visit(this);
+                    }
+                }
+                for (Statement statement : type.getObjectInitializerStatements()) {
+                    statement.visit(this);
+                }
+                for (MethodNode method : type.getMethods()) {
+                    if (method.getCode() != null) {
+                        method.getCode().visit(this);
+                    }
+                }
+            } finally {
+                closeScope();
+            }
+        }
+
+        @Override
+        public void visitForLoop(ForStatement statement) {
+            declareLocal(statement.getVariable());
+            // The loop itself assigns its variable on every iteration, so it counts as the body's own.
+            scanBody(statement.getLoopBlock(), Collections.singleton(statement.getVariable()),
+                    () -> super.visitForLoop(statement));
+        }
+
+        @Override
+        public void visitWhileLoop(WhileStatement statement) {
+            scanBody(statement.getLoopBlock(), Collections.emptySet(), () -> super.visitWhileLoop(statement));
+        }
+
+        @Override
+        public void visitDoWhileLoop(DoWhileStatement statement) {
+            scanBody(statement.getLoopBlock(), Collections.emptySet(), () -> super.visitDoWhileLoop(statement));
+        }
+
+        @Override
+        public void visitCatchStatement(CatchStatement statement) {
+            declareLocal(statement.getVariable());
+            super.visitCatchStatement(statement);
+        }
+
+        private void scanBody(Statement body, Set<?> ownVariables, Runnable scan) {
+            BodyScope scope = new BodyScope(body);
+            scope.locals.addAll(ownVariables);
+            openBodies.push(scope);
+            try {
+                scan.run();
+            } finally {
+                openBodies.pop();
+            }
+        }
+
+        @Override
+        public void visitDeclarationExpression(DeclarationExpression expression) {
+            if (expression.isMultipleAssignmentDeclaration()) {
+                List<Expression> elements = expression.getTupleExpression().getExpressions();
+                for (int i = 0; i < elements.size(); i++) {
+                    if (elements.get(i) instanceof VariableExpression) {
+                        VariableExpression element = (VariableExpression) elements.get(i);
+                        Object key = keyOf(element);
+                        declareLocal(key);
+                        declared.add(key);
+                        if (isSuppressedNode(expression)) {
+                            suppressed.add(key);
+                        }
+                        assign(key, elementAssigned(expression.getRightExpression(), i), element.getType(), false);
+                    }
+                }
+            }
+            else {
+                Object key = keyOf(expression.getVariableExpression());
+                declareLocal(key);
+                declared.add(key);
+                if (isSuppressedNode(expression)) {
+                    suppressed.add(key);
+                }
+                Expression value = expression.getRightExpression();
+                // A local declared without a value holds null until it is assigned.
+                if (!(value instanceof EmptyExpression)) {
+                    assign(key, value, expression.getVariableExpression().getType(),
+                            statementExpressions.contains(expression));
+                }
+                else if (!statementExpressions.contains(expression)) {
+                    unordered.add(key);
+                }
+            }
+            expression.getRightExpression().visit(this);
+        }
+
+        @Override
+        public void visitBinaryExpression(BinaryExpression expression) {
+            int operation = expression.getOperation().getType();
+            if (Types.ofType(operation, Types.ASSIGNMENT_OPERATOR)) {
+                Expression left = expression.getLeftExpression();
+                if (left instanceof VariableExpression) {
+                    Expression value = operation == Types.ASSIGN ? expression.getRightExpression() :
+                            operation == Types.PLUS_EQUAL ? plusEqualAsConcatenation(expression) : null;
+                    assign(keyOf((VariableExpression) left), value, left.getType(), statementExpressions.contains(expression));
+                }
+                else if (left instanceof TupleExpression && operation == Types.ASSIGN) {
+                    List<Expression> elements = ((TupleExpression) left).getExpressions();
+                    for (int i = 0; i < elements.size(); i++) {
+                        if (elements.get(i) instanceof VariableExpression) {
+                            assign(keyOf((VariableExpression) elements.get(i)),
+                                    elementAssigned(expression.getRightExpression(), i), elements.get(i).getType(), false);
+                        }
+                    }
+                }
+            }
+            super.visitBinaryExpression(expression);
+        }
+
+        private void declareLocal(Object key) {
+            owned.add(key);
+            Set<Object> closureScope = closureScopes.peek();
+            if (closureScope != null) {
+                closureScope.add(key);
+            }
+            if (scopeOwners.peek() instanceof ClosureExpression) {
+                declaringClosures.put(key, (ClosureExpression) scopeOwners.peek());
+            }
+            for (BodyScope scope : openBodies) {
+                scope.locals.add(key);
+            }
+        }
+
+        private void assign(Object key, Expression value, ClassNode type, boolean inOrder) {
+            writes.add(new Write(key, value, type));
+            Set<Object> closureScope = closureScopes.peek();
+            if (!inOrder || closureScope != null && !closureScope.contains(key)) {
+                unordered.add(key);
+            }
+            for (BodyScope scope : openBodies) {
+                if (!scope.locals.contains(key)) {
+                    bodiesAssigningOuterLocals.add(scope.body);
+                }
+            }
+        }
+    }
+
+    /** A loop or closure body being scanned, with the locals and parameters it declares. */
+    private static final class BodyScope {
+
+        final Statement body;
+        final Set<Object> locals = new HashSet<>();
+
+        BodyScope(Statement body) {
+            this.body = body;
+        }
+    }
+
+    /**
+     * Records what the local under {@code key} now holds after being assigned {@code rightExpression},
      * resolving through any variable aliasing so a {@code GString} tracked several assignments
      * earlier is still recognised as unsafe once it (or an alias of it) reaches a
      * {@code String}-typed variable. A variable whose declaration carries the suppression is
      * never tracked, whatever it is assigned.
      */
-    private void track(String variableName, Expression rightExpression, ClassNode declaredType, ASTNode locationNode) {
+    private void track(Object key, Expression rightExpression, ClassNode declaredType, ASTNode locationNode) {
         // Classify against the state *before* this assignment, so self-references such as
         // q = q + "..." see what q held until now.
         Origin origin = classify(rightExpression, declaredType);
         // Any reassignment first clears prior tracking under every category - last write wins
         // for what follows, then the switch below re-establishes tracking if still relevant.
-        untrack(variableName);
-        if (suppressedVars.contains(variableName)) {
+        untrack(key);
+        if (facts.suppressed.contains(key)) {
             return;
         }
         switch (origin) {
             case FLATTENED:
-                flattenedStringVars.put(variableName, locationNode);
+                flattenedStringVars.put(key, locationNode);
                 break;
             case LIVE_GSTRING:
-                liveGStringVars.put(variableName, locationNode);
+                liveGStringVars.put(key, locationNode);
                 break;
             case CONCATENATED:
-                concatenatedStringVars.put(variableName, locationNode);
+                concatenatedStringVars.put(key, locationNode);
                 break;
             case CONSTANT:
-                constantTextVars.add(variableName);
+                constantTextVars.add(key);
                 break;
             case NONE:
             default:
@@ -830,11 +1454,11 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         }
     }
 
-    private void untrack(String variableName) {
-        flattenedStringVars.remove(variableName);
-        liveGStringVars.remove(variableName);
-        concatenatedStringVars.remove(variableName);
-        constantTextVars.remove(variableName);
+    private void untrack(Object key) {
+        flattenedStringVars.remove(key);
+        liveGStringVars.remove(key);
+        concatenatedStringVars.remove(key);
+        constantTextVars.remove(key);
     }
 
     /**
@@ -845,23 +1469,28 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
      */
     private Origin classify(Expression expression, ClassNode declaredType) {
         if (expression instanceof VariableExpression) {
-            String name = ((VariableExpression) expression).getName();
-            if (flattenedStringVars.containsKey(name)) {
-                return Origin.FLATTENED; // already a plain String - stays unsafe regardless of declaredType
-            }
-            if (concatenatedStringVars.containsKey(name)) {
-                return Origin.CONCATENATED; // already a plain String - stays unsafe regardless of declaredType
-            }
-            if (liveGStringVars.containsKey(name)) {
-                return ClassHelper.STRING_TYPE.equals(declaredType) ? Origin.FLATTENED : Origin.LIVE_GSTRING;
-            }
-            return isConstantText(expression) ? Origin.CONSTANT : Origin.NONE;
+            Origin origin = originOf((VariableExpression) expression);
+            // A flattened or concatenated String stays unsafe regardless of declaredType.
+            return origin == Origin.LIVE_GSTRING && ClassHelper.STRING_TYPE.equals(declaredType) ? Origin.FLATTENED : origin;
         }
         if (isConstantText(expression)) {
             return Origin.CONSTANT;
         }
         if (isDataInterpolatedGString(expression)) {
             return ClassHelper.STRING_TYPE.equals(declaredType) ? Origin.FLATTENED : Origin.LIVE_GSTRING;
+        }
+        if (expression instanceof TernaryExpression) {
+            // Covers the Elvis operator too: either branch may be the value assigned.
+            TernaryExpression ternary = (TernaryExpression) expression;
+            return classify(ternary.getTrueExpression(), declaredType).or(classify(ternary.getFalseExpression(), declaredType));
+        }
+        ClosureExpression called = calledClosure(expression);
+        if (called != null) {
+            Origin origin = Origin.CONSTANT;
+            for (Expression result : resultsOf(called)) {
+                origin = origin.or(classify(result, declaredType));
+            }
+            return origin;
         }
         if (expression instanceof CastExpression) {
             CastExpression cast = (CastExpression) expression;
@@ -912,10 +1541,94 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
             return true;
         }
         if (expression instanceof VariableExpression) {
-            String name = ((VariableExpression) expression).getName();
-            return flattenedStringVars.containsKey(name) || liveGStringVars.containsKey(name);
+            Origin origin = originOf((VariableExpression) expression);
+            return origin == Origin.FLATTENED || origin == Origin.LIVE_GSTRING;
+        }
+        if (expression instanceof TernaryExpression) {
+            TernaryExpression ternary = (TernaryExpression) expression;
+            return isUnsafeSource(ternary.getTrueExpression()) || isUnsafeSource(ternary.getFalseExpression());
+        }
+        ClosureExpression called = calledClosure(expression);
+        if (called != null) {
+            for (Expression result : resultsOf(called)) {
+                if (isUnsafeSource(result)) {
+                    return true;
+                }
+            }
         }
         return false;
+    }
+
+    /**
+     * The closure literal {@code expression} calls on the spot, as in {@code { ... }()}, or
+     * {@code null}. A {@code switch} expression compiles to such a call, so this is how the value
+     * of one is followed.
+     */
+    private static ClosureExpression calledClosure(Expression expression) {
+        if (expression instanceof MethodCallExpression) {
+            MethodCallExpression call = (MethodCallExpression) expression;
+            if ("call".equals(call.getMethodAsString()) && call.getObjectExpression() instanceof ClosureExpression) {
+                return (ClosureExpression) call.getObjectExpression();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The expressions a closure can return: those of its {@code return} statements, its own and
+     * not those of closures nested in it, and the last expression of each path through its body.
+     */
+    private static List<Expression> resultsOf(ClosureExpression closure) {
+        List<Expression> results = new ArrayList<>();
+        closure.getCode().visit(new CodeVisitorSupport() {
+            @Override
+            public void visitReturnStatement(ReturnStatement statement) {
+                results.add(statement.getExpression());
+                super.visitReturnStatement(statement);
+            }
+
+            @Override
+            public void visitClosureExpression(ClosureExpression nested) {
+                // A nested closure's returns end that closure, not this one.
+            }
+        });
+        addTailResults(closure.getCode(), results);
+        return results;
+    }
+
+    private static void addTailResults(Statement statement, List<Expression> results) {
+        if (statement instanceof ExpressionStatement) {
+            results.add(((ExpressionStatement) statement).getExpression());
+        }
+        else if (statement instanceof BlockStatement) {
+            List<Statement> statements = ((BlockStatement) statement).getStatements();
+            int last = statements.size() - 1;
+            if (last > 0 && statements.get(last) instanceof BreakStatement) {
+                last--;
+            }
+            if (last >= 0) {
+                addTailResults(statements.get(last), results);
+            }
+        }
+        else if (statement instanceof IfStatement) {
+            addTailResults(((IfStatement) statement).getIfBlock(), results);
+            addTailResults(((IfStatement) statement).getElseBlock(), results);
+        }
+        else if (statement instanceof SwitchStatement) {
+            for (CaseStatement caseStatement : ((SwitchStatement) statement).getCaseStatements()) {
+                addTailResults(caseStatement.getCode(), results);
+            }
+            addTailResults(((SwitchStatement) statement).getDefaultStatement(), results);
+        }
+        else if (statement instanceof TryCatchStatement) {
+            addTailResults(((TryCatchStatement) statement).getTryStatement(), results);
+            for (CatchStatement catchStatement : ((TryCatchStatement) statement).getCatchStatements()) {
+                addTailResults(catchStatement.getCode(), results);
+            }
+        }
+        else if (statement instanceof SynchronizedStatement) {
+            addTailResults(((SynchronizedStatement) statement).getCode(), results);
+        }
     }
 
     /**
@@ -960,6 +1673,15 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
             TernaryExpression ternary = (TernaryExpression) expression;
             return isConstantText(ternary.getTrueExpression()) && isConstantText(ternary.getFalseExpression());
         }
+        ClosureExpression called = calledClosure(expression);
+        if (called != null) {
+            for (Expression result : resultsOf(called)) {
+                if (!isConstantText(result)) {
+                    return false;
+                }
+            }
+            return true;
+        }
         if (isConcatenation(expression)) {
             BinaryExpression binary = (BinaryExpression) expression;
             return isConstantText(binary.getLeftExpression()) && isConstantText(binary.getRightExpression());
@@ -975,8 +1697,65 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     }
 
     /**
+     * What the local, parameter or field {@code variable} refers to holds at this point. A local
+     * the walk cannot follow here (see {@link #isJudgedByEveryAssignment}) holds the worst that any
+     * assignment to it stores.
+     */
+    private Origin originOf(VariableExpression variable) {
+        if (isConstantTextVariable(variable)) {
+            return Origin.CONSTANT;
+        }
+        Object key = keyOf(variable);
+        Origin origin = flattenedStringVars.containsKey(key) ? Origin.FLATTENED :
+                concatenatedStringVars.containsKey(key) ? Origin.CONCATENATED :
+                liveGStringVars.containsKey(key) ? Origin.LIVE_GSTRING : Origin.NONE;
+        CodeFacts enclosing = enclosingFactsOwning(key);
+        if (enclosing != null) {
+            return origin.or(enclosing.origins.get(key));
+        }
+        if (assumedOrigins != null) {
+            return origin.or(assumedOrigins.get(key));
+        }
+        return isJudgedByEveryAssignment(key) ? origin.or(facts.origins.get(key)) : origin;
+    }
+
+    /**
+     * Whether the walk cannot know what the local under {@code key} holds at this point, so it is
+     * judged by every assignment to it in the code: one assigned where the walk cannot place the
+     * assignment (see {@link CodeFacts#unordered}), one declared outside the closure being walked,
+     * which may run at any later point, and one declared inside a closure that is not being walked,
+     * whose state is only tracked while it is.
+     */
+    private boolean isJudgedByEveryAssignment(Object key) {
+        if (facts.unordered.contains(key) || isSharedWithEnclosingClosure(key)) {
+            return true;
+        }
+        ClosureExpression declaring = facts.declaringClosures.get(key);
+        return declaring != null && !closures.contains(declaring);
+    }
+
+    /**
+     * For a local or parameter of a method enclosing the anonymous inner class being visited,
+     * what the pre-scan found in that method; {@code null} for anything else.
+     */
+    private CodeFacts enclosingFactsOwning(Object key) {
+        if (enclosingFacts.isEmpty() || facts.owned.contains(key)) {
+            return null;
+        }
+        for (CodeFacts enclosing : enclosingFacts) {
+            if (enclosing.owned.contains(key)) {
+                return enclosing;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Resolves a bare name through what the compiler bound it to, so a {@code static final}
      * constant is recognised as such while a parameter or local that merely shadows one is not.
+     * A local the walk cannot follow here (see {@link #isJudgedByEveryAssignment}), or one of a
+     * method enclosing the anonymous inner class being visited, is constant text only if every
+     * assignment to it is.
      */
     private boolean isConstantTextVariable(VariableExpression variable) {
         if (variable.isThisExpression() || variable.isSuperExpression()) {
@@ -992,7 +1771,35 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         if (accessed instanceof DynamicVariable) {
             return false;
         }
-        return constantTextVars.contains(variable.getName()) || suppressedVars.contains(variable.getName());
+        Object key = keyOf(variable);
+        if (facts.suppressed.contains(key)) {
+            return true;
+        }
+        CodeFacts enclosing = enclosingFactsOwning(key);
+        if (enclosing != null) {
+            // A local whose declaration carries the suppression is always in the constant set.
+            return enclosing.constant.contains(key);
+        }
+        if (assumedConstant != null) {
+            return assumedConstant.contains(key);
+        }
+        if (isJudgedByEveryAssignment(key)) {
+            return facts.constant.contains(key);
+        }
+        return constantTextVars.contains(key);
+    }
+
+    /**
+     * Whether the local under {@code key} is declared outside the closure being walked, which
+     * may run at any later point, after the local has been reassigned.
+     */
+    private boolean isSharedWithEnclosingClosure(Object key) {
+        ClosureExpression closure = closures.peek();
+        if (closure == null) {
+            return false;
+        }
+        Set<Object> ownLocals = facts.closureLocals.get(closure);
+        return ownLocals == null || !ownLocals.contains(key);
     }
 
     /**
@@ -1108,7 +1915,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
     public void visitMethodCallExpression(MethodCallExpression call) {
         String methodName = call.getMethodAsString();
         if (methodName != null && CANDIDATE_METHODS.contains(methodName) &&
-                isGormReceiver(call.getObjectExpression()) && !isSuppressed()) {
+                isGormReceiver(call.getObjectExpression(), methodName) && !isSuppressed()) {
             report(findUnsafeArgument(methodName, call.getArguments()), call, methodName);
         }
         super.visitMethodCallExpression(call);
@@ -1124,12 +1931,43 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         super.visitStaticMethodCallExpression(call);
     }
 
-    private boolean isGormReceiver(Expression objectExpression) {
+    private boolean isGormReceiver(Expression objectExpression, String methodName) {
         if (objectExpression instanceof ClassExpression) {
             return AstUtils.isDomainClass(((ClassExpression) objectExpression).getType());
         }
         if (objectExpression instanceof VariableExpression && ((VariableExpression) objectExpression).isThisExpression()) {
-            return currentClassNode != null && AstUtils.isDomainClass(currentClassNode);
+            return reachesDomainClass(currentClassNode, methodName);
+        }
+        return false;
+    }
+
+    /**
+     * Whether a call on {@code this}, written or implied, in {@code type} reaches a domain class:
+     * {@code type} itself, or a class enclosing it, which is where Groovy sends a call that an
+     * inner class has no method for.
+     */
+    private static boolean reachesDomainClass(ClassNode type, String methodName) {
+        for (ClassNode receiver = type; receiver != null; receiver = receiver.getOuterClass()) {
+            if (AstUtils.isDomainClass(receiver)) {
+                return true;
+            }
+            if (hasMethodNamed(receiver, methodName)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasMethodNamed(ClassNode type, String methodName) {
+        for (ClassNode declaring = type; declaring != null; declaring = declaring.getSuperClass()) {
+            if (!declaring.getMethods(methodName).isEmpty()) {
+                return true;
+            }
+        }
+        for (ClassNode declaring : type.getAllInterfaces()) {
+            if (!declaring.getMethods(methodName).isEmpty()) {
+                return true;
+            }
         }
         return false;
     }
@@ -1143,17 +1981,36 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         if (index == null || args.size() <= index) {
             return Finding.NONE;
         }
-        Expression argument = args.get(index);
+        return findingFor(args.get(index));
+    }
 
+    /**
+     * What is unsafe about {@code argument} as the query text, if anything. Either branch of a
+     * ternary or Elvis expression, and anything a closure called on the spot returns, may be the
+     * query, so the most severe of their findings is the finding.
+     */
+    private Finding findingFor(Expression argument) {
         if (argument instanceof VariableExpression) {
-            String name = ((VariableExpression) argument).getName();
-            if (flattenedStringVars.containsKey(name)) {
+            Origin origin = originOf((VariableExpression) argument);
+            if (origin == Origin.FLATTENED) {
                 return Finding.FLATTENED_GSTRING;
             }
-            if (concatenatedStringVars.containsKey(name)) {
+            if (origin == Origin.CONCATENATED) {
                 return Finding.UNSAFE_CONCATENATION;
             }
             return Finding.NONE;
+        }
+        if (argument instanceof TernaryExpression) {
+            TernaryExpression ternary = (TernaryExpression) argument;
+            return findingFor(ternary.getTrueExpression()).or(findingFor(ternary.getFalseExpression()));
+        }
+        ClosureExpression called = calledClosure(argument);
+        if (called != null) {
+            Finding finding = Finding.NONE;
+            for (Expression result : resultsOf(called)) {
+                finding = finding.or(findingFor(result));
+            }
+            return finding;
         }
         if (isThisFieldReference(argument) && flattenedFields.containsKey(fieldNameOf(argument))) {
             return Finding.FLATTENED_FIELD;
@@ -1200,11 +2057,21 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         }
     }
 
+    /**
+     * Whether the code being walked carries the suppression: on its method, its class, or, for an
+     * inner class, a class or method it is declared in.
+     */
     private boolean isSuppressed() {
         if (currentMethodNode != null && isSuppressedNode(currentMethodNode)) {
             return true;
         }
-        return currentClassNode != null && isSuppressedNode(currentClassNode);
+        for (ClassNode type = currentClassNode; type != null; type = type.getOuterClass()) {
+            MethodNode enclosingMethod = type.getEnclosingMethod();
+            if (isSuppressedNode(type) || enclosingMethod != null && isSuppressedNode(enclosingMethod)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isSuppressedNode(AnnotatedNode node) {
@@ -1242,7 +2109,7 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
                 "clause - a GString is the wrong tool, because GORM would bind the fragment as a " +
                 "parameter value: build the text from constant fragments (string literals, static " +
                 "final constants, and locals that only ever hold such text, which this check " +
-                "recognises as safe) using '+', '+=' or a StringBuilder, and bind the values through " +
+                "recognises as safe) using '+' or '+=', and bind the values through " +
                 "the params argument. " + SUPPRESSION_HINT;
         sourceUnit.getErrorCollector().addErrorAndContinue(message, node, sourceUnit);
     }
