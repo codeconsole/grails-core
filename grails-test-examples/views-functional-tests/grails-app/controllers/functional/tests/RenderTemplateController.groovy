@@ -19,20 +19,17 @@
 
 package functional.tests
 
-class ModelInterceptor {
+/**
+ * Actions that render a template with {@code render(template: ..., model: ...)}, so that no
+ * {@code ModelAndView} is produced and interceptors read the model passed to the template.
+ */
+class RenderTemplateController {
 
-    Object latestModel
-
-    ModelInterceptor() {
-        match(controller: 'modelAndView|respond|return|renderTemplate')
+    def index() {
+        render(template: 'snippet', model: [title: 'x'])
     }
 
-    boolean before() {
-        true
-    }
-
-    boolean after() {
-        latestModel = model
-        true
+    def bean() {
+        render(template: 'snippet', bean: 'b', model: [title: 'x'])
     }
 }

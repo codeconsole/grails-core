@@ -140,12 +140,22 @@ trait Interceptor implements ResponseRenderer, ResponseRedirector, RequestForwar
     }
 
     /**
-     * @return The current model
+     * Returns the model of the current request.
+     *
+     * <p>If the action produced a {@link ModelAndView}, its model is returned. Otherwise, if the action called
+     * {@code render(template: ..., model: ...)}, the map passed as {@code model} is returned. The template has
+     * already been rendered at that point, so changes to the map do not affect the response.
+     *
+     * @return The current model, or {@code null} if there is none
      */
     @Generated
     Map<String, Object> getModel() {
         def modelAndView = (ModelAndView) currentRequestAttributes().getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, 0)
-        return modelAndView?.modelMap
+        if (modelAndView != null) {
+            return modelAndView.modelMap
+        }
+        // Fallback: when render template: ..., model: ... is used, the model is stored in TEMPLATE_MODEL
+        return (Map<String, Object>) currentRequestAttributes().getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, 0)
     }
 
     /**

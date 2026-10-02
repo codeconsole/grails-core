@@ -4690,3 +4690,20 @@ CountFinder.countBy(datastoreResolver, mappingContext)                // countBy
 Each factory also accepts a `Datastore`, or only a `MappingContext` for a finder that parses method names without executing queries. `ListOrderByFinder` keeps its constructors but no longer extends `AbstractFinder`, and the list of finders a `DetachedCriteria` consults is now typed as `List<FinderMethod>`.
 
 Applications are unaffected: dynamic finders such as `Book.findByTitle('The Stand')` behave as before. A GORM datastore implementation or plugin outside the Grails repository that extends one of the removed classes, or that calls `new FindByFinder(...)` and its siblings when building its finder list, must switch to the factory methods above. Code that only holds finders as `FinderMethod` compiles unchanged.
+
+==== 84. Interceptors Can Read the Model of a Template Render
+
+The `model` property of an interceptor now returns the map that an action passed to
+`render(template: ..., model: ...)`. Before, it returned `null` for a template render, because a template render
+produces no `ModelAndView`. Responses rendered from a view are not affected.
+
+The template has already been rendered when `after()` runs, so the model can be inspected but not changed. Review
+interceptors that check `model != null`, or use `model?.`, before changing the model, since that code now also runs
+for template renders:
+
+* Changes to the map have no effect on the response, and they change the map that the action passed.
+* If the action passed an immutable map, such as one created with `Map.of(...)`, changing it throws an
+`UnsupportedOperationException`. Before, `model?.foo = 'bar'` did nothing.
+
+Objects passed with `bean` or `collection` are not part of `model`. See
+link:theWebLayer.html#definingInterceptors[Defining Interceptors].
