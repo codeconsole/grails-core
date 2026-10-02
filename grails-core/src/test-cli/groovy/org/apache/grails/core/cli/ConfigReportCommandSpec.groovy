@@ -420,6 +420,43 @@ class ConfigReportCommandSpec extends Specification {
         classLoader?.close()
     }
 
+    def "loadPropertyMetadata includes the resources of a plugin on the classpath as Gradle output directories"() {
+        given: "a plugin whose descriptor is in the compiled classes and its metadata in the processed resources"
+        File pluginClasses = classpathRoot('plugin/build/classes/groovy/main', [
+                'META-INF/grails-plugin.xml': '<plugin name="acme"/>'
+        ])
+        File pluginResources = classpathRoot('plugin/build/resources/main', [
+                'META-INF/spring-configuration-metadata.json': '''{
+                    "groups": [{"name": "acme", "description": "Acme"}],
+                    "properties": [{"name": "acme.enabled", "type": "java.lang.Boolean", "description": "Whether Acme is enabled.", "defaultValue": true}]
+                }'''
+        ])
+
+        and: "an application with the same layout that is not a plugin"
+        File applicationClasses = classpathRoot('app/build/classes/groovy/main', [:])
+        File applicationResources = classpathRoot('app/build/resources/main', [
+                'META-INF/spring-configuration-metadata.json': '''{
+                    "properties": [{"name": "app.greeting", "type": "java.lang.String", "description": "The greeting."}]
+                }'''
+        ])
+        URL[] urls = [pluginClasses, pluginResources, applicationClasses, applicationResources].collect { it.toURI().toURL() } as URL[]
+        URLClassLoader classLoader = new URLClassLoader(urls, (ClassLoader) null)
+
+        when:
+        ConfigReportCommand.MetadataResult metadataResult = command.loadPropertyMetadata(classLoader)
+        List<String> names = metadataResult.properties*.name
+
+        then: "the plugin property is included with its group"
+        names.contains('acme.enabled')
+        metadataResult.properties.find { it.name == 'acme.enabled' }.group == 'acme'
+
+        and: "the application property is still left out"
+        !names.contains('app.greeting')
+
+        cleanup:
+        classLoader?.close()
+    }
+
     def "writeReport documents plugin properties in their own section"() {
         given: "the metadata of a plugin outside the Grails namespaces"
         File plugin = classpathRoot('plugin', [
