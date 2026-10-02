@@ -481,10 +481,6 @@ public class HibernateQuery extends Query {
                 offset, max, lockResult, queryCache, fetchSize, timeout, flushMode, readOnly, proxyHandler);
     }
 
-    public JpaCriteriaQuery<?> getJpaCriteriaQuery() {
-        return createJpaCriteriaQueryCreator().createQuery();
-    }
-
     private JpaCriteriaQueryCreator<?> createJpaCriteriaQueryCreator() {
         ConversionService conversionService = getSession().getMappingContext().getConversionService();
         return new JpaCriteriaQueryCreator<>(
