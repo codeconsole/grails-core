@@ -36,6 +36,9 @@ import org.grails.datastore.rx.RxDatastoreClient
  * org.grails.datastore.gorm.finders.CountFinder}, reusing that class's {@link
  * CountFinder#applyCriteriaAndCount} helper for the same independent (non-{@code getJunction})
  * And/Or criteria handling rather than duplicating it.
+ *
+ * <p>Like {@code CountFinder}, a trailing argument map is ignored, so {@code max}, {@code offset},
+ * {@code sort} and {@code order} never page or order the count.
  */
 @CompileStatic
 class RxCountFinder implements FinderMethod {

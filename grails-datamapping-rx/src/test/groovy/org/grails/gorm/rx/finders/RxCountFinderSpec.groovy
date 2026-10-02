@@ -28,6 +28,7 @@ import org.grails.datastore.rx.RxDatastoreClient
 import org.springframework.core.convert.support.DefaultConversionService
 import rx.Observable
 import spock.lang.Specification
+import spock.lang.Unroll
 
 /**
  * Exercises {@link RxCountFinder} - the rx-module mirror of {@link
@@ -152,17 +153,31 @@ class RxCountFinderSpec extends Specification {
         noExceptionThrown()
     }
 
-    void "applies query arguments to the query when present"() {
+    @Unroll
+    void "ignores the trailing argument map #arguments"() {
         given:
         def finder = RxCountFinder.countBy(datastoreClient)
 
         when:
-        finder.invoke(Person, 'countByName', ['Fred', [max: 5]] as Object[])
+        Observable observable = finder.invoke(Person, 'countByName', ['Fred', arguments] as Object[]) as Observable
 
         then:
         1 * datastoreClient.createQuery(Person) >> query
-        1 * query.max(5)
-        1 * query.singleResult()
+        1 * query.singleResult() >> Observable.just(5L)
+        0 * query.max(_)
+        0 * query.offset(_)
+        0 * query.order(_)
+        0 * query.cache(_)
+        0 * query.lock(_)
+        observable.toBlocking().first() == 5L
+
+        where:
+        arguments << [
+                [max: 2, offset: 3],
+                [sort: 'name', order: 'desc'],
+                [sort: 'nope'],
+                [cache: true, lock: true]
+        ]
     }
 
     private static class Person {
