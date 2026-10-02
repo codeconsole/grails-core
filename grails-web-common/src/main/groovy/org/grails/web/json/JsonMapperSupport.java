@@ -30,9 +30,10 @@ import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.ObjectWriter;
+import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.ser.SerializationContextExt;
+import tools.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnsupportedTypeSerializer;
 import tools.jackson.databind.ser.jdk.EnumSerializer;
@@ -152,7 +153,7 @@ public final class JsonMapperSupport {
         if (key instanceof String string) {
             return string;
         }
-        SerializationContextExt context = serializationContext();
+        SerializationContext context = serializationContext();
         ValueSerializer<Object> keySerializer = context.findKeySerializer(key.getClass(), null);
         try (TokenBuffer buffer = TokenBuffer.forGeneration()) {
             buffer.writeStartObject();
@@ -168,8 +169,14 @@ public final class JsonMapperSupport {
         return key.toString();
     }
 
-    private SerializationContextExt serializationContext() {
-        return mapper._serializationContext();
+    /**
+     * A serialization context with the mapper's configuration, from its public API: the mapper passes one to a format
+     * visitor before it visits a type.
+     */
+    private SerializationContext serializationContext() {
+        JsonFormatVisitorWrapper visitor = new JsonFormatVisitorWrapper.Base();
+        mapper.acceptJsonFormatVisitor(String.class, visitor);
+        return visitor.getContext();
     }
 
     private static boolean isContainer(Class<?> type) {

@@ -116,8 +116,9 @@ class JsonMapperRenderingSpec extends Specification {
         }
         initialize([:], context)
 
-        expect:
-        new JSON([date: new Date(1759909726407L)]).toString() == '{"date":"2025-10-08T03:48:46.407-04:00"}'
+        expect: 'in values and in map keys'
+        new JSON([date: new Date(1759909726407L), keyed: [(new Date(1759909726407L)): 'date']]).toString() ==
+                '{"date":"2025-10-08T03:48:46.407-04:00","keyed":{"2025-10-08T03:48:46.407-04:00":"date"}}'
 
         cleanup:
         context.close()
