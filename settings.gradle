@@ -589,6 +589,8 @@ include(
         'grails-test-examples-plugins-loadfirst',
         'grails-test-examples-plugins-loadsecond',
         'grails-test-examples-config-report',
+        'grails-test-examples-context-hierarchy',
+        'grails-test-examples-context-hierarchy-cli',
         'grails-test-examples-quartz',
         'grails-test-examples-scaffolding',
         'grails-test-examples-scaffolding-fields',
@@ -636,6 +638,8 @@ project(':grails-test-examples-issue-10279').projectDir = file('grails-test-exam
 project(':grails-test-examples-plugins-exploded').projectDir = file('grails-test-examples/plugins/exploded')
 project(':grails-test-examples-cache').projectDir = file('grails-test-examples/cache')
 project(':grails-test-examples-config-report').projectDir = file('grails-test-examples/config-report')
+project(':grails-test-examples-context-hierarchy').projectDir = file('grails-test-examples/context-hierarchy')
+project(':grails-test-examples-context-hierarchy-cli').projectDir = file('grails-test-examples/context-hierarchy-cli')
 project(':grails-test-examples-scaffolding').projectDir = file('grails-test-examples/scaffolding')
 project(':grails-test-examples-scaffolding-fields').projectDir = file('grails-test-examples/scaffolding-fields')
 project(':grails-test-examples-views-functional-tests').projectDir = file('grails-test-examples/views-functional-tests')

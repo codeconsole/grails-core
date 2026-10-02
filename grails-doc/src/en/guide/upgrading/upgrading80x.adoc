@@ -1463,6 +1463,9 @@ schema migration or diff tools.
 
 Command objects are unaffected: Validateable command-object properties remain non-nullable by default, except for collections and maps, which remain nullable by default.
 
+The exception is a property that a command object imports with `importFrom` from a domain class that declares no `nullable` constraint for it.
+It gets the domain class's nullable default, so it is nullable unless you restore the required-by-default behaviour (below).
+
 To restore the legacy required-by-default behaviour for an entire application, set the new `grails.gorm.default.nullable` property to `false`:
 
 [source,yaml]
