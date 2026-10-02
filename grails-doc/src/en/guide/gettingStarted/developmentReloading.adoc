@@ -86,12 +86,12 @@ Then start each instance with a build directory, a port and a Gradle project cac
 
 [source,shell]
 ----
-./gradlew bootRun -PinstanceBuildDir=build-parent/build-8081 \
-    --project-cache-dir=build-parent/build-8081/.gradle \
+./gradlew bootRun -PinstanceBuildDir=instances/8081/build \
+    --project-cache-dir=instances/8081/.gradle \
     --args='--server.port=8081'
 ----
 
-The project cache (the checkout's `.gradle/` directory) does not move with the build directory, and two builds running at once contend for it, so `--project-cache-dir` gives each build its own.
+The project cache (the checkout's `.gradle/` directory) does not move with the build directory, and two builds running at once contend for it, so `--project-cache-dir` gives each build its own. Keep it beside the build directory, not inside it, or `clean` deletes the project cache of the build running it. Named `build` and `.gradle`, the two stay out of version control, since a generated application's `.gitignore` ignores both names at any depth.
 
 The Grails Gradle plugin tells the application where its build directory is. It passes `grails.project.class.dir`, `grails.project.resource.dir` and `grails.project.target.dir` to `bootRun` and the other forked `JavaExec` and `Test` tasks, so development reloading compiles a changed class and copies a changed message bundle into that instance's build directory, the application reads its resources from there, and each instance keeps its own development restart marker. An `@Integration` test without an `applicationClass` finds the application class next to its own compiled classes, wherever the build directory is.
 
