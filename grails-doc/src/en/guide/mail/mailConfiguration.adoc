@@ -104,15 +104,14 @@ An alternative to disabling email is to use the `overrideAddress` config setting
 grails.mail.overrideAddress = 'test@address.com'
 ----
 
-Two new properties give finer-grained control over address overriding:
+When `overrideAddress` is set, every `to`, `cc` and `bcc` address and the sender are replaced by this value. That includes a `from` set in the `sendMail` closure. `replyTo` and `envelopeFrom` are not changed.
 
-* `grails.mail.overrideToAddress` — overrides all recipient addresses (to, cc, and bcc), and also acts as the default `to` address when none is set in the `sendMail` closure.
-* `grails.mail.overrideFromAddress` — overrides the sender address, including when `from` is set explicitly in the `sendMail` closure, and also acts as the default `from` address when none is set.
+To override only the recipients or only the sender, use `overrideToAddress` or `overrideFromAddress`:
 
-Each specific property falls back to `grails.mail.overrideAddress` when not set.
-When both `overrideAddress` and one of the specific properties are set, the specific property takes precedence for its direction.
+* `grails.mail.overrideToAddress` replaces every `to`, `cc` and `bcc` address. It's also used as the `to` address when the `sendMail` closure doesn't set one.
+* `grails.mail.overrideFromAddress` replaces the sender, including a `from` set in the `sendMail` closure. It's also used as the `from` address when the closure doesn't set one.
 
-Note that `overrideAddress` now also replaces a `from` set explicitly in sendMail. An application that wants to keep its real sender should use `overrideToAddress` in place of `overrideAddress`.
+When `overrideAddress` is set as well, `overrideToAddress` and `overrideFromAddress` take precedence over it.
 
 [source,groovy]
 ----

@@ -4559,17 +4559,11 @@ class BookQueries {
 }
 ----
 
-==== 81. Mail Plugin: `overrideAddress` Split Into Separate To and From Overrides
+==== 81. Mail Plugin: overrideAddress Also Replaces an Explicit Sender
 
-Two new properties give finer-grained control over address overriding:
+`grails.mail.overrideAddress` now also replaces a `from` set in the `sendMail` closure. In Grails 7, it replaced every `to`, `cc` and `bcc` address and the default sender, and an explicit `from` was kept.
 
-* `grails.mail.overrideToAddress` — overrides all recipient addresses (to, cc, and bcc), and also acts as the default `to` address when none is set in the `sendMail` closure.
-* `grails.mail.overrideFromAddress` — overrides the sender address, including when `from` is set explicitly in the `sendMail` closure, and also acts as the default `from` address when none is set.
-
-Each specific property falls back to `grails.mail.overrideAddress` when not set.
-When both `overrideAddress` and one of the specific properties are set, the specific property takes precedence for its direction.
-
-Note that `overrideAddress` now also replaces a `from` set explicitly in sendMail. An application that wants to keep its real sender should use `overrideToAddress` in place of `overrideAddress`.
+To keep the sender your application sets, while still redirecting every recipient, use the new `grails.mail.overrideToAddress` in place of `overrideAddress`:
 
 [source,yaml]
 .application-development.yml
@@ -4579,10 +4573,7 @@ grails:
         overrideToAddress: test-inbox@example.com   # redirect all recipients (to, cc, bcc) only
 ----
 
-[source,yaml]
-.application-development.yml
-----
-grails:
-    mail:
-        overrideFromAddress: noreply@example.com    # fix the sender only
-----
+To set a fixed sender without redirecting recipients, use the new `grails.mail.overrideFromAddress`. See <<mailConfiguration,Mail Configuration>> for how the three properties interact.
+
+
+
