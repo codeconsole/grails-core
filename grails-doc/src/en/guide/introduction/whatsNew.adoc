@@ -112,6 +112,22 @@ See the xref:upgrading#upgrading80x[upgrade guide] for details.
 Unit tests get the same hooks: a test declares its beans in a `beans` block, as an application or plugin does, or overrides `beanRegistrar()`, or declares a static nested `@Configuration` class — and `doWithSpring()` on the testing traits is deprecated to match.
 See <<unitTesting,Unit Testing>>.
 
+==== Fluent Application Builder with Context Hierarchies
+
+`GrailsAppBuilder` is now a complete counterpart of Spring Boot's `SpringApplicationBuilder`. Every builder method returns the Grails builder, the application it runs is a `GrailsApp` with the Grails startup defaults, and a parent/child context hierarchy built with `child()`, `parent()` and `sibling()` starts a `GrailsApp` in every context:
+
+[source,groovy]
+----
+new GrailsAppBuilder(SharedConfiguration)
+        .child(Application)
+        .run(args)
+----
+
+The Grails plugin lifecycle runs in the one context of the hierarchy whose sources include the `Application` class; the other contexts are plain Spring contexts that share the Grails beans through the parent chain, and a second Grails application in the same hierarchy is refused at startup.
+As in Spring Boot, the parent cannot host a web server, so a web application is the child of a shared parent, while a Grails application that serves no web requests, such as a command-line tool built without the web plugins, can be the parent of plain Spring children.
+A Grails application without a web server no longer prints a `Grails application running at ...` line when it starts.
+See <<applicationBuilder,Building the Application>>.
+
 ==== CLI Commands Move to Companion `-cli` Artifacts
 
 Grails commands (`ApplicationCommand` implementations such as the `dbm-*` database-migration
