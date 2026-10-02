@@ -18,6 +18,9 @@
  */
 package org.apache.grails.core.cli
 
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
@@ -54,6 +57,8 @@ class ConfigReportCommand implements ApplicationCommand {
     static final String METADATA_RESOURCE = 'META-INF/spring-configuration-metadata.json'
 
     static final String PLUGIN_DESCRIPTOR_RESOURCE = 'META-INF/grails-plugin.xml'
+
+    static final Pattern GRADLE_CLASSES_DIRECTORY = Pattern.compile('^(file:.*/)classes/[^/]+/([^/]+)/$')
 
     final String description = 'Generates an AsciiDoc report of the application configuration'
 
@@ -329,7 +334,10 @@ class ConfigReportCommand implements ApplicationCommand {
     }
 
     /**
-     * Finds the classpath roots, such as jar files, that contain a Grails plugin descriptor.
+     * Finds the classpath roots, such as jar files, that contain a Grails plugin descriptor. When a plugin is on the
+     * classpath as the output directories of its Gradle build, the descriptor is in the directory of the compiled
+     * classes, such as {@code build/classes/groovy/main}, and the processed resources are in a separate directory,
+     * {@code build/resources/main}, which is a root of the plugin as well.
      *
      * @param classLoader the class loader to search
      * @return the roots of the Grails plugins
@@ -338,7 +346,12 @@ class ConfigReportCommand implements ApplicationCommand {
         Set<String> roots = new HashSet<String>()
         Enumeration<URL> descriptors = classLoader.getResources(PLUGIN_DESCRIPTOR_RESOURCE)
         while (descriptors.hasMoreElements()) {
-            roots.add(resourceRoot(descriptors.nextElement(), PLUGIN_DESCRIPTOR_RESOURCE))
+            String root = resourceRoot(descriptors.nextElement(), PLUGIN_DESCRIPTOR_RESOURCE)
+            roots.add(root)
+            Matcher classesDirectory = GRADLE_CLASSES_DIRECTORY.matcher(root)
+            if (classesDirectory.matches()) {
+                roots.add("${classesDirectory.group(1)}resources/${classesDirectory.group(2)}/".toString())
+            }
         }
         roots
     }

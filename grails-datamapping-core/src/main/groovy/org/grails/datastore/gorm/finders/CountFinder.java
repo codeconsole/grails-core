@@ -37,6 +37,10 @@ import org.grails.datastore.mapping.query.Query;
  * standalone {@code Disjunction} added as one nested criterion the way every other finder's
  * shared {@code buildQuery} does. This divergence is preserved exactly as it existed before this
  * class existed, not unified with the shared grammar's junction-building.
+ *
+ * <p>A trailing argument map is ignored, so {@code max}, {@code offset}, {@code sort} and
+ * {@code order} never page or order the count. Callers can pass the same pagination parameters
+ * to {@code findAllBy*} and {@code countBy*} and still get the total number of matches.
  */
 public class CountFinder implements FinderMethod, QueryBuildingFinder {
 
@@ -126,7 +130,7 @@ public class CountFinder implements FinderMethod, QueryBuildingFinder {
      * handling and the {@code count()} projection to an already-created query. Exposed as a public
      * static helper so other query-building strategies (e.g. {@code grails-datamapping-rx}'s
      * count finder, which builds its query outside a {@link Session}) can reuse this logic rather
-     * than duplicating it.
+     * than duplicating it. The invocation's argument map is not applied to the query.
      *
      * @param invocation The invocation
      * @param clazz The persistent class
@@ -136,7 +140,6 @@ public class CountFinder implements FinderMethod, QueryBuildingFinder {
     public static Query applyCriteriaAndCount(DynamicFinderInvocation invocation, Class<?> clazz, Query query) {
         DynamicFinder.applyAdditionalCriteria(query, invocation.getCriteria());
         DynamicFinder.applyDetachedCriteria(query, invocation.getDetachedCriteria());
-        DynamicFinder.configureQueryWithArguments(clazz, query, invocation.getArguments());
 
         String operatorInUse = invocation.getOperator();
         if (OPERATOR_OR.equals(operatorInUse)) {

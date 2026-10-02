@@ -156,6 +156,43 @@ class CountFinderSpec extends Specification {
         1 * projectionList.count()
     }
 
+    @Unroll
+    void "invoke ignores the trailing argument map #arguments for #methodName"() {
+        given:
+        Query.ProjectionList projectionList = Mock(Query.ProjectionList)
+        Query query = Mock(Query) {
+            getEntity() >> persistentEntity
+            projections() >> projectionList
+            disjunction() >> Stub(Query.Junction)
+            singleResult() >> 5L
+        }
+        Session session = Stub(Session) {
+            createQuery(FinderTestEntity) >> query
+        }
+        datastore.hasCurrentSession() >> true
+        datastore.getCurrentSession() >> session
+
+        when:
+        Object result = countFinder.invoke(FinderTestEntity, methodName, (finderArguments + [arguments]) as Object[])
+
+        then:
+        result == 5L
+        1 * projectionList.count()
+        0 * query.max(_)
+        0 * query.offset(_)
+        0 * query.order(_)
+        0 * query.cache(_)
+        0 * query.lock(_)
+
+        where:
+        methodName          | finderArguments | arguments
+        'countByName'       | ['Bob']         | [max: 2, offset: 3]
+        'countByName'       | ['Bob']         | [sort: 'name', order: 'desc']
+        'countByName'       | ['Bob']         | [sort: 'nope']
+        'countByName'       | ['Bob']         | [cache: true, lock: true]
+        'countByNameOrName' | ['Bob', 'Ann']  | [max: 2, offset: 3, sort: 'name']
+    }
+
     void "invoke(Class, methodName, DetachedCriteria, Object[]) merges the detached criteria onto the built query"() {
         given:
         // Called reflectively (dynamic Groovy dispatch, not part of FinderMethod) by
