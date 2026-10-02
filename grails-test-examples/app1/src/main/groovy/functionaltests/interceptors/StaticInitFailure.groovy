@@ -16,21 +16,18 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package functionaltests.interceptors
 
-package undertowapp
+import groovy.transform.CompileStatic
 
-class UrlMappings {
+/**
+ * The cause of the simulated class initialization failure. The {@code "500"} URL mapping matches on the
+ * root cause, so this type routes the failure to {@link ErrorPageController}.
+ */
+@CompileStatic
+class StaticInitFailure extends RuntimeException {
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?" {
-            constraints {
-            }
-        }
-
-        "/"(view: "/index")
-        "500"(view: '/error')
-        "500"(controller: 'errorPage', action: 'handle', exception: StaticInitFailure)
-        "413"(controller: 'upload', action: 'tooLarge')
-        "404"(view: '/notFound')
+    StaticInitFailure(String message) {
+        super(message)
     }
 }
