@@ -73,6 +73,8 @@ grails:
         overrideFromAddress: noreply@myorg.com     # fix the sender only
 ----
 
+The advantage of this mechanism is that it allows you to test using a real SMTP server. The disadvantage is that it requires a real SMTP server and makes it difficult to test address determination logic.
+
 ==== Using an in-memory SMTP server
 
 The preferred approach is to run an in-memory SMTP server (such as https://greenmail-mail-test.github.io/greenmail/[GreenMail]) inside your application. This allows you to fully exercise your email-sending code and to inspect sent email to assert correct values for recipient addresses and so on.

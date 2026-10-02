@@ -674,3 +674,23 @@ The controller and action captured from the URL are validated as they are for an
 mapping. Because the controller is not known until a request is matched, the URL must capture it and
 child resources cannot be nested within the mapping. See
 link:theWebLayer.html#restfulMappings[Mapping to REST resources].
+
+==== Separate Recipient and Sender Overrides for Mail
+
+The Mail plugin can now override the recipients and the sender of outgoing mail separately.
+`grails.mail.overrideToAddress` replaces every `to`, `cc` and `bcc` address and keeps the sender the
+application sets, and `grails.mail.overrideFromAddress` replaces the sender without redirecting the
+recipients:
+
+[source,yaml]
+.application-test.yml
+----
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com
+----
+
+`grails.mail.overrideAddress` still replaces both, and the two new properties take precedence over it when
+both are set. It now also replaces a `from` set in the `sendMail` closure. See
+link:mail.html#mailConfiguration[Mail Configuration], and the link:upgrading.html#upgrading80x[upgrade guide]
+for what this means for an application that sets `overrideAddress`.
