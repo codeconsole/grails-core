@@ -26,22 +26,7 @@ class BuildSettingsSpec extends Specification {
     @TempDir
     File tmp
 
-    void 'a resources directory is #description'() {
-        given:
-        File baseDir = new File('/app')
-        File targetDir = new File(baseDir, 'build')
-
-        expect:
-        BuildSettings.resourcesDir(fromSystem, baseDir, targetDir) == expected
-
-        where:
-        description                                                 | fromSystem                                     | expected
-        'joined to the application when relative'                   | 'build-parent/build-8070/resources/main'       | new File('/app/build-parent/build-8070/resources/main')
-        'kept as it is when absolute'                               | new File('/elsewhere/res').absolutePath        | new File('/elsewhere/res').absoluteFile
-        'the target directory\'s resources/main without a property'  | null                                           | new File('/app/build/resources/main')
-    }
-
-    void 'a relative resources directory is the application\'s, whatever the working directory: #fromSystem'() {
+    void 'the resources directory is #description, whatever the working directory'() {
         given: 'an application, and a working directory next to it, as a build that sets workingDir has'
         File app = new File(tmp, 'app')
         new File(app, 'grails-app').mkdirs()
@@ -49,17 +34,21 @@ class BuildSettingsSpec extends Specification {
         new File(app, 'build/resources/main').mkdirs()
         File elsewhere = new File(tmp, 'elsewhere')
         elsewhere.mkdirs()
+        File absolute = new File(tmp, 'resources')
+        absolute.mkdirs()
+        String fromSystem = property == null ? null : "-Dgrails.project.resource.dir=${property.replace('<absolute>', absolute.absolutePath)}"
 
         when:
         Map<String, String> printed = printBuildSettings(elsewhere, "-Dbase.dir=${app.absolutePath}", fromSystem)
 
         then:
-        printed.RESOURCES_DIR == new File(app, expected).canonicalPath
+        printed.RESOURCES_DIR == (expected == '<absolute>' ? absolute : new File(app, expected)).canonicalPath
 
         where:
-        fromSystem                                                                   | expected
-        '-Dgrails.project.resource.dir=build-parent/build-8070/resources/main'       | 'build-parent/build-8070/resources/main'
-        null                                                                         | 'build/resources/main'
+        description                                        | property                                 | expected
+        'the application\'s when the property is relative' | 'build-parent/build-8070/resources/main' | 'build-parent/build-8070/resources/main'
+        'the property when it is absolute'                 | '<absolute>'                             | '<absolute>'
+        'the application\'s build/ without the property'   | null                                     | 'build/resources/main'
     }
 
     private static Map<String, String> printBuildSettings(File workingDir, String... properties) {

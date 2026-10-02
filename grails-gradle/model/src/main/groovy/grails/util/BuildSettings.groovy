@@ -350,7 +350,7 @@ class BuildSettings {
      * @param targetDir the target directory
      * @return the resources directory
      */
-    static File resourcesDir(String fromSystem, File baseDir, File targetDir) {
+    private static File resourcesDir(String fromSystem, File baseDir, File targetDir) {
         if (!fromSystem) {
             return new File(targetDir, 'resources/main')
         }
