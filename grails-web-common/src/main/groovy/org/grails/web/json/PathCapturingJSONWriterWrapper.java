@@ -70,6 +70,20 @@ public class PathCapturingJSONWriterWrapper extends JSONWriter {
     }
 
     @Override
+    public void writeNested(Runnable writeValue) {
+        Stack<PathElement> outerPath = pathStack;
+        pathStack = new Stack<>();
+        pathStack.addAll(outerPath);
+        pathStack.push(new NestedElement(delegate.nestedPath()));
+        try {
+            delegate.writeNested(writeValue);
+        }
+        finally {
+            pathStack = outerPath;
+        }
+    }
+
+    @Override
     public void comma() {
         if (log.isDebugEnabled()) {
             if (debugCurrentStack) log.debug("{} > >> {}", delegate.mode.name(), getCurrentStrackReference());
@@ -272,11 +286,21 @@ public class PathCapturingJSONWriterWrapper extends JSONWriter {
 
         if (delegate.mode == Mode.ARRAY) {
             pushNextIndex();
+            delegate.value(o);
         }
-        else if (!pathStack.isEmpty()) {
-            pathStack.pop();
+        else if (o instanceof JsonMapperValue) {
+            // the key stays on the path while the values nested in the value are written
+            delegate.value(o);
+            if (!pathStack.isEmpty()) {
+                pathStack.pop();
+            }
         }
-        delegate.value(o);
+        else {
+            if (!pathStack.isEmpty()) {
+                pathStack.pop();
+            }
+            delegate.value(o);
+        }
         return this;
     }
 
@@ -294,6 +318,19 @@ public class PathCapturingJSONWriterWrapper extends JSONWriter {
         @Override
         public String toString() {
             return "." + property;
+        }
+    }
+
+    private class NestedElement extends PathElement {
+        private final String path;
+
+        private NestedElement(String path) {
+            this.path = path;
+        }
+
+        @Override
+        public String toString() {
+            return path;
         }
     }
 

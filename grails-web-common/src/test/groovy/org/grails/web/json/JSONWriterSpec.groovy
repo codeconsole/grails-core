@@ -18,11 +18,17 @@
  */
 package org.grails.web.json
 
+import java.util.function.Predicate
+
 import groovy.transform.CompileStatic
 import spock.lang.Issue
 import spock.lang.Specification
+import tools.jackson.core.JsonGenerator
+import tools.jackson.databind.SerializationContext
 import tools.jackson.databind.cfg.DateTimeFeature
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.module.SimpleModule
+import tools.jackson.databind.ser.std.StdSerializer
 
 class JSONWriterSpec extends Specification {
 
@@ -31,6 +37,9 @@ class JSONWriterSpec extends Specification {
     JsonMapperSupport jsonMapper = new JsonMapperSupport(JsonMapper.builder().build())
 
     JSONWriter writer = new JSONWriter(out, jsonMapper, false)
+
+    JsonMapperSupport boxes = new JsonMapperSupport(JsonMapper.builder()
+            .addModule(new SimpleModule().addSerializer(Box, new BoxSerializer())).build())
 
     @Issue('GRAILS-10823')
     void 'Test rendering a forward slash'() {
@@ -196,5 +205,97 @@ class JSONWriterSpec extends Specification {
 
         then:
         thrown(JSONException)
+    }
+
+    void "a value nested in a JsonMapperValue is written by its nested value writer, and the writer then carries on"() {
+        given: 'a nested value writer for maps'
+        def writer = new JSONWriter(out, boxes, false)
+        def nested = { Object value ->
+            if (value instanceof Map) {
+                writer.writeNested { writer.object().key('size').value(value.size()).endObject() }
+                return true
+            }
+            false
+        } as Predicate<Object>
+
+        when:
+        writer.object()
+                .key('map').value(new JsonMapperValue(new Box(content: [a: 1, b: 2]), boxes, nested))
+                .key('date').value(new JsonMapperValue(new Box(content: new Date(0L)), boxes, nested))
+                .key('after').value(1)
+                .endObject()
+
+        then: 'the map is written by the nested value writer, and the date by the mapper'
+        out.toString() == '{"map":{"content":{"size":2}},"date":{"content":"1970-01-01T00:00:00.000Z"},"after":1}'
+    }
+
+    void "a nested value writer must write one complete value"() {
+        given:
+        def writer = new JSONWriter(out, boxes, false)
+        def nested = { Object value ->
+            writer.writeNested { writer.object().key('a') }
+            true
+        } as Predicate<Object>
+
+        when:
+        writer.object().key('box').value(new JsonMapperValue(new Box(content: [a: 1]), boxes, nested))
+
+        then:
+        thrown(JSONException)
+    }
+
+    void "a JsonMapperValue of another mapper is written without its nested value writer"() {
+        given:
+        def nested = { Object value -> throw new AssertionError("offered $value") } as Predicate<Object>
+
+        when:
+        writer.array().value(new JsonMapperValue(new Box(content: [a: 1]), boxes, nested)).endArray()
+
+        then:
+        out.toString() == '[{"content":{"a":1}}]'
+    }
+
+    void "a PathCapturingJSONWriterWrapper tracks the path of a nested value through the mapper's output"() {
+        given:
+        def wrapper = new PathCapturingJSONWriterWrapper(new JSONWriter(out, boxes, false))
+        String path = null
+        def nested = { Object value ->
+            wrapper.writeNested {
+                wrapper.object().key('x')
+                path = wrapper.currentStrackReference
+                wrapper.value(1).endObject()
+            }
+            true
+        } as Predicate<Object>
+
+        when:
+        wrapper.object().key('list').array()
+                .value(1)
+                .value(new JsonMapperValue(new Box(content: [a: 1]), boxes, nested))
+                .endArray()
+                .endObject()
+
+        then:
+        path == '.list[1].content.x'
+        out.toString() == '{"list":[1,{"content":{"x":1}}]}'
+    }
+}
+
+class Box {
+    Object content
+}
+
+class BoxSerializer extends StdSerializer<Box> {
+
+    BoxSerializer() {
+        super(Box)
+    }
+
+    @Override
+    void serialize(Box box, JsonGenerator generator, SerializationContext context) {
+        generator.writeStartObject()
+        generator.writeName('content')
+        generator.writePOJO(box.content)
+        generator.writeEndObject()
     }
 }

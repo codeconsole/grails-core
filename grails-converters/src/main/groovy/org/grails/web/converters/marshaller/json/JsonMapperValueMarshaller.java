@@ -36,6 +36,10 @@ import org.grails.web.json.JsonMapperValue;
  * so those never see such a value, and behind any marshaller an application registers, which takes precedence for the
  * types it supports.
  *
+ * <p>A value nested in a value the mapper writes, such as a property that a Jackson module's serializer writes with
+ * {@code JsonGenerator#writePOJO}, is rendered by the converter as any other value is, so marshallers apply to it.
+ * Only the values the converter would render with the mapper anyway are left to the mapper.
+ *
  * @since 9.0
  */
 public class JsonMapperValueMarshaller implements ObjectMarshaller<JSON> {
@@ -46,10 +50,32 @@ public class JsonMapperValueMarshaller implements ObjectMarshaller<JSON> {
 
     public void marshalObject(Object object, JSON converter) throws ConverterException {
         try {
-            converter.getWriter().value(new JsonMapperValue(object, converter.getJsonMapper()));
+            converter.getWriter().value(new JsonMapperValue(object, converter.getJsonMapper(),
+                    nested -> writeNested(nested, converter)));
         }
         catch (JSONException e) {
-            throw new ConverterException(e);
+            throw converterException(e);
         }
+    }
+
+    private static boolean writeNested(Object nested, JSON converter) {
+        if (converter.lookupObjectMarshaller(nested) instanceof JsonMapperValueMarshaller) {
+            return false;
+        }
+        converter.getWriter().writeNested(() -> converter.convertAnother(nested));
+        return true;
+    }
+
+    /**
+     * A failure to render a nested value reaches here wrapped by the serializers it was nested in; it is reported as
+     * the converter reported it.
+     */
+    private static ConverterException converterException(JSONException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConverterException converterException) {
+                return converterException;
+            }
+        }
+        return new ConverterException(e);
     }
 }

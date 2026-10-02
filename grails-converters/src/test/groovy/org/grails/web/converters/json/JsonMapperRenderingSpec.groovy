@@ -128,25 +128,97 @@ class JsonMapperRenderingSpec extends Specification {
         context.close()
     }
 
-    void "a type a Jackson module serializes renders with its serializer, including the values it writes, unless a marshaller is registered for the type"() {
+    void "a type a Jackson module serializes renders with its serializer, and the values it writes as the converter renders them"() {
         given: 'a JsonMapper with a module serializer for Wrapper, and a marshaller registered for Secret'
-        def context = applicationContext {
-            it.registerBean(JsonMapper, {
-                JsonMapper.builder().addModule(new SimpleModule().addSerializer(Wrapper, new WrapperSerializer())).build()
-            })
-        }
+        def context = moduleContext()
         initialize([:], context)
         JSON.registerObjectMarshaller(Secret) { Secret secret -> '***' }
+        def wrapper = new Wrapper(inner: new Secret(value: 'hidden'))
 
-        expect: 'the marshaller renders a Secret that Grails renders, but not one that the module serializer writes'
-        new JSON([wrapper: new Wrapper(inner: new Secret(value: 'hidden')), secret: new Secret(value: 'hidden')]).toString() ==
-                '{"wrapper":{"inner":{"value":"hidden"}},"secret":"***"}'
+        expect: 'the marshaller renders the Secret the module serializer writes'
+        new JSON([wrapper: wrapper, secret: new Secret(value: 'hidden')]).toString() ==
+                '{"wrapper":{"inner":"***","others":[]},"secret":"***"}'
+
+        and: 'the application JsonMapper itself is not changed'
+        context.getBean(JsonMapper).writeValueAsString(wrapper) == '{"inner":{"value":"hidden"},"others":[]}'
 
         when: 'a marshaller is registered for Wrapper as well'
-        JSON.registerObjectMarshaller(Wrapper) { Wrapper wrapper -> [inner: wrapper.inner] }
+        JSON.registerObjectMarshaller(Wrapper) { Wrapper it -> [secret: it.inner] }
 
-        then: 'it takes precedence over the module serializer, so the Secret marshaller applies inside it'
-        new JSON([wrapper: new Wrapper(inner: new Secret(value: 'hidden'))]).toString() == '{"wrapper":{"inner":"***"}}'
+        then: 'it takes precedence over the module serializer'
+        new JSON([wrapper: wrapper]).toString() == '{"wrapper":{"secret":"***"}}'
+
+        cleanup:
+        context.close()
+    }
+
+    void "every value a module serializer writes renders as the converter renders it, and values of the mapper's types as the mapper does"() {
+        given:
+        def context = moduleContext()
+        initialize([:], context)
+        JSON.registerObjectMarshaller(Secret) { Secret secret -> '***' }
+        def wrapper = new Wrapper(inner: Labelled.ONE,
+                others: [new Secret(value: 'hidden'), [role: Role.HEAD, labelled: Labelled.ONE], new Date(0L), null, new Point(1, 2)])
+
+        expect: 'enums by name, a map by the map marshaller, a date by the mapper'
+        new JSON([wrapper: wrapper]).toString() ==
+                '{"wrapper":{"inner":"ONE","others":["***",{"role":"HEAD","labelled":"ONE"},"1970-01-01T00:00:00.000Z",null,{"x":1,"y":2}]}}'
+
+        cleanup:
+        context.close()
+    }
+
+    void "with the #behaviour circular reference behaviour, a cycle through a module serializer renders as #description"() {
+        given: 'a cycle nested in a value that a module serializer writes'
+        def context = moduleContext()
+        initialize(['grails.converters.json.circular.reference.behaviour': behaviour], context)
+        def parent = new Node(name: 'parent')
+        parent.children = [new Node(name: 'child', parent: parent)]
+
+        expect:
+        JSON.parse(new JSON([count: 1, wrapper: new Wrapper(others: [parent])]).toString()).wrapper.others[0].children[0].parent == expected
+
+        cleanup:
+        context.close()
+
+        where:
+        behaviour     | description            || expected
+        'DEFAULT'     | 'a relative reference' || [_ref: '../..', class: Node.name]
+        'PATH'        | 'a path from the root' || [ref: 'root.wrapper.others[0]', class: Node.name]
+        'INSERT_NULL' | 'null'                 || null
+    }
+
+    void "with the PATH circular reference behaviour, a reference through a module serializer has the path of the value it writes"() {
+        given:
+        def context = moduleContext()
+        initialize(['grails.converters.json.circular.reference.behaviour': 'PATH'], context)
+        def parent = new Node(name: 'parent')
+        parent.children = [new Node(name: 'child', parent: parent)]
+
+        when:
+        def json = JSON.parse(new JSON([wrapper: new Wrapper(inner: parent, others: ['first', parent])]).toString()).wrapper
+
+        then: 'a reference below a named value, and below a value after another in an array'
+        json.inner.children[0].parent == [ref: 'root.wrapper.inner', class: Node.name]
+        json.others[1].children[0].parent == [ref: 'root.wrapper.others[1]', class: Node.name]
+
+        cleanup:
+        context.close()
+    }
+
+    void "a failure to render a value a module serializer writes is reported as the converter reports it"() {
+        given:
+        def context = moduleContext()
+        initialize(['grails.converters.json.circular.reference.behaviour': 'EXCEPTION'], context)
+        def parent = new Node(name: 'parent')
+        parent.children = [new Node(name: 'child', parent: parent)]
+
+        when:
+        new JSON(new Wrapper(inner: parent)).render(new StringWriter())
+
+        then:
+        def e = thrown(ConverterException)
+        e.message == "Circular Reference detected: class ${Node.name}"
 
         cleanup:
         context.close()
@@ -301,6 +373,14 @@ class JsonMapperRenderingSpec extends Specification {
         new ConvertersConfigurationInitializer(grailsApplication: grailsApplication, applicationContext: applicationContext).initialize()
     }
 
+    private static GenericApplicationContext moduleContext() {
+        applicationContext {
+            it.registerBean(JsonMapper, {
+                JsonMapper.builder().addModule(new SimpleModule().addSerializer(Wrapper, new WrapperSerializer())).build()
+            })
+        }
+    }
+
     private static GenericApplicationContext applicationContext(Closure registrations) {
         def context = new GenericApplicationContext()
         context.registerBean(ProxyHandler, { new DefaultProxyHandler() })
@@ -382,7 +462,8 @@ class Secret {
 }
 
 class Wrapper {
-    Secret inner
+    Object inner
+    List<Object> others = []
 }
 
 class WrapperSerializer extends StdSerializer<Wrapper> {
@@ -396,6 +477,10 @@ class WrapperSerializer extends StdSerializer<Wrapper> {
         generator.writeStartObject()
         generator.writeName('inner')
         generator.writePOJO(wrapper.inner)
+        generator.writeName('others')
+        generator.writeStartArray()
+        wrapper.others.each { generator.writePOJO(it) }
+        generator.writeEndArray()
         generator.writeEndObject()
     }
 }

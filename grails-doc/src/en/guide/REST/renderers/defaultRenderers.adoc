@@ -101,10 +101,9 @@ JSON.registerObjectMarshaller(Date) { Date date ->
 }
 ----
 
-A value that the mapper writes is written by the mapper completely. When a serializer that a Jackson module provides
-writes other values, such as the properties of its type, those values render as the mapper renders them, and object
-marshallers do not apply to them. To render such a value differently, configure the mapper for its type, for example
-with a `@JacksonComponent` serializer, or register an object marshaller for the outer type.
+A serializer that a Jackson module provides, such as a `@JacksonComponent`, renders its type. The values that it writes,
+such as the properties of its type, are rendered as any other value is, so object marshallers apply to them, and an
+object marshaller registered for the type itself takes precedence over the serializer.
 
 Setting `grails.converters.json.date` to `javascript` renders `java.util.Date` values as JavaScript `new Date(...)`
 constructors instead.

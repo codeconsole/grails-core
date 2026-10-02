@@ -23,6 +23,7 @@ import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 import java.util.stream.BaseStream;
 
 import tools.jackson.core.JsonGenerator;
@@ -52,6 +53,10 @@ import tools.jackson.databind.util.TokenBuffer;
  * classes, beans, records, enums, collections, maps, arrays and {@code Optional}, so the values they contain are
  * rendered as any other value is. The JSON text is written through {@link HtmlSafeJsonWriter}.
  *
+ * <p>JSON is written with a copy of the mapper whose serializers offer the values nested in a value they write, such
+ * as a property that a module's serializer writes, to the nested value writer the value is written with
+ * ({@link #writeValue(JsonGenerator, Object, Predicate)}), so that Grails marshallers render those values as well.
+ *
  * @since 9.0
  */
 public final class JsonMapperSupport {
@@ -62,6 +67,8 @@ public final class JsonMapperSupport {
     public static final JsonMapperSupport DEFAULT = new JsonMapperSupport(JsonMapper.builder().build());
 
     private final JsonMapper mapper;
+
+    private final JsonMapper writingMapper;
 
     private final ClassValue<Boolean> rendersValue = new ClassValue<>() {
         @Override
@@ -87,10 +94,11 @@ public final class JsonMapperSupport {
      */
     public JsonMapperSupport(JsonMapper mapper) {
         this.mapper = Objects.requireNonNull(mapper, "mapper cannot be null");
+        this.writingMapper = mapper.rebuild().addModule(NestedValueSerializer.module()).build();
     }
 
     /**
-     * @return the mapper JSON is written with
+     * @return the mapper JSON is written with, whose configuration and modules apply
      */
     public JsonMapper getMapper() {
         return mapper;
@@ -105,7 +113,7 @@ public final class JsonMapperSupport {
      * @return a generator writing to {@code out}
      */
     public JsonGenerator createGenerator(Writer out, boolean prettyPrint) {
-        ObjectWriter writer = (prettyPrint ? mapper.writerWithDefaultPrettyPrinter() : mapper.writer())
+        ObjectWriter writer = (prettyPrint ? writingMapper.writerWithDefaultPrettyPrinter() : writingMapper.writer())
                 .without(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .without(StreamWriteFeature.FLUSH_PASSED_TO_STREAM);
         return writer.createGenerator(new HtmlSafeJsonWriter(out));
@@ -132,6 +140,21 @@ public final class JsonMapperSupport {
      */
     public void writeValue(JsonGenerator generator, Object value) {
         generator.writePOJO(value);
+    }
+
+    /**
+     * Writes a value with the mapper, as a value inside the JSON document the generator is writing, and offers each
+     * value nested in it, such as a property that a module's serializer writes with
+     * {@link JsonGenerator#writePOJO(Object)}, to a nested value writer first. The writer either writes the nested value
+     * to the generator, as one complete JSON value, and returns {@code true}, or returns {@code false} for the mapper to
+     * write it.
+     *
+     * @param generator a generator created by {@link #createGenerator(Writer, boolean)}
+     * @param value the value
+     * @param nestedValueWriter the nested value writer
+     */
+    public void writeValue(JsonGenerator generator, Object value, Predicate<Object> nestedValueWriter) {
+        NestedValueSerializer.write(generator, value, nestedValueWriter);
     }
 
     /**

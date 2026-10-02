@@ -20,11 +20,13 @@ package org.grails.web.json;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.function.Predicate;
 
 /**
  * A value for a {@link JSONWriter} to write with a {@link JsonMapperSupport}'s mapper. A {@code JSONWriter} with the
- * same mapper streams it to its generator. Anywhere else, it is written as any {@link JSONElement} is: the JSON text
- * the mapper writes for the value.
+ * same mapper streams it to its generator, and offers the values nested in it to the value's nested value writer (see
+ * {@link JsonMapperSupport#writeValue(tools.jackson.core.JsonGenerator, Object, Predicate)}). Anywhere else, it is
+ * written as any {@link JSONElement} is: the JSON text the mapper writes for the value.
  *
  * @since 9.0
  */
@@ -34,13 +36,26 @@ public final class JsonMapperValue implements JSONElement {
 
     private final JsonMapperSupport jsonMapper;
 
+    private final Predicate<Object> nestedValueWriter;
+
     /**
      * @param value the value to write
      * @param jsonMapper the mapper to write it with
      */
     public JsonMapperValue(Object value, JsonMapperSupport jsonMapper) {
+        this(value, jsonMapper, nested -> false);
+    }
+
+    /**
+     * @param value the value to write
+     * @param jsonMapper the mapper to write it with
+     * @param nestedValueWriter writes a value nested in the value, as one complete JSON value, and returns {@code true},
+     *        or returns {@code false} for the mapper to write it
+     */
+    public JsonMapperValue(Object value, JsonMapperSupport jsonMapper, Predicate<Object> nestedValueWriter) {
         this.value = value;
         this.jsonMapper = jsonMapper;
+        this.nestedValueWriter = nestedValueWriter;
     }
 
     /**
@@ -52,6 +67,10 @@ public final class JsonMapperValue implements JSONElement {
 
     JsonMapperSupport getJsonMapper() {
         return jsonMapper;
+    }
+
+    Predicate<Object> getNestedValueWriter() {
+        return nestedValueWriter;
     }
 
     @Override

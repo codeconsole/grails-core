@@ -75,6 +75,8 @@ public class JSONWriter {
 
     private Stack<Mode> stack = new Stack<>();
 
+    private int nesting;
+
     /**
      * The writer that will receive the output.
      */
@@ -339,7 +341,7 @@ public class JSONWriter {
             return valueNull();
         }
         if (o instanceof JsonMapperValue mapperValue && mapperValue.getJsonMapper() == jsonMapper) {
-            return write(() -> jsonMapper.writeValue(generator, mapperValue.getValue()), o);
+            return write(() -> jsonMapper.writeValue(generator, mapperValue.getValue(), mapperValue.getNestedValueWriter()), o);
         }
         if (o instanceof Number number) {
             return value(number);
@@ -357,6 +359,44 @@ public class JSONWriter {
             return write(() -> generator.writeString(o.toString()), o);
         }
         return write(() -> generator.writeRawValue(quoted(o)), o);
+    }
+
+    /**
+     * Writes a value nested in a {@link JsonMapperValue} that this writer is writing, such as a value that a Jackson
+     * serializer writes with {@link JsonGenerator#writePOJO(Object)}, from the value's nested value writer. The writer
+     * accepts one value, as at the start of a JSON text, and then returns to the state it was in.
+     *
+     * @param writeValue writes one value to this writer
+     * @throws JSONException if {@code writeValue} does not write one complete value
+     * @since 9.0
+     */
+    public void writeNested(Runnable writeValue) {
+        Mode outerMode = this.mode;
+        Stack<Mode> outerStack = this.stack;
+        boolean outerComma = this.comma;
+        this.mode = INIT;
+        this.stack = new Stack<>();
+        this.nesting++;
+        try {
+            writeValue.run();
+            if (this.mode != DONE) {
+                throw new JSONException("Incomplete nested value: expected mode of DONE but was " + this.mode);
+            }
+        }
+        finally {
+            this.mode = outerMode;
+            this.stack = outerStack;
+            this.comma = outerComma;
+            this.nesting--;
+        }
+    }
+
+    /**
+     * The location of the nested value that {@link #writeNested(Runnable)} is about to write, relative to the
+     * {@link JsonMapperValue} it is nested in, such as {@code .inner} or {@code [0]}.
+     */
+    String nestedPath() {
+        return generator != null ? NestedValueSerializer.nestedPath(generator) : "";
     }
 
     /**
@@ -393,7 +433,7 @@ public class JSONWriter {
      * and returns its buffers to Jackson.
      */
     private void closeIfDone() {
-        if (this.mode == DONE) {
+        if (this.mode == DONE && this.nesting == 0) {
             generate(generator::close);
         }
     }
