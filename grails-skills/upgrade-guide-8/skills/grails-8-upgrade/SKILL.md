@@ -263,6 +263,12 @@ The HTML codec uses XML-safe escaping when `grails.views.gsp.htmlcodec` is not s
 - Without the setting, non-ASCII characters are no longer written as named entities (`é` instead of `&eacute;`), and `@`, the backslash and the backtick are escaped. Update tests that compare escaped markup exactly.
 - Set `grails.views.gsp.htmlcodec: html4` only where pages are served in a character set that relies on the named entities, such as ISO-8859-1.
 
+An interceptor's `model` returns the map that an action passed to `render(template: ..., model: ...)` instead of `null`.
+
+- The template is already rendered when `after()` runs. Changing the map has no effect on the response, and changing an immutable map throws `UnsupportedOperationException`.
+- Review interceptors that check `model != null`, or use `model?.`, before changing the model. That code now also runs for template renders.
+- Objects passed with `bean` or `collection` are not part of `model`.
+
 ## Asset Pipeline Wildcard Paths
 
 Grails 8 uses asset-pipeline 5.2, where a `%` or `*` component of an asset path, in a `require` directive, an `<asset:...>` tag, or a Sass import, stands for exactly one directory wherever the asset is found.

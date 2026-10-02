@@ -56,47 +56,35 @@ boolean after() {
 }
 ----
 
-NOTE: The ability to modify the model and redirect rendering in `after()` applies when the controller renders a *view* (e.g. `render(view: 'myView', model: [...])`). In that case Spring MVC defers the actual rendering until after `after()` returns, so any changes you make to `model` or `view` are reflected in the final response.
+When an action renders a view, for example with `render(view: ...)`, `respond`, or by returning a model, the view is rendered after `after()` returns, so changes to `model` and `view` take effect.
 
-When a controller renders a *template* directly (e.g. `render(template: 'myTemplate', model: [...])`), the template is processed and the response is written immediately inside the controller's `render()` call — before `after()` is invoked. In this case `after()` can still *read* the model that was passed to the template via the `model` property, but any modifications made to it will not affect the already-rendered response.
+When an action calls `render(template: ..., model: ...)`, the template is rendered during that call, before `after()` runs. The `model` property returns the map passed as `model`, so `after()` can inspect what was rendered, but it cannot change the response: changes to `model` or `view` have no effect, and returning `false` does not stop the response. The map is the instance the action passed, so modifying it changes the action's map, and modifying an immutable map throws an `UnsupportedOperationException`.
 
 [source,groovy]
 ----
 // BookController.groovy
 def show() {
     render template: 'bookDetail', model: [book: Book.get(params.id)]
-    // ^^^ template is rendered and response written here, before after() runs
 }
 
 // BookInterceptor.groovy
 boolean after() {
-    // model.book is readable — it was stored on the request by the controller
-    log.debug "Rendered book: ${model.book?.title}"
-
-    // This change has NO effect on the already-rendered response:
-    model.extra = "too late"
-
+    log.debug "Rendered book: ${model?.book?.title}"
     true
 }
 ----
 
-For render template:, model is read-only information about what was rendered, and changing model or view in after() has no effect.
-
-Note: that `bean:` and `collection:` renders still return null, or only part of the model:
+Only the `model` argument is available. An object passed with `bean` or `collection` is not part of `model`:
 
 [cols="1,1", options="header"]
 |===
-| Controller call | model in after()
+| Action code | `model` in `after()`
 
-| render template: 't', model: [a: 1]
-| [a: 1]
-| render template: 't', bean: book
-| null
-| render template: 't', collection: books
-| null
-| render template: 't', bean: book, model: [a: 1]
-| [a: 1] (no book)
+| `render template: 't', model: [a: 1]` | `[a: 1]`
+| `render template: 't', bean: book, model: [a: 1]` | `[a: 1]`
+| `render template: 't', bean: book` | `null`
+| `render template: 't', collection: books` | `null`
+| `render template: 't'` | `null`
 |===
-
 
 The `afterView` method is executed after view rendering completes. If an exception occurs, the exception is available using the `throwable` property of the link:{api}grails/artefact/Interceptor.html[Interceptor] trait.

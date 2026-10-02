@@ -140,9 +140,13 @@ trait Interceptor implements ResponseRenderer, ResponseRedirector, RequestForwar
     }
 
     /**
-     * @return `null` when neither `MODEL_AND_VIEW` nor `TEMPLATE_MODEL` is set;
-     *         `TEMPLATE_MODEL` map when no `ModelAndView` is present;
-     *         `modelAndView.modelMap` when a `ModelAndView` is present (existing behavior, verify it still works).
+     * Returns the model of the current request.
+     *
+     * <p>If the action produced a {@link ModelAndView}, its model is returned. Otherwise, if the action called
+     * {@code render(template: ..., model: ...)}, the map passed as {@code model} is returned. The template has
+     * already been rendered at that point, so changes to the map do not affect the response.
+     *
+     * @return The current model, or {@code null} if there is none
      */
     @Generated
     Map<String, Object> getModel() {
