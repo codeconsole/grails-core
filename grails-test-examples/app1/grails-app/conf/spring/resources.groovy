@@ -17,8 +17,10 @@
  *  under the License.
  */
 
+import functionaltests.interceptors.StaticInitFailureFilter
 import org.example.MyBean
 import org.grails.spring.context.support.PluginAwareResourceBundleMessageSource
+import org.springframework.boot.web.servlet.FilterRegistrationBean
 // Place your Spring DSL code here
 beans = {
 	myBean(MyBean)
@@ -27,5 +29,9 @@ beans = {
 		fallbackToSystemLocale = false
 		defaultEncoding = 'UTF-8'
 		basenames = ['overrides', 'i18n-extra/external', 'messages']
+	}
+	staticInitFailureFilter(FilterRegistrationBean) {
+		filter = new StaticInitFailureFilter()
+		urlPatterns = ['/staticInitFailure/*']
 	}
 }
