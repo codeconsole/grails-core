@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
+import java.util.concurrent.atomic.AtomicBoolean
 
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.context.support.StaticMessageSource
@@ -37,6 +38,7 @@ import org.springframework.validation.Errors
 import org.springframework.validation.FieldError
 import org.springframework.validation.ObjectError
 
+import grails.converters.JSON
 import grails.core.DefaultGrailsApplication
 import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsWebMockUtil
@@ -394,6 +396,61 @@ class DefaultJsonRendererSpec extends Specification {
             arguments[2].body.write('{"status":400}'.bytes)
         }
         webRequest.response.status == 400
+    }
+
+    void 'without a Spring JSON setting the Spring converters write the response'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([65, 66] as byte[], new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString == '"QUI="'
+        !renderer.legacyFallbackReported.get()
+    }
+
+    void 'without a Spring JSON setting a registered JSON marshaller keeps the legacy converter'() {
+        given:
+        JSON.registerObjectMarshaller(ProjectionBody) { ProjectionBody body -> [legacy: body.title] }
+        def reported = new AtomicBoolean()
+        def renderers = (1..2).collect {
+            new DefaultJsonRenderer<Object>(Object).tap {
+                springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+                legacyFallbackReported = reported
+            }
+        }
+
+        expect: 'both renderers apply the marshaller and share the report of the fallback'
+        renderers.every { renderer ->
+            def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+            renderer.render(new ProjectionBody(title: 'Grails'), new ServletRenderContext(webRequest))
+            webRequest.response.contentAsString == '{"legacy":"Grails"}'
+        }
+        reported.get()
+    }
+
+    void 'Spring JSON setting #setting decides over a registered JSON marshaller'() {
+        given:
+        JSON.registerObjectMarshaller(ProjectionBody) { ProjectionBody body -> [legacy: body.title] }
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = setting
+        renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(new ProjectionBody(title: 'Grails'), new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString.contains(expected)
+        !renderer.legacyFallbackReported.get()
+
+        where:
+        setting | expected
+        true    | '"title":"Grails"'
+        false   | '"legacy":"Grails"'
     }
 }
 

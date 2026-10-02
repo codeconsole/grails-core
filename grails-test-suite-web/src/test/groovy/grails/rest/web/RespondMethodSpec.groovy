@@ -54,7 +54,7 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
                                     multipartForm: 'multipart/form-data']
     }}
 
-    void 'legacy rendering remains the default'() {
+    void 'respond writes JSON with the Spring converters by default'() {
         given:
         response.format = 'json'
 
@@ -62,7 +62,7 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
         controller.respond([65, 66] as byte[])
 
         then:
-        response.json == [65, 66]
+        response.text == '"QUI="'
     }
 
     void "Test that the respond method produces the correct model for a domain instance and no specific content type"() {

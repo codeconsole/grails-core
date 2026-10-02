@@ -22,9 +22,11 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
@@ -47,6 +49,7 @@ import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
+import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
@@ -56,6 +59,7 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  * @author Graeme Rocher
  * @since 2.3
  */
+@Slf4j
 @CompileStatic
 class DefaultJsonRenderer<T> implements Renderer<T> {
 
@@ -77,7 +81,19 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
     String namedConfiguration
     HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
-    boolean useSpringJson
+
+    /**
+     * Whether responses are written by Spring's message converters rather than the legacy
+     * {@link JSON} converter. When {@code null}, Spring's converters are used unless the application
+     * customized the legacy converter, for example by registering an object marshaller.
+     */
+    Boolean useSpringJson
+
+    /**
+     * Shared by the renderers of one registry, so that falling back to the legacy converter is
+     * reported once rather than for every response.
+     */
+    AtomicBoolean legacyFallbackReported = new AtomicBoolean()
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
 
     /**
@@ -184,8 +200,25 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     }
 
     private boolean canUseSpringConverter(RenderContext context) {
-        return useSpringJson && resolveSpringHttpMessageConverters() && !namedConfiguration &&
-                !context.includes && !context.excludes
+        return resolveSpringHttpMessageConverters() && !namedConfiguration &&
+                !context.includes && !context.excludes && springJsonEnabled()
+    }
+
+    private boolean springJsonEnabled() {
+        if (useSpringJson != null) {
+            return useSpringJson
+        }
+        if (!ConvertersConfigurationHolder.isDefaultConfigurationCustomized(JSON)) {
+            return true
+        }
+        if (legacyFallbackReported.compareAndSet(false, true)) {
+            log.warn('respond() renders JSON with the legacy grails.converters.JSON converter because the ' +
+                    'application customizes it, for example with JSON.registerObjectMarshaller or an ' +
+                    'ObjectMarshallerRegisterer bean. Legacy marshaller registration is deprecated for removal: ' +
+                    'replace it with Jackson serializers and set grails.web.rendering.json.spring to true, or set it ' +
+                    'to false to keep the legacy converter.')
+        }
+        return false
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {

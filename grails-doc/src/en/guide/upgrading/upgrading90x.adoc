@@ -67,15 +67,38 @@ APIs.
 This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
 published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.
 
-==== 2. `respond()` Can Use Spring JSON Conversion
+==== 2. `respond()` Uses Spring JSON Conversion
 
-Spring JSON rendering is opt-in: ordinary `respond()` calls continue to use the legacy Grails JSON
-converter unless `grails.web.rendering.json.spring` is `true`. Enabling it can change date formats, bean
-properties, circular-reference handling, and validation error responses. Legacy
-`JSON.registerObjectMarshaller(...)` registrations apply only to the legacy converter, including explicit
-`render value as JSON` calls.
+`respond()` now writes JSON through Spring MVC's message converters, backed by Spring Boot's configured
+Jackson `JsonMapper`, instead of the legacy `grails.converters.JSON` converter. Jackson can render date
+formats, bean properties, circular references, and validation errors differently, so review the JSON
+returned by `respond()` endpoints when you upgrade. Explicit `render value as JSON` calls still use the
+legacy converter.
 
-When enabled, Grails selects the first configured MVC `HttpMessageConverter` that can write the
+An application that customizes the legacy converter keeps it for `respond()`, so that its output does not
+change silently. That is the case once the application, or one of its plugins, registers a JSON object
+marshaller with `JSON.registerObjectMarshaller(...)` or `JSON.withDefaultConfiguration(...)`, declares an
+`ObjectMarshallerRegisterer` or `JsonRenderer` bean, or sets `grails.converters.json.default.deep` or
+`grails.converters.json.date: javascript`. The first such response logs a warning. Marshaller registration
+is deprecated for removal (see the next section), so plan to replace those marshallers with Jackson
+serializers.
+
+Set `grails.web.rendering.json.spring` to decide explicitly. `false` keeps the legacy converter for
+`respond()` without the warning; `true` uses Spring's converters even while legacy marshallers are
+registered, for example once Jackson serializers replace them for `respond()` but `render ... as JSON`
+calls still rely on them:
+
+[source,yaml]
+.application.yml
+----
+grails:
+    web:
+        rendering:
+            json:
+                spring: false
+----
+
+Grails selects the first configured MVC `HttpMessageConverter` that can write the
 response type and negotiated JSON media type and advertises a JSON media type for that class
 (`application/json`, `text/json`, or a `+json` subtype). Generic `*/*` string and byte-array converters
 are skipped, so strings remain JSON strings and byte arrays use Jackson's base64 JSON representation.
@@ -102,19 +125,6 @@ Grails retains the legacy converter path when a named converter configuration or
 selected type and media type. Explicit application and plugin `Renderer` beans continue to take
 precedence over the default renderer.
 
-To enable Spring JSON rendering for ordinary `respond()` payloads:
-
-[source,yaml]
-.application.yml
-----
-grails:
-    web:
-        rendering:
-            json:
-                spring: true
-----
-
-Keep the switch `false` (the default) while migrating legacy marshallers and verifying the JSON contract.
 Jackson conversion uses UTF-8 for intermediate bytes; the response writer applies
 `grails.converters.encoding`, so non-UTF response encodings do not corrupt the intermediate JSON.
 
@@ -131,8 +141,9 @@ plugin graph simply because that module is on the classpath.
 ==== 3. JSON Converter Customization Moves to Jackson
 
 The `grails.converters.JSON.registerObjectMarshaller(...)` API, used by the `grails-converters` module for
-`render ... as JSON` and related converter-based rendering, is deprecated in Grails 9 but is not scheduled
-for removal. Existing registrations continue to work on the legacy converter path. For new code, customize
+`render ... as JSON` and related converter-based rendering, is deprecated for removal. Existing
+registrations continue to work on the legacy converter path, and keep `respond()` on it, until a future
+major release removes them. For new code, customize
 Spring Boot's `JsonMapper` instead so the same serializer is used by `respond`, Spring MVC message
 conversion, and other Jackson-based integrations:
 
@@ -189,7 +200,7 @@ For direct serialization, inject the same registry and use
 `namedJsonConfigurationRegistry.writeValueAsString('deep', book)` or
 `namedJsonConfigurationRegistry.writeValue('deep', writer, book)`. These explicit operations replace the
 thread-local scope established by `JSON.use('deep')`. The legacy `JSON.createNamedConfig(...)` and `JSON.use(...)`
-APIs remain available for compatibility, but are deprecated in favor of the request-safe Jackson registry.
+APIs remain available for now, but are deprecated for removal in favor of the request-safe Jackson registry.
 
 ==== 4. Rendering Single Values as JSON
 
@@ -221,8 +232,8 @@ retains exactly the digits the request sent. Whole numbers continue to bind as `
 
 ==== 6. REST Validation Errors Use RFC 9457 Problems
 
-When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
-`application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
+`respond()` renders Spring `Errors` as `application/problem+json` instead of the legacy
+`{"errors": [...]}` body, unless the application keeps the legacy converter as described above. Grails uses the public `ValidationProblemDetailFactory` bean to
 adapt the errors to Spring Framework's RFC 9457 `ProblemDetail` type. The resulting response has status
 422, the title `Validation failed`, and
 an `errors` extension containing stable maps with the object name, optional field name, message, and error

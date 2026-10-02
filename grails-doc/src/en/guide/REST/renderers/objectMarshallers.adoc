@@ -30,9 +30,10 @@ XML.registerObjectMarshaller Book, { Book book, XML xml ->
 ----
 
 NOTE: JSON `ObjectMarshaller` registration and named/default JSON converter configurations are deprecated
-in Grails 9. They remain available for compatibility. New JSON customization should use Jackson 3 and
-Spring Boot's `JsonMapperBuilderCustomizer`; XML marshaller registration remains supported by the optional
-`grails-xml` module.
+for removal in Grails 9. They still apply to `render ... as JSON`, and an application that registers a JSON
+marshaller keeps the legacy converter for `respond` until it sets `grails.web.rendering.json.spring`. New JSON
+customization should use Jackson 3 and Spring Boot's `JsonMapperBuilderCustomizer`; XML marshaller
+registration remains supported by the optional `grails-xml` module.
 
 You can customize the formatting of an individual value this way too. For example, the https://grails-plugins.github.io/grails-joda-time/index.html[JodaTime plugin] does the following to support rendering of JodaTime dates in JSON output:
 

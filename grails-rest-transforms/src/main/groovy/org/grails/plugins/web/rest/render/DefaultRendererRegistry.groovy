@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 import groovy.transform.Canonical
 import groovy.transform.CompileStatic
@@ -91,8 +92,14 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     @Autowired(required = false)
     ValidationProblemDetailFactory validationProblemDetailFactory
 
-    @Value('${grails.web.rendering.json.spring:false}')
-    boolean useSpringJson
+    /**
+     * Whether JSON responses are written by Spring's message converters. When unset, they are unless
+     * the application customized the legacy {@code grails.converters.JSON} converter.
+     */
+    @Value('${grails.web.rendering.json.spring:#{null}}')
+    Boolean useSpringJson
+
+    private final AtomicBoolean legacyJsonFallbackReported = new AtomicBoolean()
 
     @PostConstruct
     void initialize() {
@@ -126,6 +133,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
 
     private void configureJsonRenderer(DefaultJsonRenderer renderer) {
         renderer.useSpringJson = useSpringJson
+        renderer.legacyFallbackReported = legacyJsonFallbackReported
         renderer.namedJsonRenderer = namedJsonRenderer
         renderer.grailsJsonMapperCustomizer = grailsJsonMapperCustomizer
         if (validationProblemDetailFactory != null) {

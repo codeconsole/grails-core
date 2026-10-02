@@ -82,7 +82,7 @@ class JsonCompatibilitySpec extends Specification {
         JSON.parse(new JSON(new JsonCompatibilityBean(value: 'custom')).toString()) == [renamed: 'CUSTOM']
     }
 
-    void 'legacy object marshaller registration overloads are deprecated but not scheduled for removal'() {
+    void 'legacy object marshaller registration overloads are deprecated for removal'() {
         when:
         def methods = JSON.declaredMethods.findAll { it.name == 'registerObjectMarshaller' }
 
@@ -90,11 +90,11 @@ class JsonCompatibilitySpec extends Specification {
         methods.size() == 4
         methods.every { method ->
             Deprecated deprecated = method.getAnnotation(Deprecated)
-            deprecated?.since() == '9.0' && !deprecated.forRemoval()
+            deprecated?.since() == '9.0' && deprecated.forRemoval()
         }
     }
 
-    void 'legacy named and default configuration APIs are deprecated but remain available'() {
+    void 'legacy named and default configuration APIs are deprecated for removal'() {
         when:
         def methods = JSON.declaredMethods.findAll {
             it.name in ['getNamedConfig', 'use', 'createNamedConfig', 'withDefaultConfiguration']
@@ -104,7 +104,7 @@ class JsonCompatibilitySpec extends Specification {
         methods.size() == 5
         methods.every { method ->
             Deprecated deprecated = method.getAnnotation(Deprecated)
-            deprecated?.since() == '9.0' && !deprecated.forRemoval()
+            deprecated?.since() == '9.0' && deprecated.forRemoval()
         }
     }
 

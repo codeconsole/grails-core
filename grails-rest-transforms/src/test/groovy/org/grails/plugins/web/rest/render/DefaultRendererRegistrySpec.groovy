@@ -145,7 +145,7 @@ class DefaultRendererRegistrySpec extends Specification {
         holder.converters == [early, late]
     }
 
-    void 'Spring JSON rendering is opt-in for setting #setting'() {
+    void 'the JSON renderer receives Spring JSON setting #setting as #enabled'() {
         given:
         def context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', setting))
@@ -162,7 +162,7 @@ class DefaultRendererRegistrySpec extends Specification {
 
         where:
         setting                                       | enabled
-        [:]                                           | false
+        [:]                                           | null
         ['grails.web.rendering.json.spring': 'false']  | false
         ['grails.web.rendering.json.spring': 'true']   | true
     }
