@@ -116,7 +116,8 @@ class IntegrationTestAstTransformation implements ASTTransformation, TransformWi
                 GrailsASTUtils.error(source, applicationClassExpression, "Invalid applicationClass attribute value [${applicationClassNode.getName()}].  The applicationClass attribute must specify a class which extends grails.boot.config.GrailsAutoConfiguration.", true)
             }
         } else {
-            String mainClass = MainClassFinder.searchMainClass(source.source.URI, compileClasspath(source))
+            String mainClass = MainClassFinder.searchMainClass(source.source.URI, compileClasspath(source),
+                    source.configuration?.targetDirectory)
             if (mainClass) {
                 applicationClassNode = ClassHelper.make(mainClass)
             } else {
