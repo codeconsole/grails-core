@@ -58,20 +58,21 @@ class BuildSettingsSpec extends Specification {
         File elsewhere = new File(tmp, 'elsewhere')
         elsewhere.mkdirs()
         File absolute = new File(tmp, 'out')
-        String fromSystem = property?.replace('<absolute>', absolute.absolutePath)
+        List<String> fromSystem = properties.collect { it.replace('<absolute>', absolute.absolutePath) }
 
         when:
-        Map<String, String> printed = printBuildSettings(elsewhere, "-Dbase.dir=${app.absolutePath}", fromSystem)
+        Map<String, String> printed = printBuildSettings(elsewhere, "-Dbase.dir=${app.absolutePath}", *fromSystem)
 
         then:
         printed.TARGET_DIR == (expected == '<absolute>' ? absolute : new File(app, expected)).canonicalPath
 
         where:
-        description                                       | property                                                  | expected
-        'the application\'s when the property is relative' | '-Dgrails.project.target.dir=build-parent/build-8070'      | 'build-parent/build-8070'
-        'the property when it is absolute'                | '-Dgrails.project.target.dir=<absolute>'                  | '<absolute>'
-        'the older project.target.dir without it'         | '-Dproject.target.dir=out'                                | 'out'
-        'the application\'s build/ without either'         | null                                                      | 'build'
+        description                                          | properties                                                                       | expected
+        'the application\'s when the property is relative'    | ['-Dgrails.project.target.dir=build-parent/build-8070']                          | 'build-parent/build-8070'
+        'the property when it is absolute'                   | ['-Dgrails.project.target.dir=<absolute>']                                       | '<absolute>'
+        'project.target.dir without the property'            | ['-Dproject.target.dir=out']                                                     | 'out'
+        'project.target.dir, set by hand, over the property' | ['-Dgrails.project.target.dir=build-parent/build-8070', '-Dproject.target.dir=out'] | 'out'
+        'the application\'s build/ without either'            | []                                                                               | 'build'
     }
 
     void 'development keeps its restart marker in the build directory it is given, not build/'() {

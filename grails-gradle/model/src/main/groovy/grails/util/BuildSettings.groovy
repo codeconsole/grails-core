@@ -337,23 +337,25 @@ class BuildSettings {
         }
         BASE_DIR = System.getProperty(APP_BASE_DIR) ? new File(System.getProperty(APP_BASE_DIR)) : (IOUtils.findApplicationDirectoryFile() ?: new File('.'))
         GRAILS_APP_DIR_PRESENT = new File(BASE_DIR, 'grails-app').exists() || new File(BASE_DIR, 'Application.groovy').exists()
-        TARGET_DIR = targetDir(System.getProperty(PROJECT_TARGET_DIR), System.getProperty('project.target.dir'), BASE_DIR)
+        TARGET_DIR = targetDir(System.getProperty('project.target.dir'), System.getProperty(PROJECT_TARGET_DIR), BASE_DIR)
         RESOURCES_DIR = !GRAILS_APP_DIR_PRESENT ? null : resourcesDir(System.getProperty(PROJECT_RESOURCES_DIR), BASE_DIR, TARGET_DIR)
     }
 
     /**
-     * {@link #TARGET_DIR}: the {@link #PROJECT_TARGET_DIR} the Gradle plugin passes, the build directory relative to
-     * the project, joined to the application directory (one that is absolute as it is); else the older
-     * {@code project.target.dir}; else {@code build}. The development restart marker ({@code .grailspid}) is kept
-     * there, so each build directory of one checkout has its own.
+     * {@link #TARGET_DIR}: {@code project.target.dir}, the only property read before, which a build sets by hand
+     * ({@code -Dgrails.project.target.dir} given to Gradle reaches the application as it, the Gradle plugin passing
+     * {@code grails.*} system properties on without their prefix), so a value set there is kept; else the
+     * {@link #PROJECT_TARGET_DIR} the Gradle plugin passes, the build directory relative to the project; else
+     * {@code build}. A relative one is joined to the application directory, an absolute one kept as it is. The
+     * development restart marker ({@code .grailspid}) is kept there, so each build directory of one checkout has its own.
      *
-     * @param fromSystem the {@link #PROJECT_TARGET_DIR} system property, or null
-     * @param legacy the {@code project.target.dir} system property, or null
+     * @param byHand the {@code project.target.dir} system property, or null
+     * @param fromPlugin the {@link #PROJECT_TARGET_DIR} system property, or null
      * @param baseDir the application directory
      * @return the target directory
      */
-    private static File targetDir(String fromSystem, String legacy, File baseDir) {
-        String dir = fromSystem ?: legacy ?: 'build'
+    private static File targetDir(String byHand, String fromPlugin, File baseDir) {
+        String dir = byHand ?: fromPlugin ?: 'build'
         File file = new File(dir)
         file.absolute ? file : new File(baseDir, dir)
     }
