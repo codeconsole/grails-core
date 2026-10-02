@@ -184,7 +184,7 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
         !result.output.contains(cliPidFile.absolutePath)
     }
 
-    def "bootRun tells development reloading where the build compiles its classes"() {
+    def "bootRun tells development reloading where the build compiles its classes and puts its resources"() {
         given:
         setupTestResourceProject('bootrun-classes-dir')
 
@@ -193,9 +193,10 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
 
         then:
         result.output.contains('CLASSES_DIR=build/classes/groovy/main')
+        result.output.contains('RESOURCES_DIR=build/resources/main')
     }
 
-    def "bootRun with a build directory of its own compiles changes into that directory's classes"() {
+    def "bootRun with a build directory of its own points reloading at that directory's classes and resources"() {
         given: 'a second instance of one checkout, built where the first one does not run from'
         setupTestResourceProject('bootrun-classes-dir')
 
@@ -204,6 +205,21 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
 
         then: 'relative to the project, as GrailsApp.recompile joins it to the application directory, with / on every platform'
         result.output.contains('CLASSES_DIR=build-parent/build-8070/classes/groovy/main')
+        result.output.contains('RESOURCES_DIR=build-parent/build-8070/resources/main')
+    }
+
+    def "bootRun keeps a grails.project.class.dir that the build sets on the task itself"() {
+        given:
+        setupTestResourceProject('bootrun-classes-dir')
+
+        when:
+        def result = executeTask('inspectBootRunClassesDir', ['-PownClassDir=user/chosen/dir'])
+
+        then:
+        result.output.contains('CLASSES_DIR=user/chosen/dir')
+
+        and: 'the resources directory, which the build did not set, is still passed'
+        result.output.contains('RESOURCES_DIR=build/resources/main')
     }
 
     def "bootRun with a build directory outside the project passes a path that climbs out of it"() {
@@ -215,6 +231,7 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
 
         then:
         result.output.contains('CLASSES_DIR=../outside-build/classes/groovy/main')
+        result.output.contains('RESOURCES_DIR=../outside-build/resources/main')
     }
 
     private static File pidFileFromOutput(String output) {

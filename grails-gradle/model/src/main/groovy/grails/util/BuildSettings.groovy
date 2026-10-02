@@ -112,7 +112,7 @@ class BuildSettings {
     public static final String OFFLINE_MODE = 'grails.offline.mode'
 
     /**
-     * The name of the system property for {@link #}.
+     * The name of the system property for {@link #RESOURCES_DIR} and {@link #BUILD_RESOURCES_PATH}.
      */
     public static final String PROJECT_RESOURCES_DIR = 'grails.project.resource.dir'
 
@@ -288,9 +288,10 @@ class BuildSettings {
     public static final String BUILD_CLASSES_PATH
 
     /**
-     * The path to the build resources directory
+     * The path to the build resources directory, relative to the project: the {@link #PROJECT_RESOURCES_DIR} system
+     * property, which the Gradle plugin passes, else {@code build/resources/main}
      */
-    public static final String BUILD_RESOURCES_PATH = 'build/resources/main'
+    public static final String BUILD_RESOURCES_PATH
 
     public static final File SHARED_SETTINGS_FILE = new File("${System.getProperty('user.home')}/.grails/settings.groovy")
 
@@ -309,6 +310,7 @@ class BuildSettings {
     }
 
     static {
+        BUILD_RESOURCES_PATH = System.getProperty(PROJECT_RESOURCES_DIR) ?: 'build/resources/main'
         boolean grailsAppDirPresent = new File('grails-app').exists() || new File('Application.groovy').exists()
         if (!grailsAppDirPresent) {
             CLASSES_DIR = null
