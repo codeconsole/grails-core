@@ -57,6 +57,21 @@ class MainClassFinder {
      * @return The name of the main class
      */
     static String searchMainClass(URI path, boolean supportCaching = true) {
+        searchMainClass(path, Collections.<File>emptyList(), supportCaching)
+    }
+
+    /**
+     * Searches for the main class relative to the given path, as {@link #searchMainClass(URI, boolean)} does, first in
+     * the directories of {@code classpath} that belong to the same project as {@code path}. A compile classpath carries
+     * the project's main classes directory wherever the build puts it, where the other places searched are guesses
+     * under {@code build/}; a directory of another project on it, such as a plugin subproject's, is not searched.
+     *
+     * @param path The path as a URI
+     * @param classpath The classpath the path is compiled with
+     * @param supportCaching Whether to cache the result for future calls
+     * @return The name of the main class
+     */
+    static String searchMainClass(URI path, Collection<File> classpath, boolean supportCaching = true) {
         if (!path) {
             return null
         }
@@ -85,6 +100,13 @@ class MainClassFinder {
             }
 
             if (rootDir) {
+                File projectDir = rootDir.canonicalFile
+                for (File entry in classpath) {
+                    if (entry.isDirectory() && findRootDirectory(entry)?.canonicalFile == projectDir) {
+                        searchDirs << entry
+                    }
+                }
+
                 def rootClassesDir = new File(rootDir, BuildSettings.BUILD_CLASSES_PATH)
                 if (rootClassesDir.exists()) {
                     searchDirs << rootClassesDir
