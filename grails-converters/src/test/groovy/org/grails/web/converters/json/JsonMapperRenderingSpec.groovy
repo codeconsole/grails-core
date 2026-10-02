@@ -27,7 +27,11 @@ import java.time.temporal.ChronoUnit
 import com.fasterxml.jackson.annotation.JsonValue
 import spock.lang.Shared
 import spock.lang.Specification
+import tools.jackson.core.JsonGenerator
+import tools.jackson.databind.SerializationContext
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.module.SimpleModule
+import tools.jackson.databind.ser.std.StdSerializer
 
 import org.springframework.context.ApplicationContext
 import org.springframework.context.support.GenericApplicationContext
@@ -119,6 +123,30 @@ class JsonMapperRenderingSpec extends Specification {
         expect: 'in values and in map keys'
         new JSON([date: new Date(1759909726407L), keyed: [(new Date(1759909726407L)): 'date']]).toString() ==
                 '{"date":"2025-10-08T03:48:46.407-04:00","keyed":{"2025-10-08T03:48:46.407-04:00":"date"}}'
+
+        cleanup:
+        context.close()
+    }
+
+    void "a type a Jackson module serializes renders with its serializer, including the values it writes, unless a marshaller is registered for the type"() {
+        given: 'a JsonMapper with a module serializer for Wrapper, and a marshaller registered for Secret'
+        def context = applicationContext {
+            it.registerBean(JsonMapper, {
+                JsonMapper.builder().addModule(new SimpleModule().addSerializer(Wrapper, new WrapperSerializer())).build()
+            })
+        }
+        initialize([:], context)
+        JSON.registerObjectMarshaller(Secret) { Secret secret -> '***' }
+
+        expect: 'the marshaller renders a Secret that Grails renders, but not one that the module serializer writes'
+        new JSON([wrapper: new Wrapper(inner: new Secret(value: 'hidden')), secret: new Secret(value: 'hidden')]).toString() ==
+                '{"wrapper":{"inner":{"value":"hidden"}},"secret":"***"}'
+
+        when: 'a marshaller is registered for Wrapper as well'
+        JSON.registerObjectMarshaller(Wrapper) { Wrapper wrapper -> [inner: wrapper.inner] }
+
+        then: 'it takes precedence over the module serializer, so the Secret marshaller applies inside it'
+        new JSON([wrapper: new Wrapper(inner: new Secret(value: 'hidden'))]).toString() == '{"wrapper":{"inner":"***"}}'
 
         cleanup:
         context.close()
@@ -347,4 +375,27 @@ class Node {
     String name
     Node parent
     List<Node> children
+}
+
+class Secret {
+    String value
+}
+
+class Wrapper {
+    Secret inner
+}
+
+class WrapperSerializer extends StdSerializer<Wrapper> {
+
+    WrapperSerializer() {
+        super(Wrapper)
+    }
+
+    @Override
+    void serialize(Wrapper wrapper, JsonGenerator generator, SerializationContext context) {
+        generator.writeStartObject()
+        generator.writeName('inner')
+        generator.writePOJO(wrapper.inner)
+        generator.writeEndObject()
+    }
 }
