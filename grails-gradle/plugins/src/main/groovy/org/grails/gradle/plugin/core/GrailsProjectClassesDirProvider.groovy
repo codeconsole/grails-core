@@ -18,6 +18,8 @@
  */
 package org.grails.gradle.plugin.core
 
+import java.nio.file.Path
+
 import groovy.transform.CompileStatic
 
 import org.gradle.api.file.Directory
@@ -37,12 +39,23 @@ import grails.util.BuildSettings
  * one checkout built with {@code -PbuildDir}, say) had each change compiled where it does not load classes from:
  * the artefact was reloaded from the class it already had, and the old code went on answering.</p>
  *
- * <p>The path is relative because {@code GrailsApp.recompile} joins it to the application directory; a directory
- * outside the project comes out as a path that climbs out of it, which joins correctly too. It is read when the task
- * runs, so a build directory changed after the plugin is applied is the one passed.</p>
+ * <p>The path is relative because {@code GrailsApp.recompile} joins it to the application directory, and its names
+ * are separated by {@code /} on every platform, as the fallback is, because {@code IOUtils} compares it with class
+ * locations written as URLs. When the classes directory has no path relative to the project, such as one on another
+ * drive on Windows, no property is passed and the application keeps the fallback.</p>
+ *
+ * <p>A classes directory outside the project gives a path that climbs out of it ({@code ../}). Joining it, as
+ * {@code GrailsApp.recompile}, {@code MainClassFinder} and the i18n plugin do, resolves correctly; the {@code IOUtils}
+ * lookups that compare it with a class location find no match and fall back as they did before.</p>
+ *
+ * <p>{@code GrailsApp.recompile} also joins this path to the directory of a plugin subproject whose sources it
+ * watches, so it assumes every project lays out its build directory in the same way relative to itself, as Gradle's
+ * {@code -PbuildDir} or an {@code allprojects} block does. A plugin subproject whose build directory is laid out
+ * differently from the application's has its changes compiled where it does not load classes from.</p>
  *
  * <p>Both values are {@link Internal}, as for {@link GrailsAppBaseDirProvider}: the classes are the task's classpath,
- * already tracked there.</p>
+ * already tracked there. The directory is read when the task runs, so a build directory changed after the plugin is
+ * applied is the one passed.</p>
  */
 @CompileStatic
 class GrailsProjectClassesDirProvider implements CommandLineArgumentProvider {
@@ -60,11 +73,20 @@ class GrailsProjectClassesDirProvider implements CommandLineArgumentProvider {
 
     @Override
     Iterable<String> asArguments() {
-        Directory directory = classesDir.getOrNull()
-        if (directory == null) {
-            return []
+        String relative = relativePath(projectDir.toPath(), classesDir.get().asFile.toPath())
+        relative ? ["-D${BuildSettings.PROJECT_CLASSES_DIR}=${relative}".toString()] : []
+    }
+
+    /**
+     * {@code classesDir} relative to {@code projectDir}, its names separated by {@code /}; null when it has no path
+     * relative to the project, such as one on another drive on Windows.
+     */
+    static String relativePath(Path projectDir, Path classesDir) {
+        try {
+            projectDir.relativize(classesDir).collect { Path name -> name.toString() }.join('/')
         }
-        String relative = projectDir.toPath().relativize(directory.asFile.toPath()).toString()
-        ["-D${BuildSettings.PROJECT_CLASSES_DIR}=${relative}".toString()]
+        catch (IllegalArgumentException ignored) {
+            null
+        }
     }
 }

@@ -1032,10 +1032,7 @@ ${importStatements}
             task.jvmArgumentProviders.add(new GrailsAppBaseDirProvider(project.projectDir))
             // Where development reloading compiles a changed class: the build's own classes, wherever the build
             // directory is, not the build/classes/groovy/main BuildSettings falls back to
-            Provider<Directory> classesDir = mainGroovyClassesDir(project)
-            if (classesDir != null) {
-                task.jvmArgumentProviders.add(new GrailsProjectClassesDirProvider(project.projectDir, classesDir))
-            }
+            task.jvmArgumentProviders.add(new GrailsProjectClassesDirProvider(project.projectDir, mainGroovyClassesDir(project)))
             // The application compiles a page again when it changes, so the page opt-in has to reach
             // the JVM running it as well as the one the build compiles pages in.
             task.jvmArgumentProviders.add(new GrailsGspCompileStaticProvider(
@@ -1071,14 +1068,11 @@ ${importStatements}
 
     /**
      * The main source set's Groovy classes directory, which the application's development reloading compiles a
-     * changed class into (see {@link GrailsProjectClassesDirProvider}); null for a project without one.
+     * changed class into (see {@link GrailsProjectClassesDirProvider}). The plugin applies the {@code groovy} plugin,
+     * so the main source set and its Groovy classes directory are always there.
      */
     private static Provider<Directory> mainGroovyClassesDir(Project project) {
-        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
-        if (sourceSets?.findByName(SourceSet.MAIN_SOURCE_SET_NAME) == null) {
-            return null
-        }
-        sourceSets.named(SourceSet.MAIN_SOURCE_SET_NAME).flatMap { SourceSet main ->
+        project.extensions.getByType(SourceSetContainer).named(SourceSet.MAIN_SOURCE_SET_NAME).flatMap { SourceSet main ->
             main.extensions.getByType(GroovySourceDirectorySet).classesDirectory
         }
     }

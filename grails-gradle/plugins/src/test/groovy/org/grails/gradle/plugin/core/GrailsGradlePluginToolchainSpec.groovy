@@ -192,7 +192,7 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
         def result = executeTask('inspectBootRunClassesDir')
 
         then:
-        result.output.contains("CLASSES_DIR=build${File.separator}classes${File.separator}groovy${File.separator}main")
+        result.output.contains('CLASSES_DIR=build/classes/groovy/main')
     }
 
     def "bootRun with a build directory of its own compiles changes into that directory's classes"() {
@@ -202,8 +202,19 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
         when:
         def result = executeTask('inspectBootRunClassesDir', ['-PownBuildDir=build-parent/build-8070'])
 
-        then: 'relative to the project, as GrailsApp.recompile joins it to the application directory'
-        result.output.contains("CLASSES_DIR=build-parent${File.separator}build-8070${File.separator}classes${File.separator}groovy${File.separator}main")
+        then: 'relative to the project, as GrailsApp.recompile joins it to the application directory, with / on every platform'
+        result.output.contains('CLASSES_DIR=build-parent/build-8070/classes/groovy/main')
+    }
+
+    def "bootRun with a build directory outside the project passes a path that climbs out of it"() {
+        given:
+        setupTestResourceProject('bootrun-classes-dir')
+
+        when:
+        def result = executeTask('inspectBootRunClassesDir', ['-PownBuildDir=../outside-build'])
+
+        then:
+        result.output.contains('CLASSES_DIR=../outside-build/classes/groovy/main')
     }
 
     private static File pidFileFromOutput(String output) {
