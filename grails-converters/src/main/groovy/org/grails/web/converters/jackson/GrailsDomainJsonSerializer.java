@@ -67,9 +67,10 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
         if (includeClass && shouldInclude(includes, excludes, "class")) {
             generator.writeStringProperty("class", entity.getName());
         }
-        writeProperty(entity.getIdentity(), bean, generator, context, includes, excludes);
+        // An unsaved instance has neither yet; the legacy marshaller leaves them out rather than writing null
+        writePropertyIfSet(entity.getIdentity(), bean, generator, context, includes, excludes);
         if (includeVersion) {
-            writeProperty(entity.getVersion(), bean, generator, context, includes, excludes);
+            writePropertyIfSet(entity.getVersion(), bean, generator, context, includes, excludes);
         }
         for (PersistentProperty property : entity.getPersistentProperties()) {
             if (!property.equals(entity.getVersion())) {
@@ -77,6 +78,13 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
             }
         }
         generator.writeEndObject();
+    }
+
+    private void writePropertyIfSet(PersistentProperty property, BeanWrapper bean, JsonGenerator generator,
+            SerializationContext context, List<String> includes, List<String> excludes) throws JacksonException {
+        if (property != null && bean.getPropertyValue(property.getName()) != null) {
+            writeProperty(property, bean, generator, context, includes, excludes);
+        }
     }
 
     private void writeProperty(PersistentProperty property, BeanWrapper bean, JsonGenerator generator,

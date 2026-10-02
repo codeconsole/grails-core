@@ -89,6 +89,15 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         ]
     }
 
+    void 'an unsaved domain instance omits its null identity and version, as the legacy marshaller does'() {
+        given:
+        def mapper = domainMapper(true, false)
+
+        expect:
+        mapper.writeValueAsString(new JacksonBook(title: 'Unsaved')) ==
+                '{"title":"Unsaved","authors":null,"authorsByName":null}'
+    }
+
     void 'Grails response mapper unwraps domain proxies before reading persistent properties'() {
         given:
         def target = new JacksonBook(title: 'Unwrapped').tap { id = 1 }
