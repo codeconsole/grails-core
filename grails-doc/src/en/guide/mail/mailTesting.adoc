@@ -52,10 +52,13 @@ All `to`, `cc`, and `bcc` addresses are replaced by this value, and the `from` a
 
 Two additional properties give finer-grained control:
 
-* `grails.mail.overrideToAddress` — overrides only the recipient addresses (`to`, `cc`, `bcc`). The `from` address is left as-is.
-* `grails.mail.overrideFromAddress` — overrides only the sender address, including when `from` is set explicitly in the `sendMail` closure. The recipient addresses are left as-is.
+* `grails.mail.overrideToAddress` — overrides all recipient addresses (to, cc, and bcc), and also acts as the default `to` address when none is set in the `sendMail` closure.
+* `grails.mail.overrideFromAddress` — overrides the sender address, including when `from` is set explicitly in the `sendMail` closure, and also acts as the default `from` address when none is set.
 
+Each specific property falls back to `grails.mail.overrideAddress` when not set.
 When both `overrideAddress` and one of the specific properties are set, the specific property takes precedence for its direction.
+
+Note that `overrideAddress` now also replaces a `from` set explicitly in sendMail. An application that wants to keep its real sender should use `overrideToAddress` in place of `overrideAddress`.
 
 [source,yaml]
 .application-test.yml
@@ -73,7 +76,7 @@ grails:
         overrideFromAddress: noreply@myorg.com     # fix the sender only
 ----
 
-The advantage of these mechanisms is that they allow you to test using a real SMTP server while keeping address-determination logic exercisable. The disadvantage is that a real SMTP server is still required.
+All `to`, `cc` and `bcc` addresses will be replaced by this value if set. The advantage of this mechanism is that it allows you to test using a real SMTP server. The disadvantage is that it requires a real SMTP server and makes it difficult to test address determination logic.
 
 ==== Using an in-memory SMTP server
 

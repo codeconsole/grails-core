@@ -136,18 +136,21 @@ Other common Spring changes:
 
 ## Mail Plugin: `overrideAddress` Split Into Separate To and From Overrides
 
-The `grails.mail.overrideAddress` configuration property continues to work as before. Two new properties give finer-grained control:
+Two new properties give finer-grained control over address overriding:
 
-- `grails.mail.overrideToAddress` — overrides only the recipient addresses (to, cc, bcc). Takes precedence over `overrideAddress` for recipients.
-- `grails.mail.overrideFromAddress` — overrides only the sender address, including when `from` is set explicitly in the `sendMail` closure. Takes precedence over `overrideAddress` for the sender.
+* `grails.mail.overrideToAddress` — overrides all recipient addresses (to, cc, and bcc), and also acts as the default `to` address when none is set in the `sendMail` closure.
+* `grails.mail.overrideFromAddress` — overrides the sender address, including when `from` is set explicitly in the `sendMail` closure, and also acts as the default `from` address when none is set.
 
-**No action is required.** `overrideAddress` still redirects both sender and all recipients, exactly as before. Use the new properties when you need to redirect recipients and sender independently:
+Each specific property falls back to `grails.mail.overrideAddress` when not set.
+When both `overrideAddress` and one of the specific properties are set, the specific property takes precedence for its direction.
+
+Note that `overrideAddress` now also replaces a `from` set explicitly in sendMail. An application that wants to keep its real sender should use `overrideToAddress` in place of `overrideAddress`.
 
 ```yaml
 # application-development.yml
 grails:
     mail:
-        overrideToAddress: test-inbox@example.com   # redirect recipients only
+        overrideToAddress: test-inbox@example.com   # redirect all recipients (to, cc, bcc) only
         # overrideFromAddress: noreply@example.com  # fix the sender only
 ```
 

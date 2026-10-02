@@ -141,30 +141,6 @@ class MailMessageBuilderSpec extends Specification implements GrailsUnitTest {
 		msg.from[0].toString() == defaultFrom
 	}
 
-	void "Test that overrideAddress overrides both to and from"() {
-		given:
-		String overrideAddr = "override@example.com"
-		def properties = new MailConfigurationProperties()
-		properties.overrideAddress = overrideAddr
-		def mockJavaMailSender = Stub(JavaMailSender) {
-			createMimeMessage() >> new MimeMessage(Session.getInstance(new Properties()))
-		}
-		def builder = new MailMessageBuilder(mockJavaMailSender, properties)
-
-		when:
-		processDsl(builder) {
-			to "fred@g2one.com"
-			from "john@g2one.com"
-			subject "Hello"
-			body 'Test'
-		}
-
-		then:
-		MimeMessage msg = builder.message.mimeMessage
-		to(msg)[0].toString() == overrideAddr
-		msg.from[0].toString() == overrideAddr
-	}
-
 	void "Test that overrideToAddress overrides only the to address"() {
 		given:
 		String overrideToAddr = "override-to@example.com"
@@ -361,7 +337,7 @@ class MailMessageBuilderSpec extends Specification implements GrailsUnitTest {
 		msg.from[0].toString() == "john@g2one.com"
 	}
 
-	void "Test that overrideAddress overrides the explicit from address (backward-compatibility contract)"() {
+	void "Test that overrideAddress overrides the explicit from address"() {
 		given: "only overrideAddress is configured, no separate overrideFromAddress"
 		String overrideAddr = "override@example.com"
 		def properties = new MailConfigurationProperties()
