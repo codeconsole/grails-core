@@ -4652,3 +4652,38 @@ grails:
 ----
 
 To set a fixed sender without redirecting recipients, use the new `grails.mail.overrideFromAddress`. See link:mail.html#mailConfiguration[Mail Configuration] for how the three properties interact.
+
+==== 83. GORM Dynamic Finder Classes Replaced
+
+The dynamic finder implementations in the `org.grails.datastore.gorm.finders` package no longer form an inheritance hierarchy. The following public classes have been removed:
+
+* `AbstractFinder`
+* `AbstractFindByFinder`
+* `FindByFinder`
+* `FindByBooleanFinder`
+* `FindAllByFinder`
+* `FindAllByBooleanFinder`
+* `FindOrCreateByFinder`
+* `FindOrSaveByFinder`
+* `CountByFinder`
+
+`DynamicFinder` is now a concrete class that only parses a finder method name and builds its query criteria. It no longer implements `FinderMethod`, has no `invoke` or `doInvokeInternal` methods, and its constructor takes a method pattern, the junction operators, a `MappingContext` and a boolean-clause flag. Finder execution lives in three classes that compose a `DynamicFinder` instead of extending it and are created through static factory methods:
+
+[source,groovy]
+----
+import org.grails.datastore.gorm.finders.CountFinder
+import org.grails.datastore.gorm.finders.ListResultFinder
+import org.grails.datastore.gorm.finders.SingleResultFinder
+
+SingleResultFinder.findBy(datastoreResolver, mappingContext)          // findBy*
+SingleResultFinder.findByBoolean(datastoreResolver, mappingContext)   // find<Boolean>By*
+SingleResultFinder.findOrCreateBy(datastoreResolver, mappingContext)  // findOrCreateBy*
+SingleResultFinder.findOrSaveBy(datastoreResolver, mappingContext)    // findOrSaveBy*
+ListResultFinder.findAllBy(datastoreResolver, mappingContext)         // findAllBy*
+ListResultFinder.findAllByBoolean(datastoreResolver, mappingContext)  // findAll<Boolean>By*
+CountFinder.countBy(datastoreResolver, mappingContext)                // countBy*
+----
+
+Each factory also accepts a `Datastore`, or only a `MappingContext` for a finder that parses method names without executing queries. `ListOrderByFinder` keeps its constructors but no longer extends `AbstractFinder`, and the list of finders a `DetachedCriteria` consults is now typed as `List<FinderMethod>`.
+
+Applications are unaffected: dynamic finders such as `Book.findByTitle('The Stand')` behave as before. A GORM datastore implementation or plugin outside the Grails repository that extends one of the removed classes, or that calls `new FindByFinder(...)` and its siblings when building its finder list, must switch to the factory methods above. Code that only holds finders as `FinderMethod` compiles unchanged.
