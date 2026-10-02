@@ -16,21 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-
 package undertowapp
 
-class UrlMappings {
+import java.util.concurrent.CopyOnWriteArrayList
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?" {
-            constraints {
-            }
-        }
+class ErrorPageInterceptor {
 
-        "/"(view: "/index")
-        "500"(view: '/error')
-        "500"(controller: 'errorPage', action: 'handle', exception: StaticInitFailure)
-        "413"(controller: 'upload', action: 'tooLarge')
-        "404"(view: '/notFound')
+    /** What {@code throwable} held in each {@code afterView} call for an errorPage action. */
+    static final List<Throwable> OBSERVED = new CopyOnWriteArrayList<>()
+
+    ErrorPageInterceptor() {
+        match(controller: 'errorPage')
+    }
+
+    @Override
+    void afterView() {
+        OBSERVED << throwable
     }
 }

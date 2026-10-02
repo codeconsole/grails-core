@@ -16,21 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-
 package undertowapp
 
-class UrlMappings {
+import org.springframework.web.util.WebUtils
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?" {
-            constraints {
-            }
-        }
+class ErrorPageController {
 
-        "/"(view: "/index")
-        "500"(view: '/error')
-        "500"(controller: 'errorPage', action: 'handle', exception: StaticInitFailure)
-        "413"(controller: 'upload', action: 'tooLarge')
-        "404"(view: '/notFound')
+    /**
+     * Hands the container's error to the view, as an application's error page commonly does. The model
+     * is exposed as request attributes, so the error becomes the {@code exception} request attribute.
+     */
+    def handle() {
+        render(view: 'handle', model: [exception: request.getAttribute(WebUtils.ERROR_EXCEPTION_ATTRIBUTE)])
+    }
+
+    def actionError() {
+        throw new ExceptionInInitializerError(new IllegalStateException('Simulated static initializer failure'))
     }
 }

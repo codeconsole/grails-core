@@ -87,4 +87,7 @@ Only the `model` argument is available. An object passed with `bean` or `collect
 | `render template: 't'` | `null`
 |===
 
-The `afterView` method is executed after view rendering completes. If an exception occurs, the exception is available using the `throwable` property of the link:{api}grails/artefact/Interceptor.html[Interceptor] trait.
+The `afterView` method is executed after view rendering completes. If an exception occurs, it is available using the `throwable` property of the link:{api}grails/artefact/Interceptor.html[Interceptor] trait. The property has type `Throwable`, so it can hold an `Error` as well as an `Exception`:
+
+* An `Error` thrown by an action arrives wrapped in an exception. Use `getCause()` to reach it.
+* An `Error` thrown outside the action, for example by a servlet filter, is handed to the servlet container's error page, and interceptors that match the error page's action run for that dispatch. If the error page passes the error to its model as `exception`, `throwable` holds it as the container provided it: Undertow passes the `Error` itself, while Tomcat wraps it in a `ServletException`.

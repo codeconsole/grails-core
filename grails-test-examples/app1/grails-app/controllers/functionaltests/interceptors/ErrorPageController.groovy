@@ -16,21 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package functionaltests.interceptors
 
-package undertowapp
+import org.springframework.web.util.WebUtils
 
-class UrlMappings {
+class ErrorPageController {
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?" {
-            constraints {
-            }
-        }
+    /**
+     * Hands the container's error to the view, as an application's error page commonly does. The model
+     * is exposed as request attributes, so the error becomes the {@code exception} request attribute.
+     */
+    def handle() {
+        render(view: 'handle', model: [exception: request.getAttribute(WebUtils.ERROR_EXCEPTION_ATTRIBUTE)])
+    }
 
-        "/"(view: "/index")
-        "500"(view: '/error')
-        "500"(controller: 'errorPage', action: 'handle', exception: StaticInitFailure)
-        "413"(controller: 'upload', action: 'tooLarge')
-        "404"(view: '/notFound')
+    def renderMessage() {
+        render(view: 'handle', model: [exception: 'Something went wrong'])
     }
 }

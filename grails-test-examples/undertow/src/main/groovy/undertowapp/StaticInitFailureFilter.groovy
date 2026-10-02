@@ -16,21 +16,26 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-
 package undertowapp
 
-class UrlMappings {
+import groovy.transform.CompileStatic
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?" {
-            constraints {
-            }
-        }
+import jakarta.servlet.FilterChain
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
 
-        "/"(view: "/index")
-        "500"(view: '/error')
-        "500"(controller: 'errorPage', action: 'handle', exception: StaticInitFailure)
-        "413"(controller: 'upload', action: 'tooLarge')
-        "404"(view: '/notFound')
+import org.springframework.web.filter.OncePerRequestFilter
+
+/**
+ * Fails the way a servlet filter does when a class it uses cannot initialize, for example an asset
+ * processor whose static initializer cannot load a native library. The {@code Error} is thrown before
+ * the {@code DispatcherServlet} runs, so it reaches the servlet container unwrapped.
+ */
+@CompileStatic
+class StaticInitFailureFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) {
+        throw new ExceptionInInitializerError(new StaticInitFailure('Simulated static initializer failure'))
     }
 }
