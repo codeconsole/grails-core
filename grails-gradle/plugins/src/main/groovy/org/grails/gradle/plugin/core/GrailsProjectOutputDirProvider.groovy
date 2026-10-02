@@ -32,10 +32,11 @@ import org.gradle.process.CommandLineArgumentProvider
 import grails.util.BuildSettings
 
 /**
- * Provides a system property naming one of the main source set's output directories, relative to the project
- * directory, to forked JVM tasks: {@code grails.project.class.dir} for its Groovy classes
- * ({@link BuildSettings#PROJECT_CLASSES_DIR}) and {@code grails.project.resource.dir} for its resources
- * ({@link BuildSettings#PROJECT_RESOURCES_DIR}).
+ * Provides a system property naming one of the build's directories, relative to the project directory, to forked
+ * JVM tasks: {@code grails.project.class.dir} for the main source set's Groovy classes
+ * ({@link BuildSettings#PROJECT_CLASSES_DIR}), {@code grails.project.resource.dir} for its resources
+ * ({@link BuildSettings#PROJECT_RESOURCES_DIR}), and {@code grails.project.target.dir} for the build directory itself
+ * ({@link BuildSettings#PROJECT_TARGET_DIR}), where development keeps its restart marker ({@code .grailspid}).
  *
  * <p>In development a changed source file is compiled again into {@link BuildSettings#BUILD_CLASSES_PATH}, and a
  * changed message bundle is copied into {@link BuildSettings#BUILD_RESOURCES_PATH}, each resolved against the directory
@@ -86,8 +87,8 @@ class GrailsProjectOutputDirProvider implements CommandLineArgumentProvider {
     final Map<String, ?> taskSystemProperties
 
     /**
-     * @param systemProperty the system property to pass, {@link BuildSettings#PROJECT_CLASSES_DIR} or
-     *        {@link BuildSettings#PROJECT_RESOURCES_DIR}
+     * @param systemProperty the system property to pass, {@link BuildSettings#PROJECT_CLASSES_DIR},
+     *        {@link BuildSettings#PROJECT_RESOURCES_DIR} or {@link BuildSettings#PROJECT_TARGET_DIR}
      * @param projectDir the project directory, which the path is relative to
      * @param directory the output directory the property names
      * @param taskSystemProperties the task's own system properties, a value set there is kept

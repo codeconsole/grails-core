@@ -147,7 +147,8 @@ class BuildSettings {
     public static final String PROJECT_TEST_SOURCE_DIR = 'grails.project.test.source.dir'
 
     /**
-     * The name of the system property for the the project target directory. Must be set if Gradle build location is changed.
+     * The name of the system property for {@link #TARGET_DIR}, the build directory relative to the project. The Grails
+     * Gradle plugin passes it, so a changed Gradle build location is followed.
      */
     public static final String PROJECT_TARGET_DIR = 'grails.project.target.dir'
 
@@ -336,8 +337,25 @@ class BuildSettings {
         }
         BASE_DIR = System.getProperty(APP_BASE_DIR) ? new File(System.getProperty(APP_BASE_DIR)) : (IOUtils.findApplicationDirectoryFile() ?: new File('.'))
         GRAILS_APP_DIR_PRESENT = new File(BASE_DIR, 'grails-app').exists() || new File(BASE_DIR, 'Application.groovy').exists()
-        TARGET_DIR = new File(BASE_DIR, System.getProperty('project.target.dir', 'build'))
+        TARGET_DIR = targetDir(System.getProperty(PROJECT_TARGET_DIR), System.getProperty('project.target.dir'), BASE_DIR)
         RESOURCES_DIR = !GRAILS_APP_DIR_PRESENT ? null : resourcesDir(System.getProperty(PROJECT_RESOURCES_DIR), BASE_DIR, TARGET_DIR)
+    }
+
+    /**
+     * {@link #TARGET_DIR}: the {@link #PROJECT_TARGET_DIR} the Gradle plugin passes, the build directory relative to
+     * the project, joined to the application directory (one that is absolute as it is); else the older
+     * {@code project.target.dir}; else {@code build}. The development restart marker ({@code .grailspid}) is kept
+     * there, so each build directory of one checkout has its own.
+     *
+     * @param fromSystem the {@link #PROJECT_TARGET_DIR} system property, or null
+     * @param legacy the {@code project.target.dir} system property, or null
+     * @param baseDir the application directory
+     * @return the target directory
+     */
+    private static File targetDir(String fromSystem, String legacy, File baseDir) {
+        String dir = fromSystem ?: legacy ?: 'build'
+        File file = new File(dir)
+        file.absolute ? file : new File(baseDir, dir)
     }
 
     /**

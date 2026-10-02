@@ -25,5 +25,6 @@ tasks.register('inspectBootRunClassesDir') {
         }
         println "CLASSES_DIR=${lastValue('grails.project.class.dir')}"
         println "RESOURCES_DIR=${lastValue('grails.project.resource.dir')}"
+        println "TARGET_DIR=${lastValue('grails.project.target.dir')}"
     }
 }

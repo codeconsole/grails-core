@@ -1041,7 +1041,10 @@ ${importStatements}
             // the JVM running it as well as the one the build compiles pages in.
             task.jvmArgumentProviders.add(new GrailsGspCompileStaticProvider(
                     project.extensions.getByType(GrailsExtension).compileStatic))
-            task.systemProperty(BuildSettings.PROJECT_TARGET_DIR, project.layout.buildDirectory.get().asFile.name)
+            // The build directory itself, where development keeps its restart marker (.grailspid): passed as a
+            // path relative to the project, not its name, so that two instances of one checkout have one each
+            task.jvmArgumentProviders.add(new GrailsProjectOutputDirProvider(BuildSettings.PROJECT_TARGET_DIR,
+                    project.projectDir, project.layout.buildDirectory, task.systemProperties))
             task.systemProperty(Environment.KEY, defaultGrailsEnv)
             task.systemProperty(Environment.FULL_STACKTRACE, System.getProperty(Environment.FULL_STACKTRACE) ?: '')
             if (task.minHeapSize == null) {

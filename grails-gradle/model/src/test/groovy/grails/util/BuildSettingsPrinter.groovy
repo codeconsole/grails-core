@@ -24,7 +24,11 @@ package grails.util
 class BuildSettingsPrinter {
 
     static void main(String[] args) {
+        println "TARGET_DIR=${BuildSettings.TARGET_DIR?.canonicalPath}"
         println "RESOURCES_DIR=${BuildSettings.RESOURCES_DIR?.canonicalPath}"
         println "BUILD_RESOURCES_PATH=${BuildSettings.BUILD_RESOURCES_PATH}"
+        if ('devtools' in args) {
+            println "DEVTOOLS_RESTART=${Environment.isDevtoolsRestart()}"
+        }
     }
 }

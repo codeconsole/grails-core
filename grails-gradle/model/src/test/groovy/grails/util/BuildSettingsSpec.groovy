@@ -51,17 +51,66 @@ class BuildSettingsSpec extends Specification {
         'the application\'s build/ without the property'   | null                                     | 'build/resources/main'
     }
 
+    void 'the target directory is #description, whatever the working directory'() {
+        given:
+        File app = new File(tmp, 'app')
+        new File(app, 'grails-app').mkdirs()
+        File elsewhere = new File(tmp, 'elsewhere')
+        elsewhere.mkdirs()
+        File absolute = new File(tmp, 'out')
+        String fromSystem = property?.replace('<absolute>', absolute.absolutePath)
+
+        when:
+        Map<String, String> printed = printBuildSettings(elsewhere, "-Dbase.dir=${app.absolutePath}", fromSystem)
+
+        then:
+        printed.TARGET_DIR == (expected == '<absolute>' ? absolute : new File(app, expected)).canonicalPath
+
+        where:
+        description                                       | property                                                  | expected
+        'the application\'s when the property is relative' | '-Dgrails.project.target.dir=build-parent/build-8070'      | 'build-parent/build-8070'
+        'the property when it is absolute'                | '-Dgrails.project.target.dir=<absolute>'                  | '<absolute>'
+        'the older project.target.dir without it'         | '-Dproject.target.dir=out'                                | 'out'
+        'the application\'s build/ without either'         | null                                                      | 'build'
+    }
+
+    void 'development keeps its restart marker in the build directory it is given, not build/'() {
+        given: 'an application with its build directory moved and no build/'
+        File app = new File(tmp, 'app')
+        new File(app, 'grails-app').mkdirs()
+        File buildDir = new File(app, 'build-parent/build-8070')
+        buildDir.mkdirs()
+
+        when:
+        String output = runBuildSettings(app, ["-Dbase.dir=${app.absolutePath}".toString(), '-Dgrails.env=development',
+                '-Dgrails.project.target.dir=build-parent/build-8070'], ['devtools'])
+
+        then:
+        output.contains('DEVTOOLS_RESTART=false')
+        new File(buildDir, '.grailspid').text.contains('@')
+        !new File(app, 'build').exists()
+        !output.contains('unable to write pid file')
+    }
+
     private static Map<String, String> printBuildSettings(File workingDir, String... properties) {
+        runBuildSettings(workingDir, properties.findAll() as List<String>, []).readLines()
+                .findAll { it.contains('=') }
+                .collectEntries { String line ->
+                    int split = line.indexOf('=')
+                    [(line.substring(0, split)): line.substring(split + 1)]
+                }
+    }
+
+    /** Runs {@link BuildSettingsPrinter} in a JVM of its own, as {@code BuildSettings} resolves once, when it loads. */
+    private static String runBuildSettings(File workingDir, List<String> properties, List<String> args) {
         String java = new File(System.getProperty('java.home'), 'bin/java').absolutePath
         List<String> command = [java, '-cp', System.getProperty('java.class.path')]
-        command.addAll(properties.findAll())
+        command.addAll(properties)
         command << BuildSettingsPrinter.name
+        command.addAll(args)
         Process process = new ProcessBuilder(command).directory(workingDir).redirectErrorStream(true).start()
         String output = process.inputStream.text
         assert process.waitFor() == 0: output
-        output.readLines().findAll { it.contains('=') }.collectEntries { String line ->
-            int split = line.indexOf('=')
-            [(line.substring(0, split)): line.substring(split + 1)]
-        }
+        output
     }
 }
