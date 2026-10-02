@@ -444,13 +444,34 @@ public abstract class MappingFactory<R extends Entity, T extends Property> {
         return new DefaultIdentityMapping(classMapping);
     }
 
+    /**
+     * Creates the identity mapping for an entity whose identifier property has a mapped form.
+     *
+     * <p>A generator name that matches a {@link ValueGenerator} constant, ignoring case, resolves to that
+     * constant. Any other name, such as a generator class name or a strategy only one datastore knows,
+     * resolves to {@link ValueGenerator#CUSTOM}; the name itself stays on the mapped form for that datastore
+     * to interpret. No generator name resolves to {@link ValueGenerator#AUTO}.</p>
+     *
+     * @param classMapping the class mapping of the entity
+     * @param property the mapped form of the identifier property, or {@code null} when it has none
+     * @return the identity mapping
+     */
     protected IdentityMapping createDefaultIdentityMapping(final ClassMapping classMapping, final T property) {
         String targetName = property != null ? property.getName() : null;
         String[] identifierNames = targetName != null ? new String[]{targetName} : new String[]{IDENTITY_PROPERTY};
         String generatorName = property != null ? property.getGenerator() : null;
-        ValueGenerator generator = generatorName != null ? ValueGenerator.valueOf(generatorName.toUpperCase(java.util.Locale.ENGLISH)) : ValueGenerator.AUTO;
-        return new DefaultIdentityMapping<>(classMapping, property, identifierNames, generator);
+        return new DefaultIdentityMapping<>(classMapping, property, identifierNames, resolveGenerator(generatorName));
+    }
 
+    private static ValueGenerator resolveGenerator(String generatorName) {
+        if (generatorName == null) {
+            return ValueGenerator.AUTO;
+        }
+        try {
+            return ValueGenerator.valueOf(generatorName.toUpperCase(Locale.ENGLISH));
+        } catch (IllegalArgumentException notBuiltIn) {
+            return ValueGenerator.CUSTOM;
+        }
     }
 
     public static String associationtoString(String desc, Association a) {
