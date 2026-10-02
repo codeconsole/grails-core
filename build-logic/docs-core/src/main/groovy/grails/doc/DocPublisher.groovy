@@ -349,6 +349,7 @@ class DocPublisher {
             chapterVars.sectionNumber = (i + 1).toString()
             writeChapter(chapter, template, sectionTemplate, guideSrcDir, refGuideDir.path, fullContents, chapterVars)
         }
+        linkAcrossChapters(chapters.collect { new File(refGuideDir, "${it.name}.html") })
 
         files = new File("${src}/ref").listFiles()?.toList()?.sort() ?: []
         def reference = [:]
@@ -512,6 +513,32 @@ class DocPublisher {
         }
 
         return varsCopy.content
+    }
+
+    /**
+     * Points each fragment link on a chapter page whose target is on another chapter page at
+     * that page. A cross reference such as {@code <<unitTesting>>} is rendered as
+     * {@code href="#unitTesting"}, which only works in the single-page guide. When more than
+     * one chapter defines the target, the first one wins, as it does in the single-page guide.
+     */
+    protected void linkAcrossChapters(List<File> chapterPages) {
+        Map<File, Set<String>> idsByPage = [:]
+        Map<String, String> pageById = [:]
+        for (page in chapterPages) {
+            Set<String> ids = (page.getText(encoding) =~ /(?<![\w-])id="([^"]+)"/).collect { it[1] } as Set<String>
+            idsByPage[page] = ids
+            ids.each { pageById.putIfAbsent(it, page.name) }
+        }
+        for (page in chapterPages) {
+            String html = page.getText(encoding)
+            String linked = html.replaceAll(/href="#([^"]+)"/) { String link, String id ->
+                String targetPage = idsByPage[page].contains(id) ? null : pageById[id]
+                targetPage ? "href=\"${targetPage}#${id}\"" : link
+            }
+            if (linked != html) {
+                page.setText(linked, encoding)
+            }
+        }
     }
 
     protected void initialize() {
