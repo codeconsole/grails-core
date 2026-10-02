@@ -35,7 +35,7 @@ import grails.web.mime.MimeType
  * @since 2.3
  */
 @CompileStatic
-@Deprecated(since = '8.0')
+@Deprecated(since = '9.0')
 class HalXmlCollectionRenderer extends HalXmlRenderer implements ContainerRenderer {
 
     final Class componentType

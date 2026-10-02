@@ -32,7 +32,7 @@ import grails.rest.render.ContainerRenderer
  * autowires every {@code Renderer} and routes container renderers to the container registry, which
  * keeps registration independent of which registry instance is created and when.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 @CompileStatic
 @SuppressWarnings('rawtypes')

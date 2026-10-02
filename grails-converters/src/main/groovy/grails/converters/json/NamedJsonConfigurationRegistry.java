@@ -35,7 +35,7 @@ import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer;
 /**
  * Registry for request-safe named Jackson response configurations.
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class NamedJsonConfigurationRegistry {
 

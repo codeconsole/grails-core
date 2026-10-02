@@ -43,7 +43,7 @@ import org.grails.datastore.mapping.model.PersistentEntity;
  * point fails. Resolving per type on first use also means domain classes registered after the
  * mapper was built are still serialized with their persistent metadata.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 final class GrailsDomainSerializers implements Serializers {
 

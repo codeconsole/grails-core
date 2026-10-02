@@ -40,7 +40,7 @@ import org.grails.web.converters.marshaller.ProxyUnwrappingMarshaller;
  * Initializes the legacy XML converter configurations when the optional
  * {@code grails-xml} module is present.
  *
- * @since 8.0
+ * @since 9.0
  */
 public class XmlConvertersConfigurationInitializer
         implements ApplicationContextAware, GrailsApplicationAware, InitializingBean {

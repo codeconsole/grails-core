@@ -28,7 +28,7 @@ import grails.web.render.NamedJsonRenderer;
 /**
  * Jackson implementation shared by {@code render} and {@code respond}.
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class JacksonNamedJsonRenderer implements NamedJsonRenderer {
 

@@ -30,7 +30,7 @@ XML.registerObjectMarshaller Book, { Book book, XML xml ->
 ----
 
 NOTE: JSON `ObjectMarshaller` registration and named/default JSON converter configurations are deprecated
-in Grails 8. They remain available for compatibility. New JSON customization should use Jackson 3 and
+in Grails 9. They remain available for compatibility. New JSON customization should use Jackson 3 and
 Spring Boot's `JsonMapperBuilderCustomizer`; XML marshaller registration remains supported by the optional
 `grails-xml` module.
 

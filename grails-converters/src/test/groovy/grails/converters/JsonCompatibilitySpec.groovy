@@ -90,7 +90,7 @@ class JsonCompatibilitySpec extends Specification {
         methods.size() == 4
         methods.every { method ->
             Deprecated deprecated = method.getAnnotation(Deprecated)
-            deprecated?.since() == '8.0' && !deprecated.forRemoval()
+            deprecated?.since() == '9.0' && !deprecated.forRemoval()
         }
     }
 
@@ -104,7 +104,7 @@ class JsonCompatibilitySpec extends Specification {
         methods.size() == 5
         methods.every { method ->
             Deprecated deprecated = method.getAnnotation(Deprecated)
-            deprecated?.since() == '8.0' && !deprecated.forRemoval()
+            deprecated?.since() == '9.0' && !deprecated.forRemoval()
         }
     }
 

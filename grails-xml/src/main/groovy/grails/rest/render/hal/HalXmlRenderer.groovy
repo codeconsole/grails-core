@@ -45,7 +45,7 @@ import org.grails.web.xml.XMLStreamWriter
  * @since 2.3
  */
 @CompileStatic
-@Deprecated(since = '8.0')
+@Deprecated(since = '9.0')
 class HalXmlRenderer<T> extends AbstractLinkingRenderer<T> {
 
     public static final MimeType MIME_TYPE = MimeType.HAL_XML

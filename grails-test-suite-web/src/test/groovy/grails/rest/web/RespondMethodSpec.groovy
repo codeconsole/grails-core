@@ -54,7 +54,7 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
                                     multipartForm: 'multipart/form-data']
     }}
 
-    void 'legacy rendering remains the default on 8.0.x'() {
+    void 'legacy rendering remains the default'() {
         given:
         response.format = 'json'
 

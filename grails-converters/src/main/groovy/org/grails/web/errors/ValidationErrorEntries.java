@@ -36,7 +36,7 @@ import org.springframework.validation.ObjectError;
  * {@code Errors} object describe a failure the same way. Two shapes for the same concept in one
  * response format is a wire-compatibility hazard, so both paths build entries here.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class ValidationErrorEntries {
 

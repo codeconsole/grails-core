@@ -145,7 +145,7 @@ class DefaultRendererRegistrySpec extends Specification {
         holder.converters == [early, late]
     }
 
-    void 'Spring JSON rendering is opt-in on 8.0.x for setting #setting'() {
+    void 'Spring JSON rendering is opt-in for setting #setting'() {
         given:
         def context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', setting))

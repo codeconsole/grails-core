@@ -43,17 +43,17 @@ class XmlCompatibilitySpec extends Specification {
 
     void 'legacy XML validation error formats are deprecated for a future major release'() {
         expect:
-        VndErrorXmlRenderer.getAnnotation(Deprecated).since() == '8.0'
+        VndErrorXmlRenderer.getAnnotation(Deprecated).since() == '9.0'
         !VndErrorXmlRenderer.getAnnotation(Deprecated).forRemoval()
-        ValidationErrorsMarshaller.getAnnotation(Deprecated).since() == '8.0'
+        ValidationErrorsMarshaller.getAnnotation(Deprecated).since() == '9.0'
         !ValidationErrorsMarshaller.getAnnotation(Deprecated).forRemoval()
     }
 
     void 'HAL XML renderers are deprecated for a future major release'() {
         expect:
-        HalXmlRenderer.getAnnotation(Deprecated).since() == '8.0'
+        HalXmlRenderer.getAnnotation(Deprecated).since() == '9.0'
         !HalXmlRenderer.getAnnotation(Deprecated).forRemoval()
-        HalXmlCollectionRenderer.getAnnotation(Deprecated).since() == '8.0'
+        HalXmlCollectionRenderer.getAnnotation(Deprecated).since() == '9.0'
         !HalXmlCollectionRenderer.getAnnotation(Deprecated).forRemoval()
     }
 

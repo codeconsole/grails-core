@@ -40,7 +40,7 @@ import org.grails.datastore.mapping.model.MappingContext;
 /**
  * Adds Grails-specific serializers to Spring Boot's configured JSON mapper.
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustomizer {
 

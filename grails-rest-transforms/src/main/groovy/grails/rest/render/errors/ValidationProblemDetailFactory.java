@@ -39,7 +39,7 @@ import org.grails.web.errors.ValidationErrorEntries;
  * sensitive request data. Applications can explicitly include them by using
  * {@link #ValidationProblemDetailFactory(boolean)}.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class ValidationProblemDetailFactory {
 

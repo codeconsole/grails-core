@@ -29,7 +29,7 @@ import tools.jackson.databind.module.SimpleModule;
 /**
  * Defines serializers, a view, and writer attributes for one named Jackson response configuration.
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class NamedJsonConfiguration {
 

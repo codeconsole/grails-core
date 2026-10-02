@@ -40,7 +40,7 @@ import java.nio.charset.CodingErrorAction;
  * <p>Not thread safe, and intended to wrap a single response body. {@link #close()} flushes the
  * decoder but deliberately leaves the underlying writer open, since the container owns it.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 public final class WriterOutputStream extends OutputStream {
 

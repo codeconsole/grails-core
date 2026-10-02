@@ -32,7 +32,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
  * {@link #extendMessageConverters} once with the final list instead, after every
  * {@code WebMvcConfigurer} has contributed, so the ordering applications configure is preserved.</p>
  *
- * @since 8.0
+ * @since 9.0
  */
 @CompileStatic
 class SpringMessageConverters implements WebMvcConfigurer {

@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * Renders a value with a registered named JSON configuration, or the default when the name is null.
  *
- * @since 8.0
+ * @since 9.0
  */
 public interface NamedJsonRenderer {
 

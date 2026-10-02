@@ -40,7 +40,7 @@ import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
 /**
  * Provides optional XML conversion, rendering, and request binding support.
  *
- * @since 8.0
+ * @since 9.0
  */
 @CompileStatic
 class XmlGrailsPlugin extends Plugin {

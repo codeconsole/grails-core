@@ -27,7 +27,7 @@ import grails.converters.XML
 /**
  * XML-specific request extensions contributed by the optional XML module.
  *
- * @since 8.0
+ * @since 9.0
  */
 @CompileStatic
 class XmlConvertersExtension {
