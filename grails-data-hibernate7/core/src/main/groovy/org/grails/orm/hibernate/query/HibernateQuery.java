@@ -468,11 +468,12 @@ public class HibernateQuery extends Query {
     }
 
     private List executeList() {
-        return getHibernateQueryExecutor().list(getCurrentSession(), getJpaCriteriaQuery());
+        return list(getCurrentSession());
     }
 
     public List list(Session session) {
-        return getHibernateQueryExecutor().list(session, getJpaCriteriaQuery());
+        var creator = createJpaCriteriaQueryCreator();
+        return getHibernateQueryExecutor().list(session, creator.createQuery(), creator.getParameterValues());
     }
 
     private HibernateQueryExecutor getHibernateQueryExecutor() {
@@ -481,10 +482,13 @@ public class HibernateQuery extends Query {
     }
 
     public JpaCriteriaQuery<?> getJpaCriteriaQuery() {
+        return createJpaCriteriaQueryCreator().createQuery();
+    }
+
+    private JpaCriteriaQueryCreator<?> createJpaCriteriaQueryCreator() {
         ConversionService conversionService = getSession().getMappingContext().getConversionService();
-        return new JpaCriteriaQueryCreator(
-                        projections, getCriteriaBuilder(), (GrailsHibernatePersistentEntity) entity, detachedCriteria, conversionService, this)
-                .createQuery();
+        return new JpaCriteriaQueryCreator<>(
+                projections, getCriteriaBuilder(), (GrailsHibernatePersistentEntity) entity, detachedCriteria, conversionService, this);
     }
 
     public void setFetchSize(Integer fetchSize) {
@@ -504,11 +508,12 @@ public class HibernateQuery extends Query {
     }
 
     private Object executeSingleResult() {
-        return getHibernateQueryExecutor().singleResult(getCurrentSession(), getJpaCriteriaQuery());
+        return singleResult(getCurrentSession());
     }
 
     public Object singleResult(Session session) {
-        return getHibernateQueryExecutor().singleResult(session, getJpaCriteriaQuery());
+        var creator = createJpaCriteriaQueryCreator();
+        return getHibernateQueryExecutor().singleResult(session, creator.createQuery(), creator.getParameterValues());
     }
 
     @Override
@@ -526,11 +531,12 @@ public class HibernateQuery extends Query {
             JpaSubQuery<Tuple> innerSubquery = countQuery.subquery(Tuple.class);
 
             ConversionService cs = getSession().getMappingContext().getConversionService();
-            new JpaCriteriaQueryCreator(projections, cb, (GrailsHibernatePersistentEntity) entity, detachedCriteria, cs).populateSubquery(innerSubquery);
+            var creator = new JpaCriteriaQueryCreator<>(projections, cb, (GrailsHibernatePersistentEntity) entity, detachedCriteria, cs);
+            creator.populateSubquery(innerSubquery);
 
             countQuery.from(innerSubquery);
             countQuery.select(cb.count(cb.literal(1)));
-            result = (Number) getHibernateQueryExecutor().singleResult(getCurrentSession(), countQuery);
+            result = (Number) getHibernateQueryExecutor().singleResult(getCurrentSession(), countQuery, creator.getParameterValues());
         }
 
         return (Number) firePostQueryEvent(result);
@@ -562,11 +568,12 @@ public class HibernateQuery extends Query {
 
     public Object scroll() {
         firePreQueryEvent();
-        return getHibernateQueryExecutor().scroll(getCurrentSession(), getJpaCriteriaQuery());
+        return scroll(getCurrentSession());
     }
 
     public Object scroll(Session session) {
-        return getHibernateQueryExecutor().scroll(session, getJpaCriteriaQuery());
+        var creator = createJpaCriteriaQueryCreator();
+        return getHibernateQueryExecutor().scroll(session, creator.createQuery(), creator.getParameterValues());
     }
 
     private Session getCurrentSession() {

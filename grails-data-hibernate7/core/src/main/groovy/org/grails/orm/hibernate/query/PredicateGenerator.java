@@ -32,13 +32,12 @@ import jakarta.persistence.criteria.AbstractQuery;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.ParameterExpression;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 
 import org.hibernate.query.criteria.HibernateCriteriaBuilder;
 import org.hibernate.query.criteria.JpaSubQuery;
-import org.hibernate.query.sqm.internal.SqmCriteriaNodeBuilder;
-import org.hibernate.query.sqm.tree.expression.SqmExpression;
 
 import org.springframework.core.convert.ConversionService;
 
@@ -371,22 +370,22 @@ public class PredicateGenerator {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.GreaterThanEquals) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.LessThan) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.LessThanEquals) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.In) {
             Object value = pc.getValue();
             if (value instanceof QueryableCriteria qc) {
@@ -630,17 +629,17 @@ public class PredicateGenerator {
 
     /**
      * Returns the value as an expression for a comparison overload that takes an expression, which the JPA ordering
-     * overloads need for a value that is not {@link Comparable}. The public criteria API has no factory for a value
-     * typed from a path, so Hibernate's node builder supplies one, typing the value as the JPA value overloads do.
+     * overloads need for a value that is not {@link Comparable}. The value becomes a criteria parameter of the
+     * property's Java type, bound once the query is created, so Hibernate types it from the property it is compared
+     * with, as it does for an HQL parameter.
      */
-    private Expression<?> asExpression(Object value, Expression<?> propertyPath) {
+    private Expression<?> asExpression(Object value, Expression<?> propertyPath, JpaQueryContext context) {
         if (value instanceof Expression<?> expression) {
             return expression;
         }
-        if (criteriaBuilder instanceof SqmCriteriaNodeBuilder nodeBuilder && propertyPath instanceof SqmExpression<?> path) {
-            return nodeBuilder.value(value, path);
-        }
-        return criteriaBuilder.literal(value);
+        ParameterExpression<?> parameter = criteriaBuilder.parameter(propertyPath.getJavaType());
+        context.bindParameter(parameter, value);
+        return parameter;
     }
 
     public Predicate generate(

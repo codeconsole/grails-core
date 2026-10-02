@@ -195,6 +195,57 @@ class UserTypeComparisonSpec extends HibernateGormDatastoreSpec {
         '<='        | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade <= g } } | ['low', 'mid']
     }
 
+    void 'criteria get compares a user type property whose class is not Comparable'() {
+        expect:
+        UserTypeComparisonItem.createCriteria().get {
+            gt('grade', new UserTypeComparisonGrade(2))
+        }.name == 'high'
+    }
+
+    void 'criteria scroll compares a user type property whose class is not Comparable'() {
+        when:
+        def results = UserTypeComparisonItem.createCriteria().scroll {
+            gt('grade', new UserTypeComparisonGrade(1))
+            order('name', 'asc')
+        }
+
+        then:
+        results.next()
+        results.get().name == 'high'
+        results.next()
+        results.get().name == 'mid'
+        !results.next()
+
+        cleanup:
+        results?.close()
+    }
+
+    void 'a count with projections compares a user type property whose class is not Comparable'() {
+        expect:
+        new DetachedCriteria<>(UserTypeComparisonItem).build {
+            gt('grade', new UserTypeComparisonGrade(1))
+            projections {
+                groupProperty('name')
+            }
+        }.count() == 2
+    }
+
+    void 'a query and its subquery each compare a user type property whose class is not Comparable'() {
+        given:
+        DetachedCriteria<UserTypeComparisonItem> higherGrades = new DetachedCriteria<>(UserTypeComparisonItem).build {
+            gt('grade', new UserTypeComparisonGrade(1))
+            projections {
+                property('id')
+            }
+        }
+
+        expect:
+        names(new DetachedCriteria<>(UserTypeComparisonItem).build {
+            lt('rank', new UserTypeComparisonRank(3))
+            inList('id', higherGrades)
+        }.list()) == ['mid']
+    }
+
     void 'a comparison with property arithmetic still compares against the expression'() {
         given:
         Closure criteria = { gt('quantity', reorderLevel * 2) }
