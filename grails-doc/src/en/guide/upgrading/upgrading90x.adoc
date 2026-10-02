@@ -137,3 +137,23 @@ With the `PATH` circular reference behaviour (`grails.converters.json.circular.r
 has the right path.
 
 JSON views, the XML converter and the HAL renderer are not changed.
+
+==== 2. Domain Classes Render Through Jackson
+
+The JSON converter renders domain classes with a Jackson serializer, and Grails registers it, as a Jackson module, with
+the application's `JsonMapper`. Writing a domain class instance with the application's `JsonMapper`, including returning
+one from a Spring MVC controller, now renders it as `render ... as JSON` does: associated instances as references of their
+id, such as `{"id":3}`, rather than in full, and proxies as the instances they proxy. Properties that Jackson annotations
+leave out, including the ones GORM names in the `@JsonIgnoreProperties` it adds to every domain class, are still left
+out. To keep Jackson's bean serialization for domain classes, set `grails.converters.json.domain.jackson.enabled` to
+`false`.
+
+The JSON converter renders domain classes as before, with these changes:
+
+* A property annotated with `@JsonIgnore`, or with `@JsonProperty(access = WRITE_ONLY)`, is no longer rendered.
+* A to-many association whose value is a `Map` renders as an object of references, such as `{"a":{"id":1}}`, where it
+failed before.
+* `DomainClassMarshaller` and `DeepDomainClassMarshaller` render through the serializer. Their constructors and
+protected methods (`includesProperty`, `excludesProperty`, `extractValue`, `asShortObject` and
+`isRenderDomainClassRelations`) are unchanged, and a subclass that overrides them still renders as it did. They are
+consulted before the mapper's value serializers, as `ProxyUnwrappingMarshaller` is.

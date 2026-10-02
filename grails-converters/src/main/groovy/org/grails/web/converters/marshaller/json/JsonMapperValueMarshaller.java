@@ -49,8 +49,15 @@ public class JsonMapperValueMarshaller implements ObjectMarshaller<JSON> {
     }
 
     public void marshalObject(Object object, JSON converter) throws ConverterException {
+        write(object, converter);
+    }
+
+    /**
+     * Writes a value with the converter's mapper, and renders the values nested in it with the converter.
+     */
+    static void write(Object value, JSON converter) throws ConverterException {
         try {
-            converter.getWriter().value(new JsonMapperValue(object, converter.getJsonMapper(),
+            converter.getWriter().value(new JsonMapperValue(value, converter.getJsonMapper(),
                     nested -> writeNested(nested, converter)));
         }
         catch (JSONException e) {
