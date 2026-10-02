@@ -58,6 +58,7 @@ class UserTypeComparisonSpec extends HibernateGormDatastoreSpec {
         then:
         item.amount == new UserTypeComparisonAmount(200)
         item.rank.level == 2
+        item.grade == new UserTypeComparisonGrade(2)
     }
 
     void 'HQL compares the user type property with a parameter'() {
@@ -147,6 +148,53 @@ class UserTypeComparisonSpec extends HibernateGormDatastoreSpec {
         'le'     | ['low', 'mid']
     }
 
+    void 'criteria #operator compares a user type property whose class is Serializable but not Comparable'() {
+        expect:
+        names(UserTypeComparisonItem.createCriteria().list {
+            "${operator}"('grade', new UserTypeComparisonGrade(2))
+        }) == expected
+
+        where:
+        operator | expected
+        'eq'     | ['mid']
+        'ne'     | ['high', 'low']
+        'gt'     | ['high']
+        'ge'     | ['high', 'mid']
+        'lt'     | ['low']
+        'le'     | ['low', 'mid']
+    }
+
+    void 'dynamic finder #finder compares a user type property whose class is Serializable but not Comparable'() {
+        expect:
+        names(UserTypeComparisonItem."findAllBy${finder}"(new UserTypeComparisonGrade(2))) == expected
+
+        where:
+        finder                   | expected
+        'Grade'                  | ['mid']
+        'GradeNotEqual'          | ['high', 'low']
+        'GradeGreaterThan'       | ['high']
+        'GradeGreaterThanEquals' | ['high', 'mid']
+        'GradeLessThan'          | ['low']
+        'GradeLessThanEquals'    | ['low', 'mid']
+    }
+
+    void 'where query #description compares a user type property whose class is Serializable but not Comparable'() {
+        given:
+        UserTypeComparisonGrade grade = new UserTypeComparisonGrade(2)
+
+        expect:
+        names(query(grade).list()) == expected
+
+        where:
+        description | query                                                                        | expected
+        '=='        | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade == g } } | ['mid']
+        '!='        | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade != g } } | ['high', 'low']
+        '>'         | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade > g } }  | ['high']
+        '>='        | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade >= g } } | ['high', 'mid']
+        '<'         | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade < g } }  | ['low']
+        '<='        | { UserTypeComparisonGrade g -> UserTypeComparisonItem.where { grade <= g } } | ['low', 'mid']
+    }
+
     void 'a comparison with property arithmetic still compares against the expression'() {
         given:
         Closure criteria = { gt('quantity', reorderLevel * 2) }
@@ -160,6 +208,7 @@ class UserTypeComparisonSpec extends HibernateGormDatastoreSpec {
                 name: name,
                 amount: new UserTypeComparisonAmount(cents),
                 rank: new UserTypeComparisonRank(level),
+                grade: new UserTypeComparisonGrade(level),
                 quantity: quantity,
                 reorderLevel: reorderLevel
         ).save(failOnError: true)
@@ -176,12 +225,14 @@ class UserTypeComparisonItem {
     String name
     UserTypeComparisonAmount amount
     UserTypeComparisonRank rank
+    UserTypeComparisonGrade grade
     Integer quantity
     Integer reorderLevel
 
     static mapping = {
         amount type: UserTypeComparisonAmountType
         rank type: UserTypeComparisonRankType
+        grade type: UserTypeComparisonGradeType
     }
 }
 
@@ -253,7 +304,22 @@ class UserTypeComparisonRank {
 }
 
 @CompileStatic
-class UserTypeComparisonRankType implements UserType<UserTypeComparisonRank> {
+@EqualsAndHashCode
+class UserTypeComparisonGrade implements Serializable {
+
+    final int level
+
+    UserTypeComparisonGrade(int level) {
+        this.level = level
+    }
+}
+
+@CompileStatic
+abstract class UserTypeComparisonIntegerType<T> implements UserType<T> {
+
+    protected abstract T fromLevel(int level)
+
+    protected abstract int toLevel(T value)
 
     @Override
     int getSqlType() {
@@ -261,33 +327,66 @@ class UserTypeComparisonRankType implements UserType<UserTypeComparisonRank> {
     }
 
     @Override
-    Class<UserTypeComparisonRank> returnedClass() {
-        UserTypeComparisonRank
-    }
-
-    @Override
-    UserTypeComparisonRank nullSafeGet(ResultSet rs, int position, WrapperOptions options) throws SQLException {
+    T nullSafeGet(ResultSet rs, int position, WrapperOptions options) throws SQLException {
         int level = rs.getInt(position)
-        rs.wasNull() ? null : new UserTypeComparisonRank(level)
+        rs.wasNull() ? null : fromLevel(level)
     }
 
     @Override
-    void nullSafeSet(PreparedStatement st, UserTypeComparisonRank value, int position, WrapperOptions options) throws SQLException {
+    void nullSafeSet(PreparedStatement st, T value, int position, WrapperOptions options) throws SQLException {
         if (value == null) {
             st.setNull(position, Types.INTEGER)
         }
         else {
-            st.setInt(position, value.level)
+            st.setInt(position, toLevel(value))
         }
     }
 
     @Override
-    UserTypeComparisonRank deepCopy(UserTypeComparisonRank value) {
+    T deepCopy(T value) {
         value
     }
 
     @Override
     boolean isMutable() {
         false
+    }
+}
+
+@CompileStatic
+class UserTypeComparisonRankType extends UserTypeComparisonIntegerType<UserTypeComparisonRank> {
+
+    @Override
+    Class<UserTypeComparisonRank> returnedClass() {
+        UserTypeComparisonRank
+    }
+
+    @Override
+    protected UserTypeComparisonRank fromLevel(int level) {
+        new UserTypeComparisonRank(level)
+    }
+
+    @Override
+    protected int toLevel(UserTypeComparisonRank value) {
+        value.level
+    }
+}
+
+@CompileStatic
+class UserTypeComparisonGradeType extends UserTypeComparisonIntegerType<UserTypeComparisonGrade> {
+
+    @Override
+    Class<UserTypeComparisonGrade> returnedClass() {
+        UserTypeComparisonGrade
+    }
+
+    @Override
+    protected UserTypeComparisonGrade fromLevel(int level) {
+        new UserTypeComparisonGrade(level)
+    }
+
+    @Override
+    protected int toLevel(UserTypeComparisonGrade value) {
+        value.level
     }
 }

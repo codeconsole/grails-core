@@ -37,6 +37,8 @@ import jakarta.persistence.criteria.Subquery;
 
 import org.hibernate.query.criteria.HibernateCriteriaBuilder;
 import org.hibernate.query.criteria.JpaSubQuery;
+import org.hibernate.query.sqm.internal.SqmCriteriaNodeBuilder;
+import org.hibernate.query.sqm.tree.expression.SqmExpression;
 
 import org.springframework.core.convert.ConversionService;
 
@@ -369,22 +371,22 @@ public class PredicateGenerator {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
         } else if (pc instanceof Query.GreaterThanEquals) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
         } else if (pc instanceof Query.LessThan) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
         } else if (pc instanceof Query.LessThanEquals) {
             Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
             return value instanceof Comparable<?> comparable ?
                 criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
-                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath));
         } else if (pc instanceof Query.In) {
             Object value = pc.getValue();
             if (value instanceof QueryableCriteria qc) {
@@ -626,8 +628,19 @@ public class PredicateGenerator {
         return convertValue(entity, propertyName, value, propertyPath);
     }
 
-    private Expression<?> asExpression(Object value) {
-        return value instanceof Expression<?> expression ? expression : criteriaBuilder.literal(value);
+    /**
+     * Returns the value as an expression for a comparison overload that takes an expression, which the JPA ordering
+     * overloads need for a value that is not {@link Comparable}. The public criteria API has no factory for a value
+     * typed from a path, so Hibernate's node builder supplies one, typing the value as the JPA value overloads do.
+     */
+    private Expression<?> asExpression(Object value, Expression<?> propertyPath) {
+        if (value instanceof Expression<?> expression) {
+            return expression;
+        }
+        if (criteriaBuilder instanceof SqmCriteriaNodeBuilder nodeBuilder && propertyPath instanceof SqmExpression<?> path) {
+            return nodeBuilder.value(value, path);
+        }
+        return criteriaBuilder.literal(value);
     }
 
     public Predicate generate(
