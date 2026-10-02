@@ -35,23 +35,44 @@ class DataSourceConfigurationMetadataSpec extends Specification {
     private static final String METADATA = 'META-INF/spring-configuration-metadata.json'
 
     @Shared
+    List<String> publishedGroupNames
+
+    @Shared
+    List<String> publishedPropertyNames
+
+    @Shared
     Map<String, Map> publishedProperties
 
     @Shared
     DataSourceSettings unconfigured
 
     void setupSpec() {
-        List<URL> metadataResources = getClass().classLoader.getResources(METADATA).toList()
-        publishedProperties = metadataResources.collectMany { URL resource ->
-            Map metadata = (Map) new JsonSlurper().parse(resource)
-            (List<Map>) metadata.get('properties') ?: []
+        // this module's jar is on its own test classpath too (through grails-data-simple), so identical copies count once
+        List<Map> metadata = getClass().classLoader.getResources(METADATA).toList().collect { URL resource ->
+            (Map) new JsonSlurper().parse(resource)
+        }.unique()
+        publishedGroupNames = metadata.collectMany { Map published ->
+            ((List<Map>) published.get('groups') ?: [])*.get('name') as List<String>
+        }.findAll { String name ->
+            name == 'dataSource'
+        }
+        List<Map> dataSourceProperties = metadata.collectMany { Map published ->
+            (List<Map>) published.get('properties') ?: []
         }.findAll { Map property ->
             ((String) property.get('name')).startsWith('dataSource.')
-        }.collectEntries { Map property ->
+        }
+        publishedPropertyNames = dataSourceProperties*.get('name') as List<String>
+        publishedProperties = dataSourceProperties.collectEntries { Map property ->
             [(property.get('name')): property]
         }
         assert publishedProperties
         unconfigured = new DataSourceSettingsBuilder(DatastoreUtils.createPropertyResolver([:])).build()
+    }
+
+    void 'test the dataSource group and each of its settings are published by a single metadata file'() {
+        expect: 'an IDE and the configReport command find one description of each setting'
+        publishedGroupNames == ['dataSource']
+        publishedPropertyNames.findAll { String name -> publishedPropertyNames.count(name) > 1 }.unique() == []
     }
 
     @Unroll
