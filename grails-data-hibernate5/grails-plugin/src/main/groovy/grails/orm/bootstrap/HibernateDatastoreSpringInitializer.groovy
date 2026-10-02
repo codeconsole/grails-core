@@ -53,7 +53,7 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
 
     String defaultDataSourceBeanName = ConnectionSource.DEFAULT
     String defaultSessionFactoryBeanName = SESSION_FACTORY_BEAN_NAME
-    Set<String> dataSources = [defaultDataSourceBeanName] as Set<String>
+    Set<String> dataSources = new LinkedHashSet<String>([defaultDataSourceBeanName])
     boolean enableReload = false
     boolean grailsPlugin = false
 
@@ -86,7 +86,7 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
     void configureDataSources(PropertyResolver config) {
 
         // The datastore always creates the default connection source, whether or not it is configured
-        Set<String> dataSourceNames = [ConnectionSource.DEFAULT] as Set<String>
+        Set<String> dataSourceNames = new LinkedHashSet<String>([ConnectionSource.DEFAULT])
 
         if (config != null) {
             Map dataSources = config.getProperty(DATA_SOURCES, Map, Collections.emptyMap())

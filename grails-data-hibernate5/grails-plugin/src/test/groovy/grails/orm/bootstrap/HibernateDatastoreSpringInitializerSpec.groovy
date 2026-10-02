@@ -103,19 +103,19 @@ class HibernateDatastoreSpringInitializerSpec extends Specification{
         when: 'an initializer is created'
         def datastoreInitializer = new HibernateDatastoreSpringInitializer(config, Person)
 
-        then: 'the default connection source comes first, followed by the additional data sources'
-        datastoreInitializer.dataSources.first() == ConnectionSource.DEFAULT
-        datastoreInitializer.dataSources == expected as Set
+        then: 'the default connection source comes first, followed by the additional data sources in configuration order'
+        datastoreInitializer.dataSources instanceof LinkedHashSet
+        datastoreInitializer.dataSources as List == expected
 
         where:
-        configured                        | config                                                || expected
-        'nothing is configured'           | [:]                                                   || [ConnectionSource.DEFAULT]
-        'only dataSource is configured'   | ['dataSource.url': 'jdbc:h2:mem:orderDefault']        || [ConnectionSource.DEFAULT]
-        'only dataSources are configured' | ['dataSources.moreBooks.url': 'jdbc:h2:mem:moreBooks',
-                                             'dataSources.books.url': 'jdbc:h2:mem:books']        || [ConnectionSource.DEFAULT, 'moreBooks', 'books']
-        'both are configured'             | ['dataSources.moreBooks.url': 'jdbc:h2:mem:moreBooks',
+        configured                        | config                                                 || expected
+        'nothing is configured'           | [:]                                                    || [ConnectionSource.DEFAULT]
+        'only dataSource is configured'   | ['dataSource.url': 'jdbc:h2:mem:orderDefault']         || [ConnectionSource.DEFAULT]
+        'only dataSources are configured' | ['dataSources.books.url': 'jdbc:h2:mem:books',
+                                             'dataSources.moreBooks.url': 'jdbc:h2:mem:moreBooks'] || [ConnectionSource.DEFAULT, 'books', 'moreBooks']
+        'both are configured'             | ['dataSources.books.url': 'jdbc:h2:mem:books',
                                              'dataSource.url': 'jdbc:h2:mem:orderDefault',
-                                             'dataSources.books.url': 'jdbc:h2:mem:books']        || [ConnectionSource.DEFAULT, 'moreBooks', 'books']
+                                             'dataSources.moreBooks.url': 'jdbc:h2:mem:moreBooks'] || [ConnectionSource.DEFAULT, 'books', 'moreBooks']
     }
 
     void "the default data source is registered as the dataSource bean when no dataSource is configured"() {

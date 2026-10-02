@@ -85,6 +85,15 @@ dataSource {
 
 When GORM for Hibernate is applied, it always creates a default data source, and that data source is available as the `dataSource` bean, to inject by name or by type, even when the application has no `dataSource` block. Without a `dataSource` block, it connects to the in-memory H2 database `jdbc:h2:mem:grailsDB`, which requires the H2 driver on the classpath.
 
+To run without this default data source, exclude GORM for Hibernate by its plugin name, `hibernate`, with the `grails.plugin.excludes` setting. None of its beans, such as `hibernateDatastore`, `sessionFactory` and `transactionManager`, are registered then, and the application has a `dataSource` bean only when it has a `dataSource` block:
+
+[source,yaml]
+----
+grails:
+    plugin:
+        excludes: hibernate
+----
+
 WARNING: When configuring the DataSource do not include the type or the def keyword before any of the configuration settings as Groovy will treat these as local variable definitions and they will not be processed. For example the following is invalid:
 
 [source,groovy]
