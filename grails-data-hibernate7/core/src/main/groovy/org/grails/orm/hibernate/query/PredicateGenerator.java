@@ -366,13 +366,25 @@ public class PredicateGenerator {
         } else if (pc instanceof Query.Like) {
             return criteriaBuilder.like((Expression<String>) propertyPath, (String) convertValue(entity, propertyName, pc.getValue(), propertyPath));
         } else if (pc instanceof Query.GreaterThan) {
-            return criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
         } else if (pc instanceof Query.GreaterThanEquals) {
-            return criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
         } else if (pc instanceof Query.LessThan) {
-            return criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
         } else if (pc instanceof Query.LessThanEquals) {
-            return criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value));
         } else if (pc instanceof Query.In) {
             Object value = pc.getValue();
             if (value instanceof QueryableCriteria qc) {
@@ -591,6 +603,13 @@ public class PredicateGenerator {
         return value;
     }
 
+    /**
+     * Returns an arithmetic expression for a {@link PropertyArithmetic}, otherwise the converted value itself.
+     * A plain value is not wrapped in a literal, so the comparison overload that takes it infers its type from
+     * the property path, as HQL does for a parameter. A literal is typed from the value's class instead, which a
+     * property mapped with a custom {@code UserType} cannot be compared with when that class is
+     * {@link java.io.Serializable}.
+     */
     @SuppressWarnings("unchecked")
     private Object convertComparisonValue(GrailsHibernatePersistentEntity entity, String propertyName, Object value, JpaQueryContext context, Expression<?> propertyPath) {
         if (value instanceof PropertyArithmetic pa) {
@@ -604,11 +623,11 @@ public class PredicateGenerator {
                 case SUBTRACT -> criteriaBuilder.diff(left, right);
             };
         }
-        Object converted = convertValue(entity, propertyName, value, propertyPath);
-        if (!(converted instanceof Expression)) {
-            return criteriaBuilder.literal(converted);
-        }
-        return converted;
+        return convertValue(entity, propertyName, value, propertyPath);
+    }
+
+    private Expression<?> asExpression(Object value) {
+        return value instanceof Expression<?> expression ? expression : criteriaBuilder.literal(value);
     }
 
     public Predicate generate(
