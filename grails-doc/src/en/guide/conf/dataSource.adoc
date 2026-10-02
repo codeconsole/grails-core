@@ -45,7 +45,7 @@ Once you have the JAR resolved you need to get familiar with how Grails manages 
 * `transactional` - If `false` leaves the DataSource's transactionManager bean outside the chained BE1PC transaction manager implementation. This only applies to additional datasources.
 * `persistenceInterceptor` - The default datasource is automatically wired up to the persistence interceptor, other datasources are not wired up automatically unless this is set to `true`
 * `properties` - Extra properties to set on the DataSource bean. See the https://tomcat.apache.org/tomcat-7.0-doc/jdbc-pool.html#Common_Attributes[Tomcat Pool] documentation. There is also a Javadoc format https://tomcat.apache.org/tomcat-7.0-doc/api/org/apache/tomcat/jdbc/pool/PoolConfiguration.html[documentation of the properties].
-* `jmxExport` - If `false`, will disable registration of JMX MBeans for all DataSources. By default JMX MBeans are added for DataSources with `jmxEnabled = true` in properties.
+* `jmxExport` - If `true`, registers JMX MBeans for the Tomcat JDBC pool DataSources that have `jmxEnabled = true` in their properties (defaults to false)
 * `type` - The connection pool class if you want to force Grails to use it when there are more than one available.
 
 A typical configuration for MySQL in `application.groovy` may be something like:
