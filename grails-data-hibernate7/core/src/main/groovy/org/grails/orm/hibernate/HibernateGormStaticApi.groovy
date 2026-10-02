@@ -136,17 +136,17 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
 
     @Override
     DetachedCriteria<D> where(Closure callable) {
-        new HibernateDetachedCriteria<D>(persistentClass).build(callable)
+        new HibernateDetachedCriteria<D>(persistentClass).build((Closure) callable)
     }
 
     @Override
     DetachedCriteria<D> whereLazy(Closure callable) {
-        new HibernateDetachedCriteria<D>(persistentClass).buildLazy(callable)
+        new HibernateDetachedCriteria<D>(persistentClass).buildLazy((Closure) callable)
     }
 
     @Override
     DetachedCriteria<D> whereAny(Closure callable) {
-        (DetachedCriteria<D>) new HibernateDetachedCriteria<D>(persistentClass).or(callable)
+        (DetachedCriteria<D>) new HibernateDetachedCriteria<D>(persistentClass).or((Closure) callable)
     }
 
     @Override

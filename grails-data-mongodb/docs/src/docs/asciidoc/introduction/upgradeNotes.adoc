@@ -53,6 +53,23 @@ class UserProfile {
 
 See <<idGeneration,Identity Generation>> for the full description of `storedAs`.
 
+==== A Transaction Started Inside Another Joins It
+
+A transactional service method called from another, or `withTransaction` inside `withTransaction`, used to begin a second transaction on the same session: it committed on its own, and the surrounding transaction's commit then did nothing, so the surrounding transaction's later writes could be lost. It now joins the surrounding transaction, and everything commits once when that one does, as on Hibernate.
+
+The effect most applications will notice: without multi-document transactions, GORM for MongoDB does not flush before a query while a transaction is in progress, so a write a joined call leaves queued is not visible to a later query in the same transaction. It used to be, because the inner transaction flushed it when it returned:
+
+[source,groovy]
+----
+@Transactional
+void placeOrder(Order order) {
+    orderService.save(order)                // @Transactional: now joins placeOrder's transaction, unflushed
+    Order.countByCustomer(order.customer)   // does not see the order yet
+}
+----
+
+Save with `flush: true` where a later query in the same transaction must see the write. This includes integration tests annotated with `@Rollback`, whose service calls now join the test's transaction. With <<advancedConfig,multi-document transactions>> enabled (`grails.mongodb.transactional`), GORM flushes before a query inside the server-side transaction, so the query sees the order, and the write is still rolled back if the transaction fails. See <<nestedTransactions,Nested Transactions>> for the other propagation changes.
+
 ==== Dependency Upgrades
 
 GORM 7.1 supports Apache Groovy 3, Java 14, MongoDB Driver 4.3 and Spring 5.3.x.

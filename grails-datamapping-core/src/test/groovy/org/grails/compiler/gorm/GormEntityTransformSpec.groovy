@@ -238,7 +238,9 @@ class GormEntityTransformSpec extends Specification{
         }
     }
 
-    // Groovy 6.0.0-beta-2 specializes generic trait parameters on the implementing class.
+    // Groovy 6 specializes a generic trait method's type-variable parameters to the implementing
+    // class, so Book.merge(Object) from GormEntity<D> becomes Book.merge(Book). Look the specialized
+    // signature up when the erased one is missing.
     private static Method findGeneratedMethod(Class targetClass, Method traitMethod) {
         try {
             return targetClass.getMethod(traitMethod.name, traitMethod.parameterTypes)
