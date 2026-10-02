@@ -16,22 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package functionaltests.interceptors
 
-import functionaltests.interceptors.StaticInitFailureFilter
-import org.example.MyBean
-import org.grails.spring.context.support.PluginAwareResourceBundleMessageSource
-import org.springframework.boot.web.servlet.FilterRegistrationBean
-// Place your Spring DSL code here
-beans = {
-	myBean(MyBean)
-	// Explicit basenames must be resolved ahead of the bundles discovered in grails-app/i18n (GH #11795)
-	messageSource(PluginAwareResourceBundleMessageSource) {
-		fallbackToSystemLocale = false
-		defaultEncoding = 'UTF-8'
-		basenames = ['overrides', 'i18n-extra/external', 'messages']
-	}
-	staticInitFailureFilter(FilterRegistrationBean) {
-		filter = new StaticInitFailureFilter()
-		urlPatterns = ['/staticInitFailure/*']
-	}
+import java.util.concurrent.CopyOnWriteArrayList
+
+class ErrorPageInterceptor {
+
+    /** What {@code throwable} held in each {@code afterView} call for an errorPage action. */
+    static final List<Throwable> OBSERVED = new CopyOnWriteArrayList<>()
+
+    ErrorPageInterceptor() {
+        match(controller: 'errorPage')
+    }
+
+    @Override
+    void afterView() {
+        OBSERVED << throwable
+    }
 }

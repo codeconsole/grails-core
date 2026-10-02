@@ -16,22 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package functionaltests.interceptors
 
-import functionaltests.interceptors.StaticInitFailureFilter
-import org.example.MyBean
-import org.grails.spring.context.support.PluginAwareResourceBundleMessageSource
-import org.springframework.boot.web.servlet.FilterRegistrationBean
-// Place your Spring DSL code here
-beans = {
-	myBean(MyBean)
-	// Explicit basenames must be resolved ahead of the bundles discovered in grails-app/i18n (GH #11795)
-	messageSource(PluginAwareResourceBundleMessageSource) {
-		fallbackToSystemLocale = false
-		defaultEncoding = 'UTF-8'
-		basenames = ['overrides', 'i18n-extra/external', 'messages']
-	}
-	staticInitFailureFilter(FilterRegistrationBean) {
-		filter = new StaticInitFailureFilter()
-		urlPatterns = ['/staticInitFailure/*']
-	}
+import org.springframework.web.util.WebUtils
+
+class ErrorPageController {
+
+    /**
+     * Hands the container's error to the view, as an application's error page commonly does. The model
+     * is exposed as request attributes, so the error becomes the {@code exception} request attribute.
+     */
+    def handle() {
+        render(view: 'handle', model: [exception: request.getAttribute(WebUtils.ERROR_EXCEPTION_ATTRIBUTE)])
+    }
+
+    def renderMessage() {
+        render(view: 'handle', model: [exception: 'Something went wrong'])
+    }
 }

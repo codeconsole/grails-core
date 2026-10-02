@@ -17,21 +17,13 @@
  *  under the License.
  */
 
-import functionaltests.interceptors.StaticInitFailureFilter
-import org.example.MyBean
-import org.grails.spring.context.support.PluginAwareResourceBundleMessageSource
-import org.springframework.boot.web.servlet.FilterRegistrationBean
-// Place your Spring DSL code here
-beans = {
-	myBean(MyBean)
-	// Explicit basenames must be resolved ahead of the bundles discovered in grails-app/i18n (GH #11795)
-	messageSource(PluginAwareResourceBundleMessageSource) {
-		fallbackToSystemLocale = false
-		defaultEncoding = 'UTF-8'
-		basenames = ['overrides', 'i18n-extra/external', 'messages']
-	}
-	staticInitFailureFilter(FilterRegistrationBean) {
-		filter = new StaticInitFailureFilter()
-		urlPatterns = ['/staticInitFailure/*']
-	}
+package undertowapp
+
+class BootStrap {
+
+    def init = {
+    }
+
+    def destroy = {
+    }
 }
