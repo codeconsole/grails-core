@@ -144,6 +144,7 @@ Review application configuration after booting with the Spring Boot properties m
 - DevTools live reload is disabled by default. Set `spring.devtools.livereload.enabled: true` under the development environment if needed.
 - Spring Boot now writes build info to `META-INF/build-info.properties` by default.
 - Liveness and readiness probes are enabled by default on the health endpoint. Disable through `management.endpoint.health.probes.enabled: false` only if required.
+- If `grails.mail.overrideAddress` is set, it now also replaces a `from` set in `sendMail`. To keep the application's sender while still redirecting every recipient, use `grails.mail.overrideToAddress` in its place.
 
 ## Micronaut Integration
 

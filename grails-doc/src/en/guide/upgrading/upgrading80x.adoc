@@ -4636,3 +4636,19 @@ grails:
 ----
 
 See link:security.html#codecs[Encoding and Decoding Objects].
+
+==== 82. Mail Plugin: `overrideAddress` Also Replaces an Explicit Sender
+
+`grails.mail.overrideAddress` now also replaces a `from` set in the `sendMail` closure. In Grails 7, it replaced every `to`, `cc` and `bcc` address and the default sender, and an explicit `from` was kept.
+
+To keep the sender your application sets, while still redirecting every recipient, use the new `grails.mail.overrideToAddress` in place of `overrideAddress`:
+
+[source,yaml]
+.application-development.yml
+----
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com   # redirect all recipients (to, cc, bcc) only
+----
+
+To set a fixed sender without redirecting recipients, use the new `grails.mail.overrideFromAddress`. See link:mail.html#mailConfiguration[Mail Configuration] for how the three properties interact.
