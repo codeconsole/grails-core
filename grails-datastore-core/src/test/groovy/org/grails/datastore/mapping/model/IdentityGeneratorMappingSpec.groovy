@@ -22,9 +22,9 @@ import grails.gorm.annotation.Entity
 
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.document.config.DocumentMappingContext
+import org.grails.datastore.mapping.keyvalue.mapping.config.GormKeyValueMappingFactory
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import spock.lang.Specification
-import spock.lang.Unroll
 
 /**
  * How the identifier generator named in a mapping block reaches the identity mapping of an entity
@@ -32,7 +32,6 @@ import spock.lang.Unroll
  */
 class IdentityGeneratorMappingSpec extends Specification {
 
-    @Unroll
     void "a key-value entity mapped with generator #generatorName resolves to #expected and keeps the name"() {
         when:
         PersistentEntity entity = new KeyValueMappingContext('test').addPersistentEntity(entityClass)
@@ -68,6 +67,65 @@ class IdentityGeneratorMappingSpec extends Specification {
         then:
         entity.mapping.identifier.generator == ValueGenerator.CUSTOM
         entity.mapping.identifier.mappedForm.generator == 'example.CustomIdentifierGenerator'
+    }
+
+    void "only a generator name that is not built in reaches the custom generator hook of the mapping factory"() {
+        given:
+        RecordingGeneratorMappingContext context = new RecordingGeneratorMappingContext()
+
+        when:
+        PersistentEntity builtIn = context.addPersistentEntity(GeneratorIdMixedCaseBuiltIn)
+        PersistentEntity custom = context.addPersistentEntity(GeneratorIdDatastoreStrategy)
+        PersistentEntity unmapped = context.addPersistentEntity(GeneratorIdUnmapped)
+
+        then:
+        builtIn.mapping.identifier.generator == ValueGenerator.SEQUENCE
+        custom.mapping.identifier.generator == ValueGenerator.GENERATED
+        unmapped.mapping.identifier.generator == ValueGenerator.AUTO
+        context.recordingFactory.resolvedNames == [(GeneratorIdDatastoreStrategy.name): 'snowflake']
+    }
+
+    void "the custom generator hook of a mapping factory can reject a generator name"() {
+        when:
+        new RecordingGeneratorMappingContext().addPersistentEntity(GeneratorIdClassName)
+
+        then:
+        DatastoreConfigurationException e = thrown()
+        e.message == 'Unknown generator [example.CustomIdentifierGenerator]'
+    }
+}
+
+class RecordingGeneratorMappingContext extends KeyValueMappingContext {
+
+    RecordingGeneratorMappingContext() {
+        super('test')
+    }
+
+    @Override
+    protected void initializeDefaultMappingFactory(String keyspace) {
+        mappingFactory = new RecordingGeneratorMappingFactory(keyspace)
+    }
+
+    RecordingGeneratorMappingFactory getRecordingFactory() {
+        (RecordingGeneratorMappingFactory) mappingFactory
+    }
+}
+
+class RecordingGeneratorMappingFactory extends GormKeyValueMappingFactory {
+
+    final Map<String, String> resolvedNames = [:]
+
+    RecordingGeneratorMappingFactory(String keyspace) {
+        super(keyspace)
+    }
+
+    @Override
+    protected ValueGenerator resolveCustomGenerator(ClassMapping classMapping, String generatorName) {
+        resolvedNames[classMapping.entity.name] = generatorName
+        if (generatorName == 'snowflake') {
+            return ValueGenerator.GENERATED
+        }
+        throw new DatastoreConfigurationException("Unknown generator [${generatorName}]")
     }
 }
 

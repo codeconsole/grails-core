@@ -445,12 +445,8 @@ public abstract class MappingFactory<R extends Entity, T extends Property> {
     }
 
     /**
-     * Creates the identity mapping for an entity whose identifier property has a mapped form.
-     *
-     * <p>A generator name that matches a {@link ValueGenerator} constant, ignoring case, resolves to that
-     * constant. Any other name, such as a generator class name or a strategy only one datastore knows,
-     * resolves to {@link ValueGenerator#CUSTOM}; the name itself stays on the mapped form for that datastore
-     * to interpret. No generator name resolves to {@link ValueGenerator#AUTO}.</p>
+     * Creates the identity mapping for an entity whose identifier property has a mapped form. The
+     * generator named on the mapped form is resolved by {@link #resolveGenerator(ClassMapping, String)}.
      *
      * @param classMapping the class mapping of the entity
      * @param property the mapped form of the identifier property, or {@code null} when it has none
@@ -460,18 +456,45 @@ public abstract class MappingFactory<R extends Entity, T extends Property> {
         String targetName = property != null ? property.getName() : null;
         String[] identifierNames = targetName != null ? new String[]{targetName} : new String[]{IDENTITY_PROPERTY};
         String generatorName = property != null ? property.getGenerator() : null;
-        return new DefaultIdentityMapping<>(classMapping, property, identifierNames, resolveGenerator(generatorName));
+        return new DefaultIdentityMapping<>(classMapping, property, identifierNames, resolveGenerator(classMapping, generatorName));
     }
 
-    private static ValueGenerator resolveGenerator(String generatorName) {
+    /**
+     * Resolves the identifier generator named in the mapping of an entity.
+     *
+     * <p>A name that matches a {@link ValueGenerator} constant, ignoring case, resolves to that constant.
+     * Any other name, such as a generator class name or a strategy only one datastore knows, is passed to
+     * {@link #resolveCustomGenerator(ClassMapping, String)}. No name resolves to {@link ValueGenerator#AUTO}.</p>
+     *
+     * @param classMapping the class mapping of the entity
+     * @param generatorName the generator name from the mapping, or {@code null} when it names none
+     * @return the generator
+     */
+    protected final ValueGenerator resolveGenerator(ClassMapping classMapping, String generatorName) {
         if (generatorName == null) {
             return ValueGenerator.AUTO;
         }
         try {
             return ValueGenerator.valueOf(generatorName.toUpperCase(Locale.ENGLISH));
         } catch (IllegalArgumentException notBuiltIn) {
-            return ValueGenerator.CUSTOM;
+            return resolveCustomGenerator(classMapping, generatorName);
         }
+    }
+
+    /**
+     * Resolves a generator name that matches no {@link ValueGenerator} constant.
+     *
+     * <p>This implementation returns {@link ValueGenerator#CUSTOM} for every name; the name itself stays on
+     * the mapped form for the datastore to interpret. A datastore that can tell a valid name from an invalid
+     * one overrides this method to reject the invalid ones, typically with a
+     * {@link DatastoreConfigurationException}.</p>
+     *
+     * @param classMapping the class mapping of the entity
+     * @param generatorName the generator name from the mapping, as written there
+     * @return the generator
+     */
+    protected ValueGenerator resolveCustomGenerator(ClassMapping classMapping, String generatorName) {
+        return ValueGenerator.CUSTOM;
     }
 
     public static String associationtoString(String desc, Association a) {
