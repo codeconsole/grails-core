@@ -2137,14 +2137,18 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     private static boolean isAmong(Document declaredKeys, List<Document> others) {
         for (Document other : others) {
-            boolean same = isTextIndex(declaredKeys) && isTextIndex(other)
-                    ? declaredTextKeys(declaredKeys).matches(declaredTextKeys(other))
-                    : sameKeyPattern(declaredKeys, other);
-            if (same) {
+            if (sameDeclaredIndex(declaredKeys, other)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean sameDeclaredIndex(Document declaredKeys, Document other) {
+        if (isTextIndex(declaredKeys) && isTextIndex(other)) {
+            return declaredTextKeys(declaredKeys).matches(declaredTextKeys(other));
+        }
+        return sameKeyPattern(declaredKeys, other);
     }
 
     /**
