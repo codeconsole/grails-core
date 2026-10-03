@@ -277,6 +277,9 @@ class GormInstanceApi<D> extends AbstractGormApi<D> implements GormInstanceOpera
     @Override
     Serializable ident(D instance) {
         PersistentEntity entity = mappingContext.getPersistentEntity(persistentClass.name)
+        if (entity == null) {
+            return (Serializable) InvokerHelper.getProperty(instance, 'id')
+        }
         PersistentProperty identity = entity.identity
         if (identity != null) {
             return (Serializable) InvokerHelper.getProperty(instance, identity.name)
