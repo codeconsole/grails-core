@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import com.mongodb.MongoClientSettings
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
-import com.mongodb.event.ClusterListener
-import com.mongodb.event.ClusterOpeningEvent
+import com.mongodb.event.ConnectionPoolCreatedEvent
+import com.mongodb.event.ConnectionPoolListener
 import spock.lang.AutoCleanup
 import spock.lang.Specification
 
@@ -145,11 +145,13 @@ class MongoDbGormAutoConfigurationCloseSpec extends Specification {
         @Bean
         MongoClientSettings mongoClientSettings() {
             MongoClientSettings.builder()
-                    .applyToClusterSettings {
-                        it.serverSelectionTimeout(50, TimeUnit.MILLISECONDS)
-                        it.addClusterListener(new ClusterListener() {
+                    .applyToClusterSettings { it.serverSelectionTimeout(50, TimeUnit.MILLISECONDS) }
+                    // Counted by the connection pool the driver creates as it builds a client, which it reports on
+                    // the building thread; it reports cluster events later, on a thread of its own.
+                    .applyToConnectionPoolSettings {
+                        it.addConnectionPoolListener(new ConnectionPoolListener() {
                             @Override
-                            void clusterOpening(ClusterOpeningEvent event) {
+                            void connectionPoolCreated(ConnectionPoolCreatedEvent event) {
                                 clientsCreated.incrementAndGet()
                             }
                         })

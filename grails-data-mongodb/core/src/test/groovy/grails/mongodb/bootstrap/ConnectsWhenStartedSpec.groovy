@@ -21,10 +21,10 @@ package grails.mongodb.bootstrap
 import java.util.concurrent.CopyOnWriteArrayList
 
 import com.mongodb.MongoClientSettings
-import com.mongodb.event.ClusterListener
-import com.mongodb.event.ClusterOpeningEvent
 import com.mongodb.event.CommandListener
 import com.mongodb.event.CommandStartedEvent
+import com.mongodb.event.ConnectionPoolCreatedEvent
+import com.mongodb.event.ConnectionPoolListener
 import grails.mongodb.MongoEntity
 import grails.persistence.Entity
 
@@ -51,7 +51,7 @@ class ConnectsWhenStartedSpec extends AutoStartedMongoSpec {
         DriverActivity activity = new DriverActivity()
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()
         context.beanFactory.registerSingleton('driverActivity', { MongoClientSettings.Builder builder ->
-            builder.applyToClusterSettings { it.addClusterListener(activity) }
+            builder.applyToConnectionPoolSettings { it.addConnectionPoolListener(activity) }
                     .addCommandListener(activity)
         } as MongoClientSettingsBuilderCustomizer)
 
@@ -88,12 +88,17 @@ class ConnectsWhenStartedSpec extends AutoStartedMongoSpec {
     }
 }
 
-class DriverActivity implements ClusterListener, CommandListener {
+/**
+ * What the driver reports on the thread doing the work, so nothing it reports can still be on its way when a test
+ * looks: the connection pool it creates as it builds a client, and each command it sends. Cluster events are not
+ * used, since the driver delivers them on a thread of its own.
+ */
+class DriverActivity implements ConnectionPoolListener, CommandListener {
 
     final List<String> events = new CopyOnWriteArrayList<>()
 
     @Override
-    void clusterOpening(ClusterOpeningEvent event) {
+    void connectionPoolCreated(ConnectionPoolCreatedEvent event) {
         events << 'client created'
     }
 

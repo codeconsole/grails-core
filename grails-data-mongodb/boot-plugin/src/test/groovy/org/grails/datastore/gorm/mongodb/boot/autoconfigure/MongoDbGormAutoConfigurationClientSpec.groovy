@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
-import com.mongodb.event.ClusterListener
-import com.mongodb.event.ClusterOpeningEvent
+import com.mongodb.event.ConnectionPoolCreatedEvent
+import com.mongodb.event.ConnectionPoolListener
 import spock.lang.AutoCleanup
 import spock.lang.Specification
 
@@ -80,10 +80,12 @@ class MongoDbGormAutoConfigurationClientSpec extends Specification {
         given:
         AtomicInteger clientsCreated = new AtomicInteger()
         context.beanFactory.registerSingleton('watchClients', { builder ->
-            builder.applyToClusterSettings {
-                it.addClusterListener(new ClusterListener() {
+            // Counted by the connection pool the driver creates as it builds a client, which it reports on the
+            // building thread; it reports cluster events later, on a thread of its own.
+            builder.applyToConnectionPoolSettings {
+                it.addConnectionPoolListener(new ConnectionPoolListener() {
                     @Override
-                    void clusterOpening(ClusterOpeningEvent event) {
+                    void connectionPoolCreated(ConnectionPoolCreatedEvent event) {
                         clientsCreated.incrementAndGet()
                     }
                 })
