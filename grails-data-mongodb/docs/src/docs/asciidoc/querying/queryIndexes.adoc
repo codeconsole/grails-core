@@ -227,7 +227,7 @@ A build requested after the datastore has been closed is not started, and one re
 ==== Building Indexes in the Background
 
 
-MongoDB answers a `createIndex` command only once the index has been built, so by default the thread that creates the datastore — in an application, the startup thread — waits for every declared index before the application finishes starting. On an empty collection that is instant; on a large existing collection an index build can take minutes, and a deployment waits for all of them in turn.
+MongoDB answers a `createIndex` command only once the index has been built, so by default the thread that starts the datastore — in an application, the thread starting the application context — waits for every declared index before the application finishes starting. On an empty collection that is instant; on a large existing collection an index build can take minutes, and a deployment waits for all of them in turn.
 
 Set `buildIndexesAsync` to have index builds run on a background thread instead, both the one GORM runs at startup and any the application starts with `buildIndex()`:
 
