@@ -38,7 +38,7 @@ import org.grails.datastore.mapping.mongo.MongoDatastore
 /**
  * With MongoDB's own properties present but no {@code MongoClient} bean, the auto-configuration builds the client
  * itself, from Spring Boot's settings rather than from {@code grails.mongodb}. That client belongs to GORM: it is
- * closed with the datastore, and closed and built again around a CRaC checkpoint, so the checkpoint is not left
+ * closed with the datastore, and stopped and started again around a CRaC checkpoint, so the checkpoint is not left
  * holding its sockets. No MongoDB is needed: see {@link #closed}.
  */
 class MongoDbGormAutoConfigurationCloseSpec extends Specification {
@@ -66,7 +66,7 @@ class MongoDbGormAutoConfigurationCloseSpec extends Specification {
         closed(built)
     }
 
-    void 'test a client the auto-configuration builds is closed for a checkpoint and built again for the restore'() {
+    void 'test a client the auto-configuration builds is stopped for a checkpoint and started again for the restore'() {
         given:
         MongoDatastore datastore = datastoreFromBootSettings()
         MongoClient built = datastore.mongoClient
@@ -80,9 +80,9 @@ class MongoDbGormAutoConfigurationCloseSpec extends Specification {
         when: 'the restore starts it again'
         datastore.start()
 
-        then: 'another is built the same way'
-        !datastore.mongoClient.is(built)
-        !closed(datastore.mongoClient)
+        then: 'it is the same client, connected again through a driver client built the same way'
+        datastore.mongoClient.is(built)
+        !closed(built)
 
         cleanup:
         datastore.close()

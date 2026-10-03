@@ -24,6 +24,7 @@ import ch.qos.logback.classic.Level
 import com.mongodb.MongoClientSettings
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
+import com.mongodb.client.MongoClients
 
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.mongo.CapturedLog
@@ -42,9 +43,10 @@ import spock.lang.Specification
  *
  * <p>CRaC refuses to checkpoint a process holding open sockets, and a connected driver holds
  * one per pooled connection plus its server monitors. Spring stops lifecycle beans before the
- * checkpoint and starts them again after the restore, so closing the client on stop is what
- * lets an application using MongoDB be snapshotted at all -- and building a replacement on
- * start is what leaves the restored process able to query anything.
+ * checkpoint and starts them again after the restore, so closing the driver client on stop is
+ * what lets an application using MongoDB be snapshotted at all -- and building a new one on
+ * start, behind the same {@code MongoClient}, is what leaves the restored process able to query
+ * anything through whatever was holding it.
  *
  * <p>No server is needed to tell an open client from a closed one: see {@link #closed}.
  */
@@ -84,7 +86,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         datastore.close()
     }
 
-    void 'starting after a stop builds a replacement from the same configuration'() {
+    void 'starting after a stop brings the same client back, connected again'() {
         given:
         MongoDatastore datastore = ownedClientDatastore()
         MongoClient original = datastore.mongoClient
@@ -96,15 +98,33 @@ class MongoDatastoreLifecycleSpec extends Specification {
         then:
         datastore.running
 
-        and: 'a closed client cannot be reopened, so the restored process gets a new one'
-        !datastore.mongoClient.is(original)
-        !closed(datastore.mongoClient)
+        and: 'a closed driver client cannot be reopened, so a new one is built behind the client handed out'
+        datastore.mongoClient.is(original)
+        !closed(original)
 
         cleanup:
         datastore.close()
     }
 
-    void 'closing after a restore closes the replacement rather than only the client it replaced'() {
+    void 'a client obtained before the checkpoint works again after the restore'() {
+        given: 'a client held by the application, as the mongo bean is when it is injected'
+        MongoDatastore datastore = ownedClientDatastore(withConnections())
+        Map<String, MongoClient> held = clientsByConnection(datastore)
+
+        when: 'it is checkpointed and restored'
+        datastore.stop()
+        datastore.start()
+
+        then: 'what was held is still what the datastore hands out, and it is open'
+        held.every { String name, MongoClient client ->
+            datastore.getDatastoreForConnection(name).mongoClient.is(client) && !closed(client)
+        }
+
+        cleanup:
+        datastore.close()
+    }
+
+    void 'closing after a restore closes the client that was restarted'() {
         given: 'a datastore that has been through a checkpoint and a restore'
         MongoDatastore datastore = ownedClientDatastore()
         datastore.stop()
@@ -188,7 +208,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         datastore.close()
     }
 
-    void 'starting replaces every client stop closed, and each connection source hands out its replacement'() {
+    void 'starting restarts every client stop stopped, and each connection source still hands out its own'() {
         given:
         MongoDatastore datastore = ownedClientDatastore(withConnections())
         datastore.connectionSources.addConnectionSource('late', [url: unreachableUrl('late')])
@@ -199,10 +219,10 @@ class MongoDatastoreLifecycleSpec extends Specification {
         datastore.start()
         Map<String, MongoClient> restored = clientsByConnection(datastore)
 
-        then: 'every connection has a new, open client'
-        restored.every { String name, MongoClient client -> !client.is(originals[name]) && !closed(client) }
+        then: 'every connection has its client back, open'
+        restored.every { String name, MongoClient client -> client.is(originals[name]) && !closed(client) }
 
-        and: 'which is the one its connection source hands out, so nothing reading it from there gets the closed one'
+        and: 'which is the one its connection source hands out'
         restored.every { String name, MongoClient client ->
             datastore.connectionSources.getConnectionSource(name).source.is(client)
         }
@@ -211,16 +231,15 @@ class MongoDatastoreLifecycleSpec extends Specification {
         datastore.close()
     }
 
-    void 'closing after a restore closes the replacement of every connection'() {
+    void 'closing after a restore closes the client of every connection'() {
         given: 'a datastore with named connections that has been through a checkpoint and a restore'
         MongoDatastore datastore = ownedClientDatastore(withConnections())
-        Map<String, MongoClient> originals = clientsByConnection(datastore)
         datastore.stop()
         datastore.start()
         Map<String, MongoClient> restored = clientsByConnection(datastore)
 
-        expect: 'every connection is on a replacement'
-        restored.every { String name, MongoClient client -> !client.is(originals[name]) }
+        expect:
+        restored.values().every { !closed(it) }
 
         when:
         datastore.close()
@@ -229,12 +248,15 @@ class MongoDatastoreLifecycleSpec extends Specification {
         restored.values().every { closed(it) }
     }
 
-    void 'closing after a restore closes the replacements even when the connection sources cannot hand them out'() {
-        given: 'a factory whose connection sources keep the client they were built with'
+    void 'a client a custom factory builds itself is closed and replaced, and closing after a restore closes the replacement'() {
+        given: 'a factory that builds plain driver clients, kept by connection sources that cannot be given a replacement'
         def factory = new MongoConnectionSourceFactory() {
             @Override
             ConnectionSource<MongoClient, MongoConnectionSourceSettings> create(String name, MongoConnectionSourceSettings settings) {
-                new DefaultConnectionSource<MongoClient, MongoConnectionSourceSettings>(name, super.create(name, settings).source, settings)
+                MongoClient client = MongoClients.create(MongoClientSettings.builder()
+                        .applyConnectionString(settings.url)
+                        .build())
+                new DefaultConnectionSource<MongoClient, MongoConnectionSourceSettings>(name, client, settings)
             }
         }
         MongoDatastore datastore = new MongoDatastore(
@@ -271,7 +293,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         log?.close()
     }
 
-    void 'the replacement of the default client is built with the client options the datastore was given'() {
+    void 'the default client is rebuilt after a restore with the client options the datastore was given'() {
         given:
         MongoDatastore datastore = ownedClientDatastore()
         datastore.stop()
@@ -286,7 +308,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         datastore.close()
     }
 
-    void 'with a supplied default client, the clients GORM created for the named connections are still closed and replaced'() {
+    void 'with a supplied default client, the clients GORM created for the named connections are still stopped and restarted'() {
         given:
         MongoClient supplied = Mock(MongoClient)
         MongoDatastore datastore = new MongoDatastore(supplied,
@@ -298,20 +320,19 @@ class MongoDatastoreLifecycleSpec extends Specification {
         when: 'the checkpoint stops it'
         datastore.stop()
 
-        then: 'the supplied client is left to whoever created it, and the one GORM created is closed'
+        then: 'the supplied client is left to whoever created it, and the one GORM created is stopped'
         0 * supplied.close()
         closed(reporting)
         !datastore.running
 
         when: 'the restore starts it again'
         datastore.start()
-        MongoClient restored = datastore.getDatastoreForConnection('reporting').mongoClient
 
-        then: 'only what stop closed is replaced'
+        then: 'only what stop stopped is started again'
         datastore.running
         datastore.mongoClient.is(supplied)
-        !restored.is(reporting)
-        !closed(restored)
+        datastore.getDatastoreForConnection('reporting').mongoClient.is(reporting)
+        !closed(reporting)
 
         cleanup:
         datastore.close()
