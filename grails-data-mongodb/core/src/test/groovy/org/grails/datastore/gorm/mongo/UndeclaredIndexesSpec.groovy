@@ -30,6 +30,7 @@ import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.UndeclaredIndex
+import org.grails.datastore.mapping.mongo.config.MongoSettings
 
 /**
  * {@link MongoDatastore#findUndeclaredIndexes()} reports the indexes on mapped collections whose keys no domain
@@ -115,6 +116,35 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
         indexNames('undeclaredDeclaredDb', 'undeclaredIndexesAnimal') == ['_id_', 'name_1', 'breed_1'] as Set
         indexNames('undeclaredDeclaredDb', 'undeclaredIndexesShared') == ['_id_', 'alpha_1', 'beta_1__id_1'] as Set
         'description_text' in indexNames('undeclaredDeclaredDb', 'undeclaredIndexesThing')
+        datastore.findUndeclaredIndexes() == []
+
+        cleanup:
+        datastore?.close()
+    }
+
+    void "test a text index on other fields, or without the declared keys around them, is undeclared"() {
+        given: "nothing built, so each collection's one text index is the one created here"
+        def datastore = new MongoDatastore(config('undeclaredTextDb', [(MongoSettings.SETTING_BUILD_INDEXES): false]),
+                UndeclaredIndexesThing, UndeclaredIndexesTextThing)
+        def db = realClient.getDatabase('undeclaredTextDb')
+        db.getCollection('undeclaredIndexesThing').createIndex(new Document('title', 'text'))
+        db.getCollection('undeclaredIndexesTextThing').createIndex(new Document('body', 'text'))
+
+        expect: "neither is the text index its class declares"
+        described(datastore.findUndeclaredIndexes()) == [
+                ['undeclaredIndexesThing', 'title_text', [_fts: 'text', _ftsx: 1]],
+                ['undeclaredIndexesTextThing', 'body_text', [_fts: 'text', _ftsx: 1]]
+        ] as Set
+
+        when: "they are replaced by indexes on the declared fields and keys, under other names and weights"
+        db.getCollection('undeclaredIndexesThing').dropIndex('title_text')
+        db.getCollection('undeclaredIndexesThing').createIndex(new Document('description', 'text'),
+                new IndexOptions().name('searchable').weights(new Document('description', 5)))
+        db.getCollection('undeclaredIndexesTextThing').dropIndex('body_text')
+        db.getCollection('undeclaredIndexesTextThing').createIndex(new Document('category', 1).append('body', 'text'),
+                new IndexOptions().name('byCategory'))
+
+        then:
         datastore.findUndeclaredIndexes() == []
 
         cleanup:
@@ -330,6 +360,18 @@ class UndeclaredIndexesThing {
 
     static constraints = {
         name blank: false
+    }
+}
+
+@Entity
+class UndeclaredIndexesTextThing {
+
+    String category
+    String body
+
+    static mapping = {
+        collection 'undeclaredIndexesTextThing'
+        compoundIndex([category: 1, body: 'text'])
     }
 }
 

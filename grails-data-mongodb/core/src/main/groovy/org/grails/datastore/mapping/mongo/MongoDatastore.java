@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -176,6 +178,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /** The name MongoDB gives the index every collection has on {@code _id}, which cannot be dropped. */
     private static final String ID_INDEX_NAME = "_id_";
+
+    /**
+     * The keys MongoDB lists a text index under in place of its text fields, which its {@code weights} name.
+     */
+    private static final String TEXT_INDEX_KEY = "_fts";
+    private static final String TEXT_INDEX_TERM_KEY = "_ftsx";
     public static final String CODEC_ENGINE = MongoConstants.CODEC_ENGINE;
 
     private static final Logger LOG = LoggerFactory.getLogger(MongoDatastore.class);
@@ -1026,7 +1034,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      *
      * <p>A declared index is present when its collection has an index on the same key pattern, the same fields
      * in the same order, whatever its name and options: an option that differs is the build's to reconcile.
-     * Keys that several classes mapped to one collection declare are reported once. Nothing is changed:
+     * A text index is present when one indexes the same text fields, in any order, with the same keys before and
+     * after them, whatever its weights. Keys that several classes mapped to one collection declare are reported
+     * once. Nothing is changed:
      * {@link #buildIndex()} or {@link #buildIndexAsync()} creates them. Each named connection has its own
      * domain classes, so call this on {@link #getDatastoreForConnection(String)} for those.
      *
@@ -1040,7 +1050,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             List<Document> reported = new ArrayList<>();
             for (EntityDeclaration declared : entry.getValue().declarations()) {
                 Document keys = declared.declaration().keys();
-                if (findIndexByKeyPattern(existing, keys) != null || matchesAny(keys, reported)) {
+                if (isListed(keys, existing) || isAmong(keys, reported)) {
                     continue;
                 }
                 reported.add(keys);
@@ -1058,7 +1068,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      *
      * <p>An index is declared when a domain class mapped to the same collection declares its key pattern, the
      * same fields in the same order, with {@code compoundIndex}, {@code index} or a property's
-     * {@code index: true}. Its name and options do not matter. The {@code _id} index is never reported, and
+     * {@code index: true}. Its name and options do not matter. A text index is declared when a class declares
+     * text on the same fields, in any order, with the same keys before and after them; its weights do not
+     * matter. The {@code _id} index is never reported, and
      * neither is any index on a collection that no domain class maps. An index that an
      * {@link #initializeIndices(PersistentEntity)} override creates by itself is not a declaration, so it is
      * reported.
@@ -1161,11 +1173,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * Whether a domain class mapped to a collection declares the key pattern of an index it has.
      */
     private static boolean isDeclared(Document index, CollectionDeclarations declarations) {
-        if (!(index.get("key") instanceof Document key)) {
-            return false;
-        }
         for (EntityDeclaration declaration : declarations.declarations()) {
-            if (matchesDeclaration(key, declaration.declaration().keys())) {
+            if (describes(declaration.declaration().keys(), index)) {
                 return true;
             }
         }
@@ -2057,9 +2066,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         return null;
     }
 
-    private static boolean matchesAny(Document key, List<Document> declaredKeys) {
-        for (Document keys : declaredKeys) {
-            if (matchesDeclaration(key, keys)) {
+    /**
+     * Whether any of the indexes the server listed is the one a declaration describes, as the reports compare them.
+     */
+    private static boolean isListed(Document declaredKeys, List<Document> indexes) {
+        for (Document index : indexes) {
+            if (describes(declaredKeys, index)) {
                 return true;
             }
         }
@@ -2067,14 +2079,94 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Whether an existing index's key pattern is the one a declaration describes. Directions/types are
-     * compared numerically (1 vs 1.0) so driver-returned values match.
+     * Whether a declaration describes the same index as one of the others, as the reports compare them.
+     */
+    private static boolean isAmong(Document declaredKeys, List<Document> others) {
+        for (Document other : others) {
+            boolean same = isTextIndex(declaredKeys) && isTextIndex(other)
+                    ? declaredTextKeys(declaredKeys).matches(declaredTextKeys(other))
+                    : sameKeyPattern(declaredKeys, other);
+            if (same) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether an index the server listed is the one a declaration describes, as the missing and undeclared
+     * reports compare them: on the same key pattern, whatever its name and options. Unlike
+     * {@link #matchesDeclaration(Document, Document)}, a text index is only the one a text declaration describes
+     * when it indexes the same text fields, which its {@code weights} name, with the same keys before and after
+     * them. Their weights are options, so they are not compared.
+     */
+    private static boolean describes(Document declaredKeys, Document index) {
+        if (!(index.get("key") instanceof Document key)) {
+            return false;
+        }
+        if (isTextIndex(declaredKeys) && key.containsKey(TEXT_INDEX_KEY)) {
+            return index.get("weights") instanceof Document weights &&
+                    declaredTextKeys(declaredKeys).matches(listedTextKeys(key, weights));
+        }
+        return sameKeyPattern(key, declaredKeys);
+    }
+
+    /**
+     * A text index's keys as the reports compare them: the keys before its text fields, the text fields
+     * themselves, in any order, and the keys after them.
+     */
+    private record TextKeys(Document before, Set<String> fields, Document after) {
+
+        boolean matches(TextKeys other) {
+            return fields.equals(other.fields) && sameKeyPattern(before, other.before) &&
+                    sameKeyPattern(after, other.after);
+        }
+    }
+
+    private static TextKeys declaredTextKeys(Document keys) {
+        Document before = new Document();
+        Document after = new Document();
+        Set<String> fields = new LinkedHashSet<>();
+        for (Map.Entry<String, Object> entry : keys.entrySet()) {
+            if ("text".equals(entry.getValue())) {
+                fields.add(entry.getKey());
+            }
+            else {
+                (fields.isEmpty() ? before : after).append(entry.getKey(), entry.getValue());
+            }
+        }
+        return new TextKeys(before, fields, after);
+    }
+
+    /**
+     * The same of an index the server listed, whose key holds {@code _fts} and {@code _ftsx} where the text
+     * fields were declared and whose {@code weights} name them.
+     */
+    private static TextKeys listedTextKeys(Document key, Document weights) {
+        Document before = new Document();
+        Document after = new Document();
+        boolean pastText = false;
+        for (Map.Entry<String, Object> entry : key.entrySet()) {
+            if (TEXT_INDEX_KEY.equals(entry.getKey()) || TEXT_INDEX_TERM_KEY.equals(entry.getKey())) {
+                pastText = true;
+            }
+            else {
+                (pastText ? after : before).append(entry.getKey(), entry.getValue());
+            }
+        }
+        return new TextKeys(before, new LinkedHashSet<>(weights.keySet()), after);
+    }
+
+    /**
+     * Whether an existing index's key pattern is the one a declaration describes, for creating and reconciling
+     * it. Directions/types are compared numerically (1 vs 1.0) so driver-returned values match.
      *
      * <p>Text indexes are special-cased: a declared text index has key {@code {field: 'text'}}, but
      * MongoDB reports an existing one with a synthetic {@code {_fts: 'text', _ftsx: 1}} key, so the
      * two never match by pattern. Since MongoDB allows at most one text index per collection, an
      * existing text index is unambiguously the one a declared text index describes or conflicts with —
-     * match it regardless of its key shape or name so {@code recreateOnConflict} can absorb it.</p>
+     * match it regardless of its key shape or name so {@code recreateOnConflict} can absorb it. The reports
+     * compare text indexes field by field instead: see {@link #describes(Document, Document)}.</p>
      */
     private static boolean matchesDeclaration(Document existingKey, Document declaredKeys) {
         if (isTextIndex(declaredKeys) && isTextIndex(existingKey)) {
@@ -2088,7 +2180,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * synthetic key MongoDB reports for an existing one ({@code {_fts: 'text', _ftsx: 1}}).
      */
     private static boolean isTextIndex(Document key) {
-        if (key.containsKey("_fts")) {
+        if (key.containsKey(TEXT_INDEX_KEY)) {
             return true;
         }
         for (Object v : key.values()) {

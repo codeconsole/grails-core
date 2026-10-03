@@ -106,6 +106,40 @@ class MissingIndexesSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a text index is the declared one only on the declared fields, with the declared keys around them"() {
+        given: "each collection's one text index: on another field, and without the declared prefix"
+        def db = realClient.getDatabase('missingTextDb')
+        db.getCollection('missingIndexesThing').createIndex(new Document('title', 'text'))
+        db.getCollection('missingIndexesTextThing').createIndex(new Document('body', 'text'))
+        def datastore = new MongoDatastore(config('missingTextDb'), MissingIndexesThing, MissingIndexesTextThing)
+
+        expect:
+        datastore.findMissingIndexes().findAll { 'text' in it.key().values() }
+                .collect { [it.collection(), [*: it.key()]] } as Set == [
+                ['missingIndexesThing', [description: 'text']],
+                ['missingIndexesTextThing', [category: 1, body: 'text']]
+        ] as Set
+
+        cleanup:
+        datastore?.close()
+    }
+
+    void "test a text index on the declared fields and keys is present whatever its name and weights"() {
+        given:
+        def db = realClient.getDatabase('missingTextPresentDb')
+        db.getCollection('missingIndexesThing').createIndex(new Document('description', 'text'),
+                new IndexOptions().name('searchable').weights(new Document('description', 5)))
+        db.getCollection('missingIndexesTextThing').createIndex(new Document('category', 1).append('body', 'text'),
+                new IndexOptions().name('byCategory'))
+        def datastore = new MongoDatastore(config('missingTextPresentDb'), MissingIndexesThing, MissingIndexesTextThing)
+
+        expect:
+        !datastore.findMissingIndexes().any { 'text' in it.key().values() }
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test keys declared by several classes mapped to one collection are reported once"() {
         given:
         def datastore = new MongoDatastore(config('missingSharedDb'), MissingIndexesSharedA, MissingIndexesSharedB,
@@ -179,6 +213,19 @@ class MissingIndexesThing {
         code index: true, indexAttributes: [unique: true, sparse: true]
         description index: true, indexAttributes: [type: 'text']
         compoundIndex([code: 1, name: -1])
+    }
+}
+
+@Entity
+class MissingIndexesTextThing {
+
+    String category
+    String body
+
+    static mapping = {
+        version false
+        collection 'missingIndexesTextThing'
+        compoundIndex([category: 1, body: 'text'])
     }
 }
 
