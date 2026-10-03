@@ -35,6 +35,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import groovy.lang.Closure;
@@ -215,6 +216,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * {@link #stop()} shut down.
      */
     private volatile ExecutorService indexBuildExecutor;
+
+    /**
+     * Held for the whole of every build on this connection, on the background thread or a caller's, so that a
+     * synchronous {@link #buildIndex()} and a background build never apply declarations at the same time: two
+     * {@code recreateOnConflict} drop-and-recreate sequences on one index would undo each other.
+     */
+    private final ReentrantLock indexBuildLock = new ReentrantLock();
 
     /**
      * Set when a build did not run to the end because the datastore was stopping, or was requested while it
@@ -710,7 +718,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * so this blocks the calling thread for as long as MongoDB takes to build every declared index. With
      * {@code grails.mongodb.buildIndexesAsync} enabled the work goes to a background thread and this
      * returns immediately instead. {@link #buildIndexAsync()} runs it in the background whatever the setting,
-     * and reports the outcome to its caller.
+     * and reports the outcome to its caller. Builds on a connection run one at a time, wherever they run: a
+     * build on the calling thread first waits for one running in the background, and the other way round.
      */
     public void buildIndex() {
         String connection = connectionName();
@@ -747,7 +756,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * as they happen. It completes exceptionally with the exception that stopped the build partway, such as a
      * lost connection or a write concern the server could not satisfy. Created and already-present indexes are always told apart, whatever the log level.
      *
-     * <p>Builds on a connection run one at a time, so a build requested while another is running waits for it.
+     * <p>Builds on a connection run one at a time, so a build requested while another is running waits for it,
+     * including one running on a caller's thread with {@link #buildIndex()}.
      * Cancelling the future does not stop the build. If the datastore is stopped or closed, the future completes
      * exceptionally at once, and a build that stopping or closing the datastore cuts short completes
      * exceptionally too; a restart runs the cut-short build again, without a future. Each named connection
@@ -864,7 +874,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         long startedAt = System.nanoTime();
         IndexBuildSummary summary = new IndexBuildSummary(classify);
         Exception failure = null;
+        boolean locked = false;
         try {
+            lockIndexBuild();
+            locked = true;
+            // Timed from here: waiting for another build is not this one's cost.
+            startedAt = System.nanoTime();
             buildDeclaredIndexes(summary);
         }
         catch (Exception e) {
@@ -873,6 +888,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             if (e instanceof InterruptedException) {
                 // Caught here rather than by whoever interrupted, so the flag it cleared is put back.
                 Thread.currentThread().interrupt();
+            }
+        }
+        finally {
+            if (locked) {
+                indexBuildLock.unlock();
             }
         }
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
@@ -906,6 +926,22 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         logUnfinishedIndexBuild(summary, elapsedMillis, abandoned);
         if (result != null) {
             result.completeExceptionally(failure);
+        }
+    }
+
+    /**
+     * Waits for any build already running on this connection. Interruptible, so that {@link #stop()} and
+     * {@link #close()} can end a background build that is still waiting; a caller interrupted while it waits gets
+     * the driver's unchecked {@link MongoInterruptedException}, as an interrupted driver call would.
+     */
+    private void lockIndexBuild() {
+        try {
+            indexBuildLock.lockInterruptibly();
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new MongoInterruptedException("Interrupted while waiting for the index build already running on " +
+                    "connection [" + connectionName() + "]", e);
         }
     }
 

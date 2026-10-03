@@ -25,6 +25,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 import ch.qos.logback.classic.Level
 import com.mongodb.MongoWriteConcernException
@@ -232,6 +233,77 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         log?.close()
     }
 
+    void "test a build on the caller's thread waits for the background build to finish"() {
+        given:
+        def datastore = new SerializedBuildDatastore(config('asyncResultCallerWaitsDb'), AsyncResultThing)
+        SerializedBuildDatastore.reset()
+
+        when: "a background build is under way"
+        SerializedBuildDatastore.BLOCK.set(true)
+        def background = datastore.buildIndexAsync()
+        SerializedBuildDatastore.REACHED.await(30, TimeUnit.SECONDS)
+
+        and: "a build is requested on another thread, with builds synchronous by setting"
+        def callerDone = new CountDownLatch(1)
+        Thread.start { datastore.buildIndex(); callerDone.countDown() }
+
+        then: "it does not enter index creation while the background build is running"
+        !callerDone.await(1, TimeUnit.SECONDS)
+        SerializedBuildDatastore.ENTERED.get() == 1
+
+        when:
+        SerializedBuildDatastore.RELEASE.countDown()
+
+        then: "both builds ran, one after the other"
+        background.get(30, TimeUnit.SECONDS).failures() == 0
+        callerDone.await(30, TimeUnit.SECONDS)
+        SerializedBuildDatastore.ENTERED.get() == 2
+        SerializedBuildDatastore.MOST_AT_ONCE.get() == 1
+
+        cleanup:
+        SerializedBuildDatastore.RELEASE?.countDown()
+        datastore?.close()
+    }
+
+    void "test a background build waits for a build running on a caller's thread"() {
+        given:
+        def datastore = new SerializedBuildDatastore(config('asyncResultBackgroundWaitsDb'), AsyncResultThing)
+        SerializedBuildDatastore.reset()
+
+        when: "a build is under way on another thread, with builds synchronous by setting"
+        SerializedBuildDatastore.BLOCK.set(true)
+        def callerDone = new CountDownLatch(1)
+        Thread.start { datastore.buildIndex(); callerDone.countDown() }
+        SerializedBuildDatastore.REACHED.await(30, TimeUnit.SECONDS)
+
+        and:
+        def background = datastore.buildIndexAsync()
+
+        then: "the background build does not enter index creation while it is running"
+        !background.isDone()
+        SerializedBuildDatastore.ENTERED.get() == 1
+
+        when:
+        Thread.sleep(500)
+
+        then:
+        !background.isDone()
+        SerializedBuildDatastore.ENTERED.get() == 1
+
+        when:
+        SerializedBuildDatastore.RELEASE.countDown()
+
+        then:
+        callerDone.await(30, TimeUnit.SECONDS)
+        background.get(30, TimeUnit.SECONDS).failures() == 0
+        SerializedBuildDatastore.ENTERED.get() == 2
+        SerializedBuildDatastore.MOST_AT_ONCE.get() == 1
+
+        cleanup:
+        SerializedBuildDatastore.RELEASE?.countDown()
+        datastore?.close()
+    }
+
     private static MongoWriteConcernException writeConcernFailure() {
         new MongoWriteConcernException(new WriteConcernError(64, 'WriteConcernFailed', 'waiting for replication timed out',
                 new BsonDocument()), new ServerAddress())
@@ -401,6 +473,53 @@ class FailingAsyncResultDatastore extends MongoDatastore {
     @Override
     protected void initializeIndices(PersistentEntity entity) {
         throw new IllegalStateException('the build stopped here')
+    }
+}
+
+/**
+ * Counts the builds inside index creation at once, and can hold the first one there until released.
+ */
+class SerializedBuildDatastore extends MongoDatastore {
+
+    static final AtomicBoolean BLOCK = new AtomicBoolean()
+
+    static final AtomicInteger ENTERED = new AtomicInteger()
+
+    static final AtomicInteger RUNNING = new AtomicInteger()
+
+    static final AtomicInteger MOST_AT_ONCE = new AtomicInteger()
+
+    static volatile CountDownLatch REACHED
+
+    static volatile CountDownLatch RELEASE
+
+    SerializedBuildDatastore(Map<String, Object> configuration, Class... classes) {
+        super(configuration, classes)
+    }
+
+    static void reset() {
+        BLOCK.set(false)
+        ENTERED.set(0)
+        RUNNING.set(0)
+        MOST_AT_ONCE.set(0)
+        REACHED = new CountDownLatch(1)
+        RELEASE = new CountDownLatch(1)
+    }
+
+    @Override
+    protected void initializeIndices(PersistentEntity entity) {
+        ENTERED.incrementAndGet()
+        MOST_AT_ONCE.accumulateAndGet(RUNNING.incrementAndGet(), Math::max)
+        try {
+            if (BLOCK.compareAndSet(true, false)) {
+                REACHED.countDown()
+                RELEASE.await()
+            }
+            super.initializeIndices(entity)
+        }
+        finally {
+            RUNNING.decrementAndGet()
+        }
     }
 }
 
