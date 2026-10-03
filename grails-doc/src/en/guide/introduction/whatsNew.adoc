@@ -489,8 +489,9 @@ both while it is running and as its application context refreshes (`-Dspring.con
 no connection to MongoDB until the application context starts its datastore, which is also when the declared indexes are
 built, and around a checkpoint it stops the client of every connection and starts it again after the restore. The
 `MongoClient` it hands out, the `mongo` bean among them, stays the same object throughout, so code holding it keeps
-working after a restore. An embedded MongoDB is started with the application context as well when the process is
-checkpointed as the context refreshes. See the link:{mongodb5Guide}index.html#advancedConfig[Advanced Configuration]
+working after a restore. In a Spring Boot application GORM now declares the `MongoClient` bean itself, built from Spring
+Boot's settings the way Spring Boot builds its own, so that client takes part as well. An embedded MongoDB is started
+with the application context when the process is checkpointed as the context refreshes. See the link:{mongodb5Guide}index.html#advancedConfig[Advanced Configuration]
 section of the GORM for MongoDB guide.
 
 ==== Read-Only Transactions Do Not Flush the Session
