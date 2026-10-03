@@ -32,6 +32,7 @@ import jakarta.persistence.criteria.AbstractQuery;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.ParameterExpression;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 
@@ -366,13 +367,25 @@ public class PredicateGenerator {
         } else if (pc instanceof Query.Like) {
             return criteriaBuilder.like((Expression<String>) propertyPath, (String) convertValue(entity, propertyName, pc.getValue(), propertyPath));
         } else if (pc instanceof Query.GreaterThan) {
-            return criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.greaterThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.GreaterThanEquals) {
-            return criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.greaterThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.LessThan) {
-            return criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.lessThan((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.LessThanEquals) {
-            return criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath));
+            Object value = convertComparisonValue(entity, propertyName, pc.getValue(), fromsByProvider, propertyPath);
+            return value instanceof Comparable<?> comparable ?
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Comparable) comparable) :
+                criteriaBuilder.lessThanOrEqualTo((Expression<? extends Comparable>) propertyPath, (Expression) asExpression(value, propertyPath, fromsByProvider));
         } else if (pc instanceof Query.In) {
             Object value = pc.getValue();
             if (value instanceof QueryableCriteria qc) {
@@ -591,6 +604,13 @@ public class PredicateGenerator {
         return value;
     }
 
+    /**
+     * Returns an arithmetic expression for a {@link PropertyArithmetic}, otherwise the converted value itself.
+     * A plain value is not wrapped in a literal, so the comparison overload that takes it infers its type from
+     * the property path, as HQL does for a parameter. A literal is typed from the value's class instead, which a
+     * property mapped with a custom {@code UserType} cannot be compared with when that class is
+     * {@link java.io.Serializable}.
+     */
     @SuppressWarnings("unchecked")
     private Object convertComparisonValue(GrailsHibernatePersistentEntity entity, String propertyName, Object value, JpaQueryContext context, Expression<?> propertyPath) {
         if (value instanceof PropertyArithmetic pa) {
@@ -604,11 +624,22 @@ public class PredicateGenerator {
                 case SUBTRACT -> criteriaBuilder.diff(left, right);
             };
         }
-        Object converted = convertValue(entity, propertyName, value, propertyPath);
-        if (!(converted instanceof Expression)) {
-            return criteriaBuilder.literal(converted);
+        return convertValue(entity, propertyName, value, propertyPath);
+    }
+
+    /**
+     * Returns the value as an expression for a comparison overload that takes an expression, which the JPA ordering
+     * overloads need for a value that is not {@link Comparable}. The value becomes a criteria parameter of the
+     * property's Java type, bound once the query is created, so Hibernate types it from the property it is compared
+     * with, as it does for an HQL parameter.
+     */
+    private Expression<?> asExpression(Object value, Expression<?> propertyPath, JpaQueryContext context) {
+        if (value instanceof Expression<?> expression) {
+            return expression;
         }
-        return converted;
+        ParameterExpression<?> parameter = criteriaBuilder.parameter(propertyPath.getJavaType());
+        context.bindParameter(parameter, value);
+        return parameter;
     }
 
     public Predicate generate(
