@@ -35,6 +35,7 @@ import org.grails.datastore.mapping.mongo.config.MongoMappingContext
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceFactory
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettings
+import org.grails.datastore.mapping.mongo.connections.RestartableMongoClient
 
 import spock.lang.Specification
 
@@ -52,18 +53,67 @@ import spock.lang.Specification
  */
 class MongoDatastoreLifecycleSpec extends Specification {
 
-    void 'a datastore is running from the moment it is built'() {
-        given:
-        MongoDatastore datastore = ownedClientDatastore()
+    void 'a datastore is not running until it is started, and holds no connection until then'() {
+        given: 'a datastore built as an application context builds it, with a connection of its own besides the default'
+        MongoDatastore datastore = ownedClientDatastore(withConnections(), false)
+        Map<String, MongoClient> clients = clientsByConnection(datastore)
 
-        expect:
-        datastore.running
+        expect: 'nothing has connected, which is what a checkpoint taken as the context refreshes needs'
+        !datastore.running
+        clients.values().every { it instanceof RestartableMongoClient && !((RestartableMongoClient) it).connected }
 
-        and: 'stopping after the web server and before the embedded MongoDB it may be talking to'
+        and: 'starting after everything that may need an embedded MongoDB, and stopping before it'
         datastore.phase == MongoDatastore.LIFECYCLE_PHASE
         datastore.phase < 0
 
+        when: 'Spring starts it'
+        datastore.start()
+
+        then: 'every client is connected'
+        datastore.running
+        clients.values().every { ((RestartableMongoClient) it).connected }
+
         cleanup:
+        datastore.close()
+    }
+
+    void 'a datastore nothing has started is started by the first session opened on it'() {
+        given: 'one built outside an application context, which nothing will start'
+        MongoDatastore datastore = ownedClientDatastore([:], false)
+
+        when:
+        def session = datastore.connect()
+
+        then:
+        datastore.running
+        ((RestartableMongoClient) datastore.mongoClient).connected
+
+        cleanup:
+        session?.disconnect()
+        datastore.close()
+    }
+
+    void 'a datastore that was stopped is not started again by being used'() {
+        given:
+        MongoDatastore datastore = ownedClientDatastore()
+        datastore.stop()
+
+        when: 'a session is opened while it is stopped, as a request arriving during a checkpoint might'
+        def session = datastore.connect()
+
+        then: 'it stays stopped, so nothing reconnects before the checkpoint is taken'
+        !datastore.running
+        closed(datastore.mongoClient)
+
+        when: 'whatever stopped it starts it'
+        datastore.start()
+
+        then:
+        datastore.running
+        !closed(datastore.mongoClient)
+
+        cleanup:
+        session?.disconnect()
         datastore.close()
     }
 
@@ -167,6 +217,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         given: 'a datastore built around an externally managed MongoClient'
         MongoClient supplied = Mock(MongoClient)
         MongoDatastore datastore = new MongoDatastore(supplied)
+        datastore.start()
 
         when: 'the checkpoint stops it'
         datastore.stop()
@@ -262,6 +313,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
         MongoDatastore datastore = new MongoDatastore(
                 DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_URL): unreachableUrl('test')] + withConnections()),
                 factory, new DefaultApplicationEventPublisher())
+        datastore.start()
         Map<String, MongoClient> originals = clientsByConnection(datastore)
 
         and:
@@ -315,6 +367,7 @@ class MongoDatastoreLifecycleSpec extends Specification {
                 DatastoreUtils.createPropertyResolver(withConnections()),
                 new MongoMappingContext('test'),
                 new DefaultApplicationEventPublisher())
+        datastore.start()
         MongoClient reporting = datastore.getDatastoreForConnection('reporting').mongoClient
 
         when: 'the checkpoint stops it'
@@ -374,11 +427,18 @@ class MongoDatastoreLifecycleSpec extends Specification {
         }
     }
 
-    private static MongoDatastore ownedClientDatastore(Map<String, Object> configuration = [:]) {
+    /**
+     * A datastore whose clients GORM owns, started as the application context starts it unless asked not to be.
+     */
+    private static MongoDatastore ownedClientDatastore(Map<String, Object> configuration = [:], boolean started = true) {
         MongoClientSettings.Builder clientOptions = MongoClientSettings.builder()
                 .applyToClusterSettings { it.serverSelectionTimeout(50, TimeUnit.MILLISECONDS) }
-        new MongoDatastore(clientOptions,
+        MongoDatastore datastore = new MongoDatastore(clientOptions,
                 DatastoreUtils.createPropertyResolver(configuration),
                 new MongoMappingContext('test'))
+        if (started) {
+            datastore.start()
+        }
+        datastore
     }
 }

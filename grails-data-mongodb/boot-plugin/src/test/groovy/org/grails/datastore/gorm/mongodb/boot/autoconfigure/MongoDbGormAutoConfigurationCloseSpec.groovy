@@ -19,15 +19,19 @@
 package org.grails.datastore.gorm.mongodb.boot.autoconfigure
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.mongodb.MongoClientSettings
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
+import com.mongodb.event.ClusterListener
+import com.mongodb.event.ClusterOpeningEvent
 import spock.lang.AutoCleanup
 import spock.lang.Specification
 
 import org.springframework.boot.autoconfigure.AutoConfigurationPackages
 import org.springframework.boot.mongodb.autoconfigure.MongoProperties
+import org.springframework.context.SmartLifecycle
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -88,6 +92,23 @@ class MongoDbGormAutoConfigurationCloseSpec extends Specification {
         datastore.close()
     }
 
+    void 'test the client the auto-configuration builds is created only when the context starts its lifecycle'() {
+        given:
+        AutoConfigurationPackages.register(context, 'org.grails.datastore.gorm.mongodb.boot.autoconfigure.noentities')
+        context.register(WatchedBootSettingsConfiguration)
+
+        when:
+        context.refresh()
+
+        then: 'no client existed when the first lifecycle bean started, which is where a checkpoint taken as the ' +
+                'context refreshes is taken'
+        context.getBean(FirstToStart).clientsCreatedWhenStarted == 0
+
+        and: 'the datastore created it when Spring started it'
+        context.getBean(WatchedBootSettingsConfiguration).clientsCreated.get() == 1
+        context.getBean(MongoDatastore).running
+    }
+
     /**
      * Whether the driver has been closed, which needs no MongoDB to answer: selecting a server from a closed
      * cluster is rejected outright, while an open client with nothing to connect to waits for the server
@@ -103,6 +124,76 @@ class MongoDbGormAutoConfigurationCloseSpec extends Specification {
         }
         catch (MongoTimeoutException ignored) {
             false
+        }
+    }
+
+    /**
+     * As {@link BootSettingsConfiguration}, with the settings telling the driver to report each client it creates,
+     * and the lifecycle bean Spring starts first.
+     */
+    @Configuration
+    @Import(MongoDbGormAutoConfiguration)
+    static class WatchedBootSettingsConfiguration {
+
+        final AtomicInteger clientsCreated = new AtomicInteger()
+
+        @Bean
+        MongoProperties mongoProperties() {
+            new MongoProperties()
+        }
+
+        @Bean
+        MongoClientSettings mongoClientSettings() {
+            MongoClientSettings.builder()
+                    .applyToClusterSettings {
+                        it.serverSelectionTimeout(50, TimeUnit.MILLISECONDS)
+                        it.addClusterListener(new ClusterListener() {
+                            @Override
+                            void clusterOpening(ClusterOpeningEvent event) {
+                                clientsCreated.incrementAndGet()
+                            }
+                        })
+                    }
+                    .build()
+        }
+
+        @Bean
+        FirstToStart firstToStart() {
+            new FirstToStart(clientsCreated)
+        }
+    }
+
+    static class FirstToStart implements SmartLifecycle {
+
+        private final AtomicInteger clientsCreated
+
+        Integer clientsCreatedWhenStarted
+
+        private boolean running
+
+        FirstToStart(AtomicInteger clientsCreated) {
+            this.clientsCreated = clientsCreated
+        }
+
+        @Override
+        void start() {
+            clientsCreatedWhenStarted = clientsCreated.get()
+            running = true
+        }
+
+        @Override
+        void stop() {
+            running = false
+        }
+
+        @Override
+        boolean isRunning() {
+            running
+        }
+
+        @Override
+        int getPhase() {
+            Integer.MIN_VALUE
         }
     }
 

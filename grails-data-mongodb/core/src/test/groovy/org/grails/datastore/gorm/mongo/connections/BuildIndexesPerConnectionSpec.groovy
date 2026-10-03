@@ -108,6 +108,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         when:
         def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver(config), factory,
                 new DefaultApplicationEventPublisher(), AsyncPerConnectionThing)
+        parent.start()
         if (addedAtRuntime) {
             parent.connectionSources.addConnectionSource('indexedAsync', childConfig)
         }
@@ -177,6 +178,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
                 'grails.mongodb.buildIndexesAsync': true,
                 'grails.mongodb.connections'      : [checkpointedChild: [url: dbContainer.getReplicaSetUrl('checkpointedChildDb'), buildIndexes: true]]
         ]), factory, new DefaultApplicationEventPublisher(), AsyncPerConnectionThing)
+        parent.start()
         buildReached.await(30, TimeUnit.SECONDS)
 
         then: "the build announces which connection it is for"
@@ -221,6 +223,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
                 'grails.mongodb.buildIndexes'     : false,
                 'grails.mongodb.buildIndexesAsync': true
         ]), AsyncPerConnectionThing)
+        parent.start()
         parent.stop()
         parent.connectionSources.addConnectionSource('addedWhileStopped',
                 [url: dbContainer.getReplicaSetUrl('addedWhileStoppedDb'), buildIndexes: true])
@@ -246,6 +249,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
                 'grails.mongodb.buildIndexes'     : false,
                 'grails.mongodb.buildIndexesAsync': true
         ]), AsyncPerConnectionThing)
+        parent.start()
         parent.close()
 
         when:

@@ -74,6 +74,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
 
         when: "the background build is under way"
         def datastore = new CheckpointedDatastore(asyncConfig('checkpointDb'), CheckpointedThing)
+        datastore.start()
 
         then:
         CheckpointedDatastore.REACHED.await(30, TimeUnit.SECONDS)
@@ -121,6 +122,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
 
         when: "the build has applied every index and is on its way out when the datastore is stopped"
         def datastore = new SlowToStopDatastore(asyncConfig('slowToStopDb'), SlowToStopThing)
+        datastore.start()
         SlowToStopDatastore.REACHED.await(30, TimeUnit.SECONDS)
         datastore.stop()
         SlowToStopDatastore.RELEASE.countDown()
@@ -144,6 +146,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
         def collection = realClient.getDatabase('deferredDb').getCollection('deferredBuildThing')
         def datastore = new MongoDatastore(asyncConfig('deferredDb'), DeferredBuildThing)
+        datastore.start()
         conditions.eventually {
             assert [name: 1] in collection.listIndexes()*.key
         }
