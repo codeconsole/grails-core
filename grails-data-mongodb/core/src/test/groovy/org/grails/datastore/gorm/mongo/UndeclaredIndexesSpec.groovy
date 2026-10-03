@@ -60,7 +60,7 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
 
     private MongoDatastore datastore(String database) {
         new MongoDatastore(config(database), UndeclaredIndexesThing, UndeclaredIndexesAnimal, UndeclaredIndexesDog,
-                UndeclaredIndexesSharedA, UndeclaredIndexesSharedB)
+                UndeclaredIndexesSharedA, UndeclaredIndexesSharedB).tap { start() }
     }
 
     private Set<String> indexNames(String database, String collection) {

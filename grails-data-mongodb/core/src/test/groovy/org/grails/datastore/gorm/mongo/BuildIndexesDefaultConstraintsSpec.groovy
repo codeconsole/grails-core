@@ -55,6 +55,7 @@ class BuildIndexesDefaultConstraintsSpec extends AutoStartedMongoSpec {
                 'grails.mongodb.url'             : dbContainer.getReplicaSetUrl('defaultConstraintsDb'),
                 'grails.gorm.default.constraints': { '*'(nullable: true) }
         ], DefaultConstraintsIndexedThing)
+        datastore.start()
         def indexes = realClient.getDatabase('defaultConstraintsDb')
                 .getCollection('defaultConstraintsIndexedThing').listIndexes().toList()
 

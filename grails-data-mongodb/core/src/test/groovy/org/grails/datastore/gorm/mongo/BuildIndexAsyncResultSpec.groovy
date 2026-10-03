@@ -188,6 +188,7 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
     void "test a build requested while the datastore is stopped or closed fails at once"() {
         given:
         def datastore = new MongoDatastore(config('asyncResultStoppedDb'), AsyncResultThing)
+        datastore.start()
 
         when:
         datastore.stop()
@@ -222,6 +223,7 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         BlockingAsyncResultDatastore.REACHED = new CountDownLatch(1)
         BlockingAsyncResultDatastore.RELEASE = new CountDownLatch(1)
         def datastore = new BlockingAsyncResultDatastore(config('asyncResultQueuedDb'), AsyncResultThing)
+        datastore.start()
 
         when: "one build is under way and another is queued behind it"
         BlockingAsyncResultDatastore.BLOCK.set(true)
