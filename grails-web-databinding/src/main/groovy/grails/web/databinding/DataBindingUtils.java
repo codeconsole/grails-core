@@ -177,7 +177,7 @@ public class DataBindingUtils {
 
     static List getUnbindablePropertyNames(final Object object) {
         if (BindingIncludeLists.inheritsConstraintsMap(object.getClass())) {
-            // The inherited accessor holds the superclass's constraints, so the class's own are evaluated once.
+            // The inherited Validateable accessor holds the superclass's constraints, so the class's own are evaluated once.
             return getUnbindablePropertyNames(object.getClass());
         }
         // Instance-derived constraints (constraintsMap / getConstraintsMap / constraints)

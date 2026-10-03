@@ -19,6 +19,7 @@
 package org.grails.web.databinding;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -33,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import groovy.lang.GroovySystem;
 import groovy.lang.MetaClass;
+import org.codehaus.groovy.transform.trait.Traits;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,12 +64,18 @@ public final class BindingIncludeLists {
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
     private static final Map<Class, List> CLASS_TO_LEGACY_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
     private static final String CONSTRAINTS_MAP_ACCESSOR = "getConstraintsMap";
+    private static final String VALIDATEABLE_TRAIT = "grails.validation.Validateable";
     // Asked on every bind, so it is answered once for each class; a ClassValue does not keep a reloaded class reachable.
     private static final ClassValue<Boolean> INHERITS_CONSTRAINTS_MAP = new ClassValue<>() {
         @Override
         protected Boolean computeValue(final Class<?> type) {
             try {
-                return type.getMethod(CONSTRAINTS_MAP_ACCESSOR).getDeclaringClass() != type;
+                final Method accessor = type.getMethod(CONSTRAINTS_MAP_ACCESSOR);
+                // Only the static accessor Validateable adds answers for the class implementing it. An instance
+                // getter a superclass declares answers for the instance, so its map is the one to bind with.
+                final Traits.TraitBridge traitBridge = accessor.getAnnotation(Traits.TraitBridge.class);
+                return accessor.getDeclaringClass() != type && Modifier.isStatic(accessor.getModifiers()) &&
+                        traitBridge != null && VALIDATEABLE_TRAIT.equals(traitBridge.traitClass().getName());
             } catch (NoSuchMethodException | SecurityException ignored) {
                 return false;
             }
@@ -317,8 +325,10 @@ public final class BindingIncludeLists {
     }
 
     /**
-     * Whether a type answers {@code getConstraintsMap()} with the accessor a superclass declares, and so
-     * with the constraints of that superclass rather than its own.
+     * Whether a type inherits the static {@code getConstraintsMap()} that {@code Validateable} adds to a
+     * superclass, and so answers with the constraints of that superclass rather than its own. A
+     * {@code getConstraintsMap()} instance getter a superclass declares is not inherited in this sense: it
+     * answers for the instance it is called on.
      */
     public static boolean inheritsConstraintsMap(final Class type) {
         return INHERITS_CONSTRAINTS_MAP.get(type);

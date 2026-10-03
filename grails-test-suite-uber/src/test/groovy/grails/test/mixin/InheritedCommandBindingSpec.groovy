@@ -24,9 +24,11 @@ import spock.lang.Specification
 import spock.lang.Unroll
 
 import grails.artefact.Artefact
+import grails.gorm.validation.DefaultConstrainedProperty
 import grails.testing.web.controllers.ControllerUnitTest
 import grails.validation.Validateable
 import grails.web.databinding.DataBindingUtils
+import org.grails.datastore.gorm.validation.constraints.registry.DefaultConstraintRegistry
 
 /**
  * Reproduces binding a dynamically constructed command whose superclass was enhanced as an action parameter.
@@ -205,6 +207,26 @@ class InheritedCommandBindingSpec extends Specification implements ControllerUni
         binding << ['bindData', 'DataBindingUtils']
     }
 
+    @Unroll
+    void 'each instance of a subclass inheriting an instance constraintsMap keeps its own bindable false properties through #binding'() {
+        given: 'two instances whose inherited constraintsMap protects a different property'
+        def protectsSecret = new InstanceConstraintsCommand(constraintsMap: unbindable('secret'))
+        def protectsName = new InstanceConstraintsCommand(constraintsMap: unbindable('name'))
+
+        when:
+        bindInstanceConstraints(binding, protectsSecret)
+        bindInstanceConstraints(binding, protectsName)
+
+        then: 'the map each instance answers with decides what it binds'
+        protectsSecret.name == 'changed'
+        protectsSecret.secret == 'original secret'
+        protectsName.name == 'original name'
+        protectsName.secret == 'changed'
+
+        where:
+        binding << ['bindData', 'DataBindingUtils']
+    }
+
     void 'switching modes does not reuse the other modes cached include list'() {
         expect:
         controller.bindDynamic().command.dateValue == DATE_VALUE
@@ -229,6 +251,22 @@ class InheritedCommandBindingSpec extends Specification implements ControllerUni
         def command = new InheritedValidateableCommand()
         DataBindingUtils.bindObjectToInstance(command, requestValues())
         command
+    }
+
+    private void bindInstanceConstraints(String binding, InstanceConstraintsCommand command) {
+        def values = [name: 'changed', secret: 'changed']
+        if (binding == 'bindData') {
+            controller.bindData(command, values)
+        } else {
+            DataBindingUtils.bindObjectToInstance(command, values)
+        }
+    }
+
+    private static Map unbindable(String propertyName) {
+        def constrainedProperty = new DefaultConstrainedProperty(
+                InstanceConstraintsCommand, propertyName, String, new DefaultConstraintRegistry())
+        constrainedProperty.addMetaConstraint('bindable', false)
+        [(propertyName): constrainedProperty]
     }
 
     private static Map requestValues() {
@@ -340,6 +378,16 @@ class InheritedBindingDeclaredCommand extends InheritedBindingIntermediateComman
     String textValue
     LocalDate dateValue
     boolean enabled
+}
+
+// Groovy generates an instance getConstraintsMap() for this property, which a subclass inherits.
+class InstanceConstraintsBaseCommand {
+    Map constraintsMap
+}
+
+class InstanceConstraintsCommand extends InstanceConstraintsBaseCommand {
+    String name = 'original name'
+    String secret = 'original secret'
 }
 
 class InheritedBindingStandaloneCommand implements InheritedBindingNullable {
