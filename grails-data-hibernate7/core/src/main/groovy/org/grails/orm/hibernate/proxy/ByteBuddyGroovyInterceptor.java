@@ -32,9 +32,6 @@ import org.hibernate.type.CompositeType;
  */
 public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
 
-    private static final String GET_ID_METHOD = "getId";
-    private static final String GET_IDENTIFIER_METHOD = "getIdentifier";
-
     protected final Method getIdentifierMethod;
 
     private final boolean lazyToString;
@@ -68,10 +65,8 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
     public Object intercept(Object proxy, Method method, Object[] args) throws Throwable {
         String methodName = method.getName();
 
-        // Check these BEFORE calling this.invoke() to avoid premature initialization in Hibernate 7
-        if ((getIdentifierMethod != null && methodName.equals(getIdentifierMethod.getName())) ||
-                GET_ID_METHOD.equals(methodName) ||
-                GET_IDENTIFIER_METHOD.equals(methodName)) {
+        // Only the mapped getter can return the identifier without invoking the entity.
+        if (getIdentifierMethod != null && getIdentifierMethod.equals(method)) {
             return getIdentifier();
         }
 

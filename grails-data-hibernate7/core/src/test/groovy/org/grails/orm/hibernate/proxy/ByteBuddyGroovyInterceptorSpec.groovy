@@ -142,15 +142,14 @@ class ByteBuddyGroovyInterceptorSpec extends HibernateGormDatastoreSpec {
         !Hibernate.isInitialized(proxy)
     }
 
-    void "getIdentifier() on uninitialized proxy returns identifier without initialization"() {
+    void "a user-defined getIdentifier() invokes the entity implementation"() {
         given:
         def proxy = manager.hibernateSession.getReference(Location, savedId)
 
         expect:
         !Hibernate.isInitialized(proxy)
-        // This should trigger the "getIdentifier" branch in the interceptor
         proxy.getIdentifier() == savedId
-        !Hibernate.isInitialized(proxy)
+        Hibernate.isInitialized(proxy)
     }
 
     void "setProperty on uninitialized proxy initializes the proxy"() {
