@@ -196,6 +196,49 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
         cleanup:
         datastore?.close()
     }
+
+    void "test a connection covers only the collections of the classes mapped to it"() {
+        given: "a class mapped to the default connection, one mapped to reporting, and one mapped to both"
+        def datastore = new MongoDatastore(config('undeclaredOwnDefaultDb', [
+                'grails.mongodb.connections': [reporting: [url: dbContainer.getReplicaSetUrl('undeclaredOwnReportingDb')]]
+        ]), UndeclaredIndexesDefaultOnlyThing, UndeclaredIndexesReportingOnlyThing, UndeclaredIndexesConnectionThing)
+                .tap { start() }
+        def reporting = datastore.getDatastoreForConnection('reporting') as MongoDatastore
+
+        and: "an undeclared index on a collection named after each of them, in both databases"
+        ['undeclaredOwnDefaultDb', 'undeclaredOwnReportingDb'].each { database ->
+            ['undeclaredIndexesDefaultOnly', 'undeclaredIndexesReportingOnly', 'undeclaredIndexesConnectionThing'].each {
+                realClient.getDatabase(database).getCollection(it).createIndex(new Document('code', 1))
+            }
+        }
+
+        expect: "the build put each declared index only on the connections its class is mapped to"
+        'name_1' in indexNames('undeclaredOwnDefaultDb', 'undeclaredIndexesDefaultOnly')
+        !('name_1' in indexNames('undeclaredOwnReportingDb', 'undeclaredIndexesDefaultOnly'))
+        'name_1' in indexNames('undeclaredOwnReportingDb', 'undeclaredIndexesReportingOnly')
+        !('name_1' in indexNames('undeclaredOwnDefaultDb', 'undeclaredIndexesReportingOnly'))
+
+        and: "each connection reports the collections of its own classes"
+        datastore.findUndeclaredIndexes()*.collection() as Set ==
+                ['undeclaredIndexesDefaultOnly', 'undeclaredIndexesConnectionThing'] as Set
+        reporting.findUndeclaredIndexes()*.collection() as Set ==
+                ['undeclaredIndexesReportingOnly', 'undeclaredIndexesConnectionThing'] as Set
+
+        when:
+        def dropped = reporting.dropUndeclaredIndexes()
+
+        then: "a collection named after a class mapped only to default is left alone on reporting"
+        dropped*.collection() as Set == ['undeclaredIndexesReportingOnly', 'undeclaredIndexesConnectionThing'] as Set
+        'code_1' in indexNames('undeclaredOwnReportingDb', 'undeclaredIndexesDefaultOnly')
+
+        and: "the default connection's database is untouched"
+        ['undeclaredIndexesDefaultOnly', 'undeclaredIndexesReportingOnly', 'undeclaredIndexesConnectionThing'].every {
+            'code_1' in indexNames('undeclaredOwnDefaultDb', it)
+        }
+
+        cleanup:
+        datastore?.close()
+    }
 }
 
 @Entity
@@ -266,6 +309,29 @@ class UndeclaredIndexesConnectionThing {
     static mapping = {
         collection 'undeclaredIndexesConnectionThing'
         connection ConnectionSource.ALL
+        name index: true
+    }
+}
+
+@Entity
+class UndeclaredIndexesDefaultOnlyThing {
+
+    String name
+
+    static mapping = {
+        collection 'undeclaredIndexesDefaultOnly'
+        name index: true
+    }
+}
+
+@Entity
+class UndeclaredIndexesReportingOnlyThing {
+
+    String name
+
+    static mapping = {
+        collection 'undeclaredIndexesReportingOnly'
+        connection 'reporting'
         name index: true
     }
 }

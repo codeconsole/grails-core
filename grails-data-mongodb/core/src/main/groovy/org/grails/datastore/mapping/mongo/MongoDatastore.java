@@ -980,14 +980,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * The entities whose declared indexes this datastore builds.
+     * The entities whose declared indexes this datastore builds: those mapped to its connection. Every connection
+     * shares one mapping context, so an entity mapped only to another connection is in it too.
      */
     private List<PersistentEntity> indexedEntities() {
+        String connection = connectionName();
         List<PersistentEntity> entities = new ArrayList<>();
         for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
             // Only create Mongo templates for entities that are mapped with Mongo
             if (!entity.isExternal() &&
-                    !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA)) {
+                    !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA) &&
+                    ConnectionSourcesSupport.usesConnectionSource(entity, connection)) {
                 entities.add(entity);
             }
         }

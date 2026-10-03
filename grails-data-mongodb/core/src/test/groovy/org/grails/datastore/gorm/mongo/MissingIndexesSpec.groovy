@@ -147,6 +147,22 @@ class MissingIndexesSpec extends AutoStartedMongoSpec {
         cleanup:
         datastore?.close()
     }
+
+    void "test a connection reports only what the classes mapped to it declare"() {
+        given: "a class mapped to the default connection, one mapped to reporting, and one mapped to both"
+        def datastore = new MongoDatastore(config('missingOwnDefaultDb', [
+                'grails.mongodb.connections': [reporting: [url: dbContainer.getReplicaSetUrl('missingOwnReportingDb')]]
+        ]), MissingIndexesDefaultOnlyThing, MissingIndexesReportingOnlyThing, MissingIndexesConnectionThing)
+
+        expect:
+        datastore.findMissingIndexes()*.domainClass() as Set ==
+                [MissingIndexesDefaultOnlyThing.name, MissingIndexesConnectionThing.name] as Set
+        (datastore.getDatastoreForConnection('reporting') as MongoDatastore).findMissingIndexes()*.domainClass() as Set ==
+                [MissingIndexesReportingOnlyThing.name, MissingIndexesConnectionThing.name] as Set
+
+        cleanup:
+        datastore?.close()
+    }
 }
 
 @Entity
@@ -221,6 +237,31 @@ class MissingIndexesConnectionThing {
         version false
         collection 'missingIndexesConnectionThing'
         connection ConnectionSource.ALL
+        name index: true
+    }
+}
+
+@Entity
+class MissingIndexesDefaultOnlyThing {
+
+    String name
+
+    static mapping = {
+        version false
+        collection 'missingIndexesDefaultOnly'
+        name index: true
+    }
+}
+
+@Entity
+class MissingIndexesReportingOnlyThing {
+
+    String name
+
+    static mapping = {
+        version false
+        collection 'missingIndexesReportingOnly'
+        connection 'reporting'
         name index: true
     }
 }
