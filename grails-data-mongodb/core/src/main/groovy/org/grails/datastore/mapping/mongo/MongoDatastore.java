@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -195,10 +197,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     protected final boolean buildIndexesAsync;
 
     /**
-     * Runs the startup index build off the thread that creates the datastore when
-     * {@code grails.mongodb.buildIndexesAsync} is enabled; {@code null} otherwise. A single thread,
+     * Runs the background index builds: every {@link #buildIndexAsync()}, and the startup build and each
+     * {@link #buildIndex()} when {@code grails.mongodb.buildIndexesAsync} is enabled. A single thread,
      * so the indexes are still built one at a time per connection. The worker expires after one idle
-     * second, releasing the worker while allowing subsequent calls to {@link #buildIndex()}.
+     * second, releasing the worker while allowing subsequent builds.
      *
      * <p>Not final: a shut down executor cannot be restarted, so {@link #start()} replaces the one
      * {@link #stop()} shut down.
@@ -282,11 +284,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.transactionsEnabled = settings.isTransactional();
         this.buildIndexes = settings.isBuildIndexes();
         this.buildIndexesAsync = settings.isBuildIndexesAsync();
-        // Whenever builds are asynchronous, not only when GORM builds by itself: an explicit buildIndex() runs
-        // on it too. Until a build is submitted it holds no thread.
-        this.indexBuildExecutor = this.buildIndexesAsync ?
-                newIndexBuildExecutor(defaultConnectionSource.getName()) :
-                null;
+        // Whatever the setting: buildIndexAsync() runs on it too. Until a build is submitted it holds no thread.
+        this.indexBuildExecutor = newIndexBuildExecutor(defaultConnectionSource.getName());
         codecRegistry = CodecRegistries.fromRegistries(
                 CodecRegistries.fromProviders(new CodecExtensions(), new PersistentEntityCodeRegistry()),
                 mappingContext.getCodecRegistry(),
@@ -701,7 +700,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * <p>Each index is created by a command that the server answers only once the index has been built,
      * so this blocks the calling thread for as long as MongoDB takes to build every declared index. With
      * {@code grails.mongodb.buildIndexesAsync} enabled the work goes to a background thread and this
-     * returns immediately instead.
+     * returns immediately instead. {@link #buildIndexAsync()} runs it in the background whatever the setting,
+     * and reports the outcome to its caller.
      */
     public void buildIndex() {
         String connection = connectionName();
@@ -711,26 +711,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     connection);
             return;
         }
-        ExecutorService executor = this.indexBuildExecutor;
-        if (executor == null) {
-            runIndexBuild(null);
+        if (!buildIndexesAsync) {
+            runIndexBuild(null, LOG.isInfoEnabled(), null);
             return;
         }
-        if (!executor.isShutdown()) {
-            try {
-                executor.execute(() -> {
-                    // The first thing the build does: said only of a build that is under way, and ahead of
-                    // everything it logs, which it would not be if the submitting thread said it.
-                    LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
-                            "background thread. Startup does not wait for them, so a query issued before its index " +
-                            "exists is served without it.", connection);
-                    runIndexBuild(executor);
-                });
-                return;
-            }
-            catch (RejectedExecutionException e) {
-                // Shut down between the check and the submission.
-            }
+        if (submitIndexBuild(null)) {
+            return;
         }
         if (closed) {
             LOG.warn("An index build was requested for connection [{}] after the datastore was closed, so it was not started.",
@@ -740,6 +726,87 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             indexBuildPending = true;
             LOG.info("An index build was requested for connection [{}] while the datastore is stopped; it will run when " +
                     "the datastore is restarted.", connection);
+        }
+    }
+
+    /**
+     * Runs the same build as {@link #buildIndex()} on this connection's background index build thread, whatever
+     * {@code grails.mongodb.buildIndexesAsync} says, and returns at once with a handle on its outcome.
+     *
+     * <p>The future completes with the build's {@link IndexBuildResult} once every declaration has been applied,
+     * including when some of them failed: those are counted in {@link IndexBuildResult#failures()} and logged
+     * as they happen. It completes exceptionally with the exception that stopped the build partway, such as a
+     * lost connection. Created and already-present indexes are always told apart, whatever the log level.
+     *
+     * <p>Builds on a connection run one at a time, so a build requested while another is running waits for it.
+     * Cancelling the future does not stop the build. If the datastore is stopped or closed, the future completes
+     * exceptionally at once, and a build that stopping or closing the datastore cuts short completes
+     * exceptionally too; a restart runs the cut-short build again, without a future. Each named connection
+     * builds its own domain classes: call this on {@link #getDatastoreForConnection(String)} for those.
+     *
+     * @return the outcome of the build
+     */
+    public CompletableFuture<IndexBuildResult> buildIndexAsync() {
+        CompletableFuture<IndexBuildResult> result = new CompletableFuture<>();
+        if (closed || !submitIndexBuild(result)) {
+            result.completeExceptionally(new IllegalStateException("The index build for connection [" +
+                    connectionName() + "] was not started: the datastore is " + (closed ? "closed" : "stopped") + "."));
+        }
+        return result;
+    }
+
+    /**
+     * Hands a build to this connection's background index build thread.
+     *
+     * @param result the future to complete with the build's outcome, or {@code null} if nothing is waiting on it
+     * @return false if the executor has been shut down, by {@link #stop()} or {@link #close()}
+     */
+    private boolean submitIndexBuild(CompletableFuture<IndexBuildResult> result) {
+        ExecutorService executor = this.indexBuildExecutor;
+        if (executor.isShutdown()) {
+            return false;
+        }
+        try {
+            executor.execute(new IndexBuildTask(result, () -> {
+                // The first thing the build does: said only of a build that is under way, and ahead of
+                // everything it logs, which it would not be if the submitting thread said it.
+                LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
+                        "background thread. Startup does not wait for them, so a query issued before its index " +
+                        "exists is served without it.", connectionName());
+                // Classified whenever a caller is waiting for the counts, which are then the product.
+                runIndexBuild(executor, result != null || LOG.isInfoEnabled(), result);
+            }));
+            return true;
+        }
+        catch (RejectedExecutionException e) {
+            // Shut down between the check and the submission.
+            return false;
+        }
+    }
+
+    /**
+     * A build on the background thread, carrying the future its caller holds so that one shut down before it
+     * runs, or ended by an {@link Error}, still completes it.
+     */
+    private record IndexBuildTask(CompletableFuture<IndexBuildResult> result, Runnable build) implements Runnable {
+
+        @Override
+        public void run() {
+            try {
+                build.run();
+            }
+            catch (RuntimeException | Error e) {
+                if (result != null) {
+                    result.completeExceptionally(e);
+                }
+                throw e;
+            }
+        }
+
+        private void notRun(String reason) {
+            if (result != null) {
+                result.completeExceptionally(new CancellationException(reason));
+            }
         }
     }
 
@@ -779,12 +846,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      *
      * @param executor the executor running it, or {@code null} for a build on the caller's thread, whose
      *                 failure is left to propagate to the caller
+     * @param classify whether to tell created indexes from ones already present. It costs a listIndexes per
+     *                 indexed collection, and its only product is the counts, so it is skipped when nothing
+     *                 would report them
+     * @param result   the future to complete with the outcome, or {@code null} if nothing is waiting on it
      */
-    private void runIndexBuild(ExecutorService executor) {
+    private void runIndexBuild(ExecutorService executor, boolean classify, CompletableFuture<IndexBuildResult> result) {
         long startedAt = System.nanoTime();
-        // Telling a created index from one that was already there costs a listIndexes per indexed
-        // collection, and its only product is the summary, so it is skipped when that would not be logged.
-        IndexBuildSummary summary = new IndexBuildSummary(LOG.isInfoEnabled());
+        IndexBuildSummary summary = new IndexBuildSummary(classify);
         Exception failure = null;
         try {
             buildDeclaredIndexes(summary);
@@ -800,6 +869,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
         if (failure == null) {
             logFinishedIndexBuild(summary, elapsedMillis);
+            if (result != null) {
+                result.complete(summary.toResult(defaultDatabase, elapsedMillis));
+            }
             return;
         }
         if (executor == null) {
@@ -823,6 +895,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     "indexes that were not created.", failure.getMessage(), failure);
         }
         logUnfinishedIndexBuild(summary, elapsedMillis, abandoned);
+        if (result != null) {
+            result.completeExceptionally(failure);
+        }
     }
 
     /**
@@ -1169,6 +1244,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         /** Declarations applied other than by a drop and recreate. */
         private int applied() {
             return created + alreadyPresent + unclassified;
+        }
+
+        private IndexBuildResult toResult(String database, long elapsedMillis) {
+            return new IndexBuildResult(database, entities, created, recreated, alreadyPresent, unclassified,
+                    failures, elapsedMillis);
         }
 
         private String describe() {
@@ -2098,7 +2178,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     private void resumeIndexBuild() {
         ExecutorService stopped = this.indexBuildExecutor;
-        if (stopped == null || !stopped.isShutdown()) {
+        if (!stopped.isShutdown()) {
             // Never shut down - a connection added while the datastore was stopped - so no build of it was
             // interrupted, and one requested since was submitted rather than deferred.
             return;
@@ -2119,7 +2199,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             indexBuildPending = false;
             LOG.info("Resuming the index build for connection [{}] that was pending while the datastore was stopped.",
                     connectionName());
-            buildIndex();
+            // On the background thread whatever the setting: only a background build can be cut short, and
+            // with the setting off that is one buildIndexAsync() started.
+            submitIndexBuild(null);
         }
     }
 
@@ -2192,12 +2274,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * @return whether a build was still queued, and so never ran
      */
     private boolean shutDownIndexBuild() {
-        ExecutorService executor = this.indexBuildExecutor;
-        if (executor == null) {
-            return false;
-        }
         // A build already running reports for itself whether it was cut short; one still queued never runs.
-        return !executor.shutdownNow().isEmpty();
+        List<Runnable> queued = this.indexBuildExecutor.shutdownNow();
+        for (Runnable task : queued) {
+            if (task instanceof IndexBuildTask build) {
+                build.notRun("The datastore was stopped or closed before the index build for connection [" +
+                        connectionName() + "] started.");
+            }
+        }
+        return !queued.isEmpty();
     }
 
     /**

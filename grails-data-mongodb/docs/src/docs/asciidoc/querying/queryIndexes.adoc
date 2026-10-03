@@ -225,6 +225,18 @@ mongoDatastore.getDatastoreForConnection('reporting').buildIndex()
 
 A build requested after the datastore has been closed is not started, and one requested while it is stopped for a checkpoint runs when it is restarted.
 
+To build in the background and still learn how the build went, call `buildIndexAsync()`. It runs the same build on the connection's index build thread whatever `buildIndexesAsync` says, returns at once, and hands back a `CompletableFuture<IndexBuildResult>`:
+
+[source,groovy]
+----
+import org.grails.datastore.mapping.mongo.IndexBuildResult
+
+IndexBuildResult result = mongoDatastore.buildIndexAsync().get()
+println "${result.created()} created, ${result.alreadyPresent()} already present, ${result.failures()} failed"
+----
+
+The result carries the counts the summary line reports, and created and already-present indexes are always told apart, whatever the log level. A declaration that cannot be applied is counted in `failures()` and logged as it fails, and the future still completes; an exception that stops the build partway, such as a lost connection, completes the future exceptionally instead. Builds on a connection run one at a time, so a build requested while another is running waits for it, and cancelling the future does not stop the build. If the datastore is stopped or closed, the future fails at once; a build that stopping the datastore cuts short fails its future and runs again, without one, when the datastore is restarted.
+
 ==== Building Indexes in the Background
 
 
