@@ -42,19 +42,23 @@ class UserTypeMappingSpec extends Specification {
         given: 'a datastore whose default mapping registers a user type for Boolean'
         HibernateDatastore datastore = createDatastore("userTypeDefault${iteration}", {
             'user-type'(type: userType, 'class': Boolean)
-        }, UserTypeFlag)
+        }, UserTypeFlag, OtherUserTypeFlag)
 
-        when: 'an entity with a Boolean property is saved and read back'
+        when: 'entities with a Boolean property are saved and read back'
         Map<String, Boolean> readBack = saveAndReadBack(UserTypeFlag)
+        Map<String, Boolean> otherReadBack = saveAndReadBack(OtherUserTypeFlag)
 
-        then: 'the property is bound to the user type'
+        then: 'each property is bound to the user type'
         typeNameOf(datastore, UserTypeFlag) == YesNoBooleanUserType.name
+        typeNameOf(datastore, OtherUserTypeFlag) == YesNoBooleanUserType.name
 
-        and: 'the user type writes the column'
+        and: 'the user type writes each column'
         storedFlags(datastore, 'user_type_flag') == [disabled: 'N', enabled: 'Y']
+        storedFlags(datastore, 'other_user_type_flag') == [disabled: 'N', enabled: 'Y']
 
-        and: 'the user type reads the column'
+        and: 'the user type reads each column'
         readBack == [disabled: false, enabled: true]
+        otherReadBack == [disabled: false, enabled: true]
 
         cleanup:
         datastore?.close()
@@ -69,8 +73,9 @@ class UserTypeMappingSpec extends Specification {
         given: 'a datastore without a default user type'
         HibernateDatastore datastore = createDatastore('userTypeOwn', {}, OwnUserTypeFlag, UserTypeFlag)
 
-        when: 'the entity that registers the user type is saved and read back'
+        when: 'the entity that registers the user type and another entity are saved and read back'
         Map<String, Boolean> readBack = saveAndReadBack(OwnUserTypeFlag)
+        Map<String, Boolean> otherReadBack = saveAndReadBack(UserTypeFlag)
 
         then: 'its property is bound to the user type'
         typeNameOf(datastore, OwnUserTypeFlag) == YesNoBooleanUserType.name
@@ -79,6 +84,8 @@ class UserTypeMappingSpec extends Specification {
 
         and: 'other entities keep the standard type'
         typeNameOf(datastore, UserTypeFlag) == Boolean.name
+        storedFlags(datastore, 'user_type_flag') == [disabled: 'FALSE', enabled: 'TRUE']
+        otherReadBack == [disabled: false, enabled: true]
 
         cleanup:
         datastore?.close()
@@ -95,6 +102,7 @@ class UserTypeMappingSpec extends Specification {
 
         then: 'the property keeps the type it sets'
         typeNameOf(datastore, TypedUserTypeFlag) == Boolean.name
+        storedFlags(datastore, 'typed_user_type_flag') == [disabled: 'FALSE', enabled: 'TRUE']
         readBack == [disabled: false, enabled: true]
 
         cleanup:
@@ -140,6 +148,12 @@ class UserTypeMappingSpec extends Specification {
 
 @Entity
 class UserTypeFlag implements HibernateEntity<UserTypeFlag> {
+    String name
+    Boolean active
+}
+
+@Entity
+class OtherUserTypeFlag implements HibernateEntity<OtherUserTypeFlag> {
     String name
     Boolean active
 }
