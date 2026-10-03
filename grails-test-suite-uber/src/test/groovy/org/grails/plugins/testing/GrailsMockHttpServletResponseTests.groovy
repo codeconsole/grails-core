@@ -18,6 +18,8 @@
  */
 package org.grails.plugins.testing
 
+import java.nio.charset.StandardCharsets
+
 import org.grails.plugins.testing.GrailsMockHttpServletResponse
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.junit.jupiter.api.Test
@@ -69,6 +71,22 @@ class GrailsMockHttpServletResponseTests {
             webRequest.out.flush()
 
             assertEquals 'new text', response.contentAsString
+        }
+    }
+
+    @Test
+    void testResetUsesCharacterEncodingChosenAfterReset() {
+        withBoundWebRequest { response, webRequest ->
+            webRequest.out.write('previous text')
+            response.flushBuffer()
+
+            response.reset()
+            response.characterEncoding = 'UTF-8'
+            String text = 'café €'
+            webRequest.out.write(text)
+            webRequest.out.flush()
+
+            assertArrayEquals text.getBytes(StandardCharsets.UTF_8), response.contentAsByteArray
         }
     }
 
