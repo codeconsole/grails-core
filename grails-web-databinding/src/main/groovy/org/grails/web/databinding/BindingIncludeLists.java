@@ -101,11 +101,13 @@ public final class BindingIncludeLists {
                 // target's constraints and would otherwise run on every bind of a cached class.
                 final List runtimeBindableNames = denyByDefault ? bindablePropertyNames(type) : null;
                 includeList = runtimeBindableNames;
-                final Field legacyWhiteListField = getField(type, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
+                // Compatibility metadata describes its declaring class, not an unenhanced subclass.
+                // Match Grails 7's class-local lookup so a parent's generated list cannot hide new properties.
+                final Field legacyWhiteListField = getPublicDeclaredField(type, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
                 final Field defaultWhiteListField = denyByDefault ?
                         getPairedField(type, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST,
                                 DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST) :
-                        getField(type, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
+                        getPublicDeclaredField(type, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
                 if (!denyByDefault) {
                     includeList = getStaticListFieldValue(legacyWhiteListField);
                     if (includeList == null) {
@@ -336,18 +338,6 @@ public final class BindingIncludeLists {
         return propertyType != null && (propertyType.isPrimitive() || String.class.equals(propertyType) ||
                 Boolean.class.equals(propertyType) || Character.class.equals(propertyType) || Number.class.isAssignableFrom(propertyType) ||
                 BigInteger.class.equals(propertyType) || BigDecimal.class.equals(propertyType) || URL.class.equals(propertyType));
-    }
-
-    private static Field getField(final Class objectClass, final String fieldName) {
-        Class currentClass = objectClass;
-        while (currentClass != null) {
-            final Field field = getPublicDeclaredField(currentClass, fieldName);
-            if (field != null) {
-                return field;
-            }
-            currentClass = currentClass.getSuperclass();
-        }
-        return null;
     }
 
     private static Field getPairedField(final Class objectClass, final String fieldName, final String pairedFieldName) {

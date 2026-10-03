@@ -98,22 +98,22 @@ class DataBindingUtilsSpec extends Specification {
         command.version == null
     }
 
-    void 'test a whitelist declared by a super class also restricts a sub class'() {
+    void 'test a superclass whitelist does not restrict an unenhanced subclass in compatibility mode'() {
         given:
         def command = new SubclassOfWhitelistedCommand()
 
         when:
         DataBindingUtils.bindObjectToInstance(command, [name: 'Grails', version: '8'])
 
-        then: 'the inherited whitelist applies to the sub class as well'
+        then: 'only a whitelist declared on the bound class describes its eligible properties'
         command.name == 'Grails'
-        command.version == null
+        command.version == '8'
     }
 
     void 'test the include list of a type is the one its instances are bound with'() {
         expect:
         BindingIncludeLists.propertyNames(WhitelistedCommand) == ['name']
-        BindingIncludeLists.propertyNames(SubclassOfWhitelistedCommand) == ['name']
+        BindingIncludeLists.propertyNames(SubclassOfWhitelistedCommand) == null
 
         and: 'a type that declares none is not restricted'
         BindingIncludeLists.propertyNames(NoWhitelistCommand) == null
