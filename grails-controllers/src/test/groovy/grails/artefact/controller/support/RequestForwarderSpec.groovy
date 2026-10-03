@@ -119,6 +119,46 @@ class RequestForwarderSpec extends Specification {
         cleanup:
         RequestContextHolder.setRequestAttributes(null)
     }
+
+    void "test request forward clears TEMPLATE_MODEL even when the dispatcher throws"() {
+
+        setup:
+        def applicationContext = Mock(WebApplicationContext)
+        def linkGenerator = Mock(LinkGenerator)
+        linkGenerator.link(_) >> "/test"
+        applicationContext.getBean(LinkGenerator) >> linkGenerator
+        applicationContext.getBeansOfType(ParameterCreationListener) >> [:]
+        MockRequestDispatcher mockRequestDispatcher = new MockRequestDispatcher("test") {
+            @Override
+            void forward(ServletRequest request, ServletResponse response) {
+                // Simulate the forwarded action setting a new TEMPLATE_MODEL before throwing
+                request.setAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, [fromForwardedAction: true])
+                throw new RuntimeException("dispatcher failed")
+            }
+        }
+
+        GrailsWebRequest webRequest = GrailsWebMockUtil.bindMockWebRequest(applicationContext, new MockHttpServletRequest() {
+            @Override
+            RequestDispatcher getRequestDispatcher(String path) {
+                return mockRequestDispatcher
+            }
+        }, new MockHttpServletResponse())
+
+        webRequest.request.setAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, [fromOriginalAction: true])
+
+        when: "A forward is issued and the dispatcher throws after setting TEMPLATE_MODEL"
+        TestForwarder forwarder = new TestForwarder()
+        forwarder.doForward()
+
+        then: "the exception propagates"
+        thrown(Exception)
+
+        and: "TEMPLATE_MODEL is cleared by the finally block despite the exception"
+        webRequest.request.getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL) == null
+
+        cleanup:
+        RequestContextHolder.setRequestAttributes(null)
+    }
 }
 
 class TestForwarder implements RequestForwarder {

@@ -270,6 +270,7 @@ public class UrlMappingUtils {
         // responsibility for rendering the response.
         final GrailsWebRequest webRequest = GrailsWebRequest.lookup(request);
         webRequest.removeAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, 0);
+        webRequest.removeAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, 0);
         info.configure(webRequest);
         webRequest.removeAttribute(GrailsApplicationAttributes.GRAILS_CONTROLLER_CLASS_AVAILABLE, WebRequest.SCOPE_REQUEST);
         webRequest.removeAttribute(UrlMappingsHandlerMapping.MATCHED_REQUEST, WebRequest.SCOPE_REQUEST);
