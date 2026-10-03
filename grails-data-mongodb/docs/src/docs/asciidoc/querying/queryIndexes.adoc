@@ -235,7 +235,7 @@ IndexBuildResult result = mongoDatastore.buildIndexAsync().get()
 println "${result.created()} created, ${result.alreadyPresent()} already present, ${result.failures()} failed"
 ----
 
-The result carries the counts the summary line reports, and created and already-present indexes are always told apart, whatever the log level. A declaration that cannot be applied is counted in `failures()` and logged as it fails, and the future still completes; an exception that stops the build partway, such as a lost connection, completes the future exceptionally instead. Builds on a connection run one at a time, so a build requested while another is running waits for it, and cancelling the future does not stop the build. If the datastore is stopped or closed, the future fails at once; a build that stopping the datastore cuts short fails its future and runs again, without one, when the datastore is restarted.
+The result carries the counts the summary line reports, and created and already-present indexes are always told apart, whatever the log level. A declaration that cannot be applied is counted in `failures()` and logged as it fails, and the future still completes; an exception that stops the build partway, such as a lost connection or a write concern the server could not satisfy, completes the future exceptionally instead. Builds on a connection run one at a time, so a build requested while another is running waits for it, and cancelling the future does not stop the build. If the datastore is stopped or closed, the future fails at once; a build that stopping the datastore cuts short fails its future and runs again, without one, when the datastore is restarted.
 
 ==== Building Indexes in the Background
 
@@ -281,7 +281,7 @@ The split between created and already present is what makes that time interpreta
 Index build for database [myDb] finished in 9315ms: 0 created, 1 recreated, 6 already present, from 3 domain class(es)
 ----
 
-A declaration the server refuses does not end the build: an option conflict GORM is not authorised to resolve, an invalid specification, or a `unique` index over documents that already share a value is logged at `ERROR` as it fails and counted, and the build goes on with the remaining declarations. Only an error that stops the build itself, such as a lost connection, ends it early, and with the default synchronous build that fails startup.
+A declaration the server refuses does not end the build: an option conflict GORM is not authorised to resolve, an invalid specification, or a `unique` index over documents that already share a value is logged at `ERROR` as it fails and counted, and the build goes on with the remaining declarations. Only an error that stops the build itself ends it early: a lost connection, or a write concern the server could not satisfy, which leaves unknown whether the index was built. With the default synchronous build that fails startup.
 
 If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen. A build that stops partway — a lost connection or a timeout — reports how far it got before stopping, also at `WARN`:
 

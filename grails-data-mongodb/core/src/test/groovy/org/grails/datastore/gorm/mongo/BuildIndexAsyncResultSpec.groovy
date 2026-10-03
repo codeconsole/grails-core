@@ -27,15 +27,20 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 import ch.qos.logback.classic.Level
+import com.mongodb.MongoWriteConcernException
+import com.mongodb.ServerAddress
+import com.mongodb.bulk.WriteConcernError
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
 import com.mongodb.client.model.IndexOptions
 import grails.gorm.annotation.Entity
+import org.bson.BsonDocument
 import org.bson.Document
 import spock.lang.Shared
 import spock.util.concurrent.PollingConditions
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoSettings
@@ -162,6 +167,83 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a write concern the server could not satisfy stops the build instead of counting as a failed declaration"() {
+        given: "each index is created, and only its acknowledgement fails"
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        MongoClient unacknowledged = FailingMongoClient.wrap(realClient, 'createIndex') { Closure proceed ->
+            proceed()
+            throw writeConcernFailure()
+        }
+        def datastore = datastoreOn(unacknowledged, 'asyncResultWriteConcernDb', AsyncResultThing)
+
+        when:
+        datastore.buildIndexAsync().get(30, TimeUnit.SECONDS)
+
+        then:
+        def e = thrown(ExecutionException)
+        e.cause instanceof MongoWriteConcernException
+        log.events.any {
+            it.formattedMessage.startsWith('Index build for database [asyncResultWriteConcernDb] did not finish')
+        }
+
+        when: "the build runs on the caller's thread"
+        datastore.buildIndex()
+
+        then: "it reaches the caller"
+        thrown(MongoWriteConcernException)
+
+        cleanup:
+        datastore?.close()
+        log?.close()
+    }
+
+    void "test a write concern failure after recreateOnConflict dropped the old index stops the build"() {
+        given: "an index on the declared keys without the unique option declared, which the declaration may replace"
+        realClient.getDatabase('asyncResultRecreateConcernDb').getCollection('asyncResultRecreatedThing')
+                .createIndex(new Document('code', 1))
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        MongoClient unacknowledged = FailingMongoClient.wrap(realClient, 'createIndex') { Closure proceed ->
+            // The first attempt is refused by the server for its options; the one after the drop is applied
+            proceed()
+            throw writeConcernFailure()
+        }
+        def datastore = datastoreOn(unacknowledged, 'asyncResultRecreateConcernDb', AsyncResultRecreatedThing)
+
+        when:
+        datastore.buildIndexAsync().get(30, TimeUnit.SECONDS)
+
+        then:
+        def e = thrown(ExecutionException)
+        e.cause instanceof MongoWriteConcernException
+
+        and: "the unique index was built; only its acknowledgement failed"
+        realClient.getDatabase('asyncResultRecreateConcernDb').getCollection('asyncResultRecreatedThing')
+                .listIndexes().find { it.key == [code: 1] }?.unique == true
+
+        and: "the log says the outcome is not known, not that the collection has no index on those keys"
+        log.events.any {
+            it.level == Level.WARN && it.formattedMessage.startsWith('Dropped index [code_1] on entity [') &&
+                    it.formattedMessage.contains('but the server did not confirm the new one')
+        }
+        !log.events.any { it.formattedMessage.contains('could not be built again') }
+
+        cleanup:
+        datastore?.close()
+        log?.close()
+    }
+
+    private static MongoWriteConcernException writeConcernFailure() {
+        new MongoWriteConcernException(new WriteConcernError(64, 'WriteConcernFailed', 'waiting for replication timed out',
+                new BsonDocument()), new ServerAddress())
+    }
+
+    private MongoDatastore datastoreOn(MongoClient client, String database, Class... classes) {
+        new MongoDatastore(client, DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.databaseName'        : database,
+                (MongoSettings.SETTING_BUILD_INDEXES): false
+        ]), classes)
+    }
+
     void "test a build that stops partway completes the future with the exception that stopped it"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
@@ -281,6 +363,18 @@ class AsyncResultThing {
         collection 'asyncResultThing'
         name index: true
         compoundIndex([code: 1, name: -1])
+    }
+}
+
+@Entity
+class AsyncResultRecreatedThing {
+
+    String code
+
+    static mapping = {
+        version false
+        collection 'asyncResultRecreatedThing'
+        code index: true, indexAttributes: [unique: true, recreateOnConflict: true]
     }
 }
 

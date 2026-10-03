@@ -42,6 +42,8 @@ import groovy.lang.Closure;
 import jakarta.annotation.PreDestroy;
 import jakarta.persistence.FlushModeType;
 
+import com.mongodb.DuplicateKeyException;
+import com.mongodb.ErrorCategory;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoInterruptedException;
@@ -743,7 +745,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * <p>The future completes with the build's {@link IndexBuildResult} once every declaration has been applied,
      * including when some of them failed: those are counted in {@link IndexBuildResult#failures()} and logged
      * as they happen. It completes exceptionally with the exception that stopped the build partway, such as a
-     * lost connection. Created and already-present indexes are always told apart, whatever the log level.
+     * lost connection or a write concern the server could not satisfy. Created and already-present indexes are always told apart, whatever the log level.
      *
      * <p>Builds on a connection run one at a time, so a build requested while another is running waits for it.
      * Cancelling the future does not stop the build. If the datastore is stopped or closed, the future completes
@@ -1931,13 +1933,21 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     entity.getName(), descriptor, e.getMessage(), e);
             }
         } catch (MongoServerException e) {
-            // The server refusing this one index in another form, such as a unique index over documents that
-            // already share a value, which the driver reports as a DuplicateKeyException rather than a command
-            // error. A lost connection or an interruption is not a server's answer, so it still stops the build.
+            // A unique index over documents that already share a value, which the driver reports as a
+            // DuplicateKeyException rather than a command error, is the server refusing this one declaration.
+            // Anything else here, such as a write concern the server could not satisfy, says nothing about the
+            // declaration and leaves unknown whether it was applied, so it stops the build.
+            if (!isDuplicateKey(e)) {
+                throw e;
+            }
             summary.failures++;
             LOG.error("Failed to create index for entity [{}] {}: {}",
                 entity.getName(), descriptor, e.getMessage(), e);
         }
+    }
+
+    private static boolean isDuplicateKey(MongoServerException e) {
+        return e instanceof DuplicateKeyException || ErrorCategory.fromErrorCode(e.getCode()) == ErrorCategory.DUPLICATE_KEY;
     }
 
     /**
@@ -2012,6 +2022,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 LOG.info("Recreated index [{}] on entity [{}] {}", existingName, entity.getName(), descriptor);
                 return Reconciliation.RECREATED;
             } catch (MongoServerException recreateError) {
+                if (!(recreateError instanceof MongoCommandException) && !isDuplicateKey(recreateError)) {
+                    if (dropped) {
+                        LOG.warn("Dropped index [{}] on entity [{}] to recreate it {}, but the server did not confirm " +
+                                "the new one, so whether it was built is not known: {}",
+                            existingName, entity.getName(), descriptor, recreateError.getMessage());
+                    }
+                    throw recreateError;
+                }
                 if (!dropped) {
                     LOG.error("Failed to recreate index [{}] on entity [{}] {}: {}",
                         existingName, entity.getName(), descriptor, recreateError.getMessage(), recreateError);
