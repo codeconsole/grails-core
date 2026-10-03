@@ -181,6 +181,80 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a reviewed index whose name a declared index has taken since is not dropped"() {
+        given:
+        def log = new CapturedLog('org.grails.datastore.mapping.mongo', Level.WARN)
+        def datastore = datastore('undeclaredRenamedDb')
+        def things = realClient.getDatabase('undeclaredRenamedDb').getCollection('undeclaredIndexesThing')
+        things.createIndex(new Document('code', 1), new IndexOptions().name('maintenance_idx'))
+        def reviewed = datastore.findUndeclaredIndexes()
+
+        and: "the reviewed index goes, and the declared unique index on name is built under its name"
+        things.dropIndex('maintenance_idx')
+        things.dropIndex('name_1')
+        things.createIndex(new Document('name', 1), new IndexOptions().name('maintenance_idx').unique(true))
+
+        when:
+        def dropped = datastore.dropUndeclaredIndexes(reviewed)
+
+        then:
+        reviewed*.name() == ['maintenance_idx']
+        dropped == []
+        'maintenance_idx' in indexNames('undeclaredRenamedDb', 'undeclaredIndexesThing')
+        log.events*.formattedMessage.contains('Index [maintenance_idx] on collection [undeclaredIndexesThing] of ' +
+                'database [undeclaredRenamedDb] was not dropped: it is on {"name": 1} now, not on the keys reviewed, ' +
+                '{"code": 1}')
+
+        cleanup:
+        datastore?.close()
+        log?.close()
+    }
+
+    void "test a reviewed index that a domain class declares by the time it is dropped is not dropped"() {
+        given: "the list is reviewed on a release whose classes do not declare the index"
+        def log = new CapturedLog('org.grails.datastore.mapping.mongo', Level.WARN)
+        def earlier = datastore('undeclaredNowDeclaredDb')
+        realClient.getDatabase('undeclaredNowDeclaredDb').getCollection('undeclaredIndexesThing')
+                .createIndex(new Document('code', 1))
+        def reviewed = earlier.findUndeclaredIndexes()
+        earlier.close()
+
+        when: "it is dropped on a release where a class mapped to the collection declares it"
+        def later = new MongoDatastore(config('undeclaredNowDeclaredDb'), UndeclaredIndexesThing,
+                UndeclaredIndexesCodeThing).tap { start() }
+        def dropped = later.dropUndeclaredIndexes(reviewed)
+
+        then:
+        reviewed*.name() == ['code_1']
+        dropped == []
+        'code_1' in indexNames('undeclaredNowDeclaredDb', 'undeclaredIndexesThing')
+        log.events*.formattedMessage.contains('Index [code_1] on collection [undeclaredIndexesThing] of database ' +
+                '[undeclaredNowDeclaredDb] was not dropped: a domain class declares its keys {"code": 1}')
+
+        cleanup:
+        later?.close()
+        log?.close()
+    }
+
+    void "test a listed index on a collection the connection does not map is not dropped"() {
+        given:
+        def datastore = datastore('undeclaredNotMappedDb')
+        def unmapped = realClient.getDatabase('undeclaredNotMappedDb').getCollection('undeclaredIndexesUnmapped')
+        unmapped.createIndex(new Document('anything', 1))
+        def listed = unmapped.listIndexes().find { it.getString('name') == 'anything_1' }
+
+        when:
+        def dropped = datastore.dropUndeclaredIndexes([new UndeclaredIndex('undeclaredNotMappedDb',
+                'undeclaredIndexesUnmapped', 'anything_1', listed.get('key', Document), listed)])
+
+        then:
+        dropped == []
+        'anything_1' in indexNames('undeclaredNotMappedDb', 'undeclaredIndexesUnmapped')
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test each named connection reports the collections of its own database"() {
         given:
         def datastore = new MongoDatastore(config('undeclaredDefaultDb', [
@@ -256,6 +330,17 @@ class UndeclaredIndexesThing {
 
     static constraints = {
         name blank: false
+    }
+}
+
+@Entity
+class UndeclaredIndexesCodeThing {
+
+    String code
+
+    static mapping = {
+        collection 'undeclaredIndexesThing'
+        code index: true
     }
 }
 

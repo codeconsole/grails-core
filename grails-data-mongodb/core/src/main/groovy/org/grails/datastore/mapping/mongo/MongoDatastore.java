@@ -20,13 +20,11 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1074,15 +1072,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         List<UndeclaredIndex> undeclared = new ArrayList<>();
         for (Map.Entry<MongoNamespace, CollectionDeclarations> entry : declarationsByCollection().entrySet()) {
             MongoNamespace namespace = entry.getKey();
-            List<Document> declared = new ArrayList<>();
-            for (EntityDeclaration declaration : entry.getValue().declarations()) {
-                declared.add(declaration.declaration().keys());
-            }
             for (Document index : entry.getValue().collection().listIndexes()) {
                 if (ID_INDEX_NAME.equals(index.getString("name"))) {
                     continue;
                 }
-                if (index.get("key") instanceof Document key && !matchesAny(key, declared)) {
+                if (index.get("key") instanceof Document key && !isDeclared(index, entry.getValue())) {
                     undeclared.add(new UndeclaredIndex(namespace.getDatabaseName(), namespace.getCollectionName(),
                             index.getString("name"), key, index));
                 }
@@ -1107,22 +1101,51 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /**
      * Drops the given indexes: those {@link #findUndeclaredIndexes()} reported, once they have been reviewed.
-     * An index that no longer exists, or whose collection no longer does, is skipped.
+     *
+     * <p>Each index is checked again before it is dropped, since the reviewed list can be older than what is on
+     * the server: one is dropped only while the index of that name is on the keys reviewed, its collection is
+     * mapped on this datastore's connection, and no domain class mapped to it declares those keys. An index that
+     * no longer exists, or whose collection no longer does, is skipped, and so is one that fails a check, which
+     * is logged at {@code WARN}.
      *
      * @param indexes the indexes to drop
      * @return the indexes dropped
      */
     public List<UndeclaredIndex> dropUndeclaredIndexes(List<UndeclaredIndex> indexes) {
         List<UndeclaredIndex> dropped = new ArrayList<>();
-        // The driver answers a dropIndex on a collection that no longer exists as a success, so what is still
-        // there is listed first, once per collection, rather than inferred from the drop.
-        Map<MongoNamespace, Set<String>> present = new HashMap<>();
+        Map<MongoNamespace, CollectionDeclarations> mapped = declarationsByCollection();
+        // Listed first, once per collection, rather than inferred from the drop: the driver answers a dropIndex on
+        // a collection that no longer exists as a success, and a name can have been given to another index since.
+        Map<MongoNamespace, List<Document>> listed = new HashMap<>();
         for (UndeclaredIndex index : indexes) {
-            com.mongodb.client.MongoCollection<Document> collection =
-                    getMongoClient().getDatabase(index.database()).getCollection(index.collection());
-            Set<String> names = present.computeIfAbsent(collection.getNamespace(),
-                    namespace -> collection.listIndexes().map(listed -> listed.getString("name")).into(new HashSet<>()));
-            if (!names.contains(index.name()) || !dropIndex(collection, index.name())) {
+            MongoNamespace namespace = new MongoNamespace(index.database(), index.collection());
+            CollectionDeclarations declarations = mapped.get(namespace);
+            if (declarations == null) {
+                LOG.warn("Index [{}] on collection [{}] of database [{}] was not dropped: no domain class is mapped to " +
+                        "that collection on connection [{}]", index.name(), index.collection(), index.database(),
+                        connectionName());
+                continue;
+            }
+            List<Document> current = listed.computeIfAbsent(namespace,
+                    ignored -> declarations.collection().listIndexes().into(new ArrayList<>()));
+            Document existing = findIndexByName(current, index.name());
+            if (existing == null) {
+                LOG.debug("Index [{}] on collection [{}] of database [{}] was not dropped: it no longer exists",
+                        index.name(), index.collection(), index.database());
+                continue;
+            }
+            if (!sameIndexKeys(existing, index.definition())) {
+                LOG.warn("Index [{}] on collection [{}] of database [{}] was not dropped: it is on {} now, not on the " +
+                        "keys reviewed, {}", index.name(), index.collection(), index.database(),
+                        existing.get("key", Document.class).toJson(), index.key().toJson());
+                continue;
+            }
+            if (isDeclared(existing, declarations)) {
+                LOG.warn("Index [{}] on collection [{}] of database [{}] was not dropped: a domain class declares its " +
+                        "keys {}", index.name(), index.collection(), index.database(), index.key().toJson());
+                continue;
+            }
+            if (!dropIndex(declarations.collection(), index.name())) {
                 LOG.debug("Index [{}] on collection [{}] of database [{}] was not dropped: it no longer exists",
                         index.name(), index.collection(), index.database());
                 continue;
@@ -1132,6 +1155,39 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             dropped.add(index);
         }
         return dropped;
+    }
+
+    /**
+     * Whether a domain class mapped to a collection declares the key pattern of an index it has.
+     */
+    private static boolean isDeclared(Document index, CollectionDeclarations declarations) {
+        if (!(index.get("key") instanceof Document key)) {
+            return false;
+        }
+        for (EntityDeclaration declaration : declarations.declarations()) {
+            if (matchesDeclaration(key, declaration.declaration().keys())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether two indexes the server listed are on the same keys. Every text index has the key pattern
+     * {@code {_fts: 'text', _ftsx: 1}} wherever its text is, so for those the fields its {@code weights} name are
+     * compared too.
+     */
+    private static boolean sameIndexKeys(Document index, Document other) {
+        if (!(index.get("key") instanceof Document key) || !(other.get("key") instanceof Document otherKey) ||
+                !sameKeyPattern(key, otherKey)) {
+            return false;
+        }
+        Document weights = index.get("weights", Document.class);
+        Document otherWeights = other.get("weights", Document.class);
+        if (weights == null || otherWeights == null) {
+            return weights == otherWeights;
+        }
+        return weights.keySet().equals(otherWeights.keySet());
     }
 
     /**

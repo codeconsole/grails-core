@@ -353,7 +353,7 @@ Each `UndeclaredIndex` gives the database, collection, name and key pattern of t
 
 An index counts as declared when a domain class mapped to its collection declares the same key pattern, the same fields in the same order, through `compoundIndex`, `index` or a property's `index: true`. Its name and options do not matter: those differences are what the build reconciles (see <<reconcilingIndexOptions,Reconciling Index Option Changes>>). The declarations of every class mapped to a collection count, so a subclass's index on its root's collection is declared. The `_id` index is never reported, and nor is any index on a collection that no domain class maps.
 
-`dropUndeclaredIndexes()` drops everything `findUndeclaredIndexes()` reports, logging each index at `INFO`, and returns what it dropped. To drop only some, pass the reviewed list to `dropUndeclaredIndexes(List)`. An index or collection that has gone since it was listed is skipped:
+`dropUndeclaredIndexes()` drops everything `findUndeclaredIndexes()` reports, logging each index at `INFO`, and returns what it dropped. To drop only some, pass the reviewed list to `dropUndeclaredIndexes(List)`. Each index is checked again before it is dropped, since the server can have changed since the list was made: an index or collection that has gone is skipped, and so, with a `WARN`, is an index whose name now belongs to an index on other keys, one whose keys a domain class now declares, and one on a collection that no class is mapped to on that connection:
 
 [source,groovy]
 ----
