@@ -44,6 +44,8 @@ class SpringBootStartMongoExtension implements IGlobalExtension {
     @Override
     void visitSpec(SpecInfo spec) {
         spec.addSharedInitializerInterceptor { invocation ->
+            // The spec's own shared fields first: this runs in place of their initializers.
+            invocation.proceed()
             FieldInfo mongoDatastoreField = spec.fields.find { it.shared && MongoDatastore.isAssignableFrom(it.type) }
             if(mongoDatastoreField) {
                 mongoDatastoreField.writeValue(invocation.sharedInstance, new MongoDatastore([(MongoSettings.SETTING_HOST): dbContainer.getHost(), (MongoSettings.SETTING_PORT): dbContainer.getMappedPort(27017) as String], getClass().getPackage()))
@@ -54,7 +56,7 @@ class SpringBootStartMongoExtension implements IGlobalExtension {
     @Override
     void stop() {
         if(dbContainer) {
-            dbContainer.start()
+            dbContainer.stop()
         }
     }
 }
