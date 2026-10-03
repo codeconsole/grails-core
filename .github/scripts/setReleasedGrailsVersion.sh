@@ -27,8 +27,13 @@ sed -n "/assertEquals(\".*/p" "${GITHUB_WORKSPACE}/grails-core/src/test/groovy/g
 git add "${GITHUB_WORKSPACE}/grails-core/src/test/groovy/grails/util/GrailsUtilTests.java"
 
 # The documentation links each page to its source on this branch. Record the branch in the
-# release commit so a build from the source distribution renders the same links.
+# release commit so a build from the source distribution renders the same links. A branch name
+# can contain '/' but never ':', so ':' delimits the substitution.
 echo "Setting githubBranch in gradle.properties: ${TARGET_BRANCH:?TARGET_BRANCH must be set}"
-sed -i "s/^githubBranch=.*$/githubBranch=${TARGET_BRANCH}/" "${GITHUB_WORKSPACE}/gradle.properties"
+sed -i "s:^githubBranch=.*$:githubBranch=${TARGET_BRANCH}:" "${GITHUB_WORKSPACE}/gradle.properties"
 sed -n "/^githubBranch=/p" "${GITHUB_WORKSPACE}/gradle.properties"
+if ! grep -Fxq "githubBranch=${TARGET_BRANCH}" "${GITHUB_WORKSPACE}/gradle.properties"; then
+  echo "ERROR: gradle.properties does not set githubBranch=${TARGET_BRANCH}" >&2
+  exit 1
+fi
 git add "${GITHUB_WORKSPACE}/gradle.properties"

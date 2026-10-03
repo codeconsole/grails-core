@@ -765,10 +765,13 @@ docsTask.configure { Sync it ->
 tasks.register('dist', Zip).configure { Zip it ->
     it.archiveBaseName = 'apache-grails'
     it.archiveClassifier = 'docs'
+    // expand() values are not task inputs, so declare the year or a new build year leaves dist UP-TO-DATE
+    def noticeYear = rootProject.ext.buildDate.year
+    it.inputs.property('noticeYear', noticeYear)
     it.into("apache-grails-${project.version}-docs") { CopySpec distribution ->
         distribution.from(project.layout.projectDirectory.dir('distribution-artifacts')) { CopySpec legal ->
             legal.filesMatching('NOTICE') { FileCopyDetails notice ->
-                notice.expand(year: rootProject.ext.buildDate.year)
+                notice.expand(year: noticeYear)
             }
         }
         distribution.from(docsTask) { CopySpec html ->
