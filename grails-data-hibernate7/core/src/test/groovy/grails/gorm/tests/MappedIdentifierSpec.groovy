@@ -110,6 +110,27 @@ class MappedIdentifierSpec extends HibernateGormDatastoreSpec {
         payload == 'content'
         Hibernate.isInitialized(proxy)
     }
+
+    void 'ident on an uninitialized composite-key proxy returns the identifier it was created with'() {
+        given:
+        def owner = new MappedIdentOwner(name: 'owner').save(failOnError: true)
+        new MappedIdentCompositeRecord(owner: owner, code: 'PARAMETER', payload: 'content')
+                .save(flush: true, failOnError: true)
+        def key = new MappedIdentCompositeRecord(owner: owner, code: 'PARAMETER', payload: 'not part of the key')
+        MappedIdentCompositeRecord.withSession { it.clear() }
+        def proxy = MappedIdentCompositeRecord.load(key)
+
+        expect:
+        !Hibernate.isInitialized(proxy)
+
+        when:
+        Serializable identifier = proxy.ident()
+
+        then:
+        identifier.is(key)
+        identifier.payload == 'not part of the key'
+        !Hibernate.isInitialized(proxy)
+    }
 }
 
 @Entity

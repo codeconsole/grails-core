@@ -29,6 +29,8 @@ Returns the value of the mapped identity property of the domain class, regardles
 
 For a composite identity, `ident()` returns a separate serializable instance of the domain class with the mapped key properties copied into it, including any associations that form part of the key. Other properties retain their new-instance defaults. Pass the returned identifier to `get()` or `load()` to retrieve the entity.
 
+An uninitialized proxy, such as one returned by `load()`, is the exception: `ident()` returns the identifier the proxy was created with and does not load the entity. For a composite identity, that is the object passed to `load()`, including any non-key properties set on it, rather than a new copy.
+
 
 === Examples
 

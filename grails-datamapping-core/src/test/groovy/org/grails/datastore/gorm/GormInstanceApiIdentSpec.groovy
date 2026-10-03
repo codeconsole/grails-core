@@ -25,6 +25,7 @@ import grails.gorm.annotation.Entity
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
+import org.grails.datastore.mapping.proxy.ProxyHandler
 import org.grails.datastore.mapping.simple.SimpleMapDatastore
 
 class GormInstanceApiIdentSpec extends Specification {
@@ -86,6 +87,44 @@ class GormInstanceApiIdentSpec extends Specification {
         then:
         named.ident() == 'NAMED-1'
         IdentNamed.get(named.ident()).payload == 'p'
+    }
+
+    void "ident on an uninitialized #type.simpleName proxy returns its key without loading the entity"() {
+        given:
+        ProxyHandler proxyHandler = datastore.mappingContext.proxyHandler
+        def proxy = type.load(key)
+
+        expect:
+        proxyHandler.isProxy(proxy)
+        !proxyHandler.isInitialized(proxy)
+
+        when:
+        Serializable identifier = proxy.ident()
+
+        then:
+        identifier == key
+        !proxyHandler.isInitialized(proxy)
+
+        where:
+        type           | key
+        IdentGenerated | 404L
+        IdentNamed     | 'MISSING'
+    }
+
+    void "ident on an initialized renamed-key proxy returns the mapped identity property"() {
+        given:
+        new IdentNamed(code: 'NAMED-3', payload: 'p').save(flush: true, failOnError: true)
+        IdentNamed.withSession { it.clear() }
+        ProxyHandler proxyHandler = datastore.mappingContext.proxyHandler
+        def proxy = IdentNamed.load('NAMED-3')
+
+        when:
+        proxyHandler.initialize(proxy)
+
+        then:
+        proxyHandler.isProxy(proxy)
+        proxyHandler.isInitialized(proxy)
+        proxy.ident() == 'NAMED-3'
     }
 
     void "ident returns null for a renamed identifier that has not been assigned"() {

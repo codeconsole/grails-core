@@ -38,6 +38,7 @@ import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.datastore.mapping.proxy.EntityProxy
+import org.grails.datastore.mapping.proxy.ProxyHandler
 import org.grails.datastore.mapping.reflect.EntityReflector
 import org.grails.datastore.mapping.transactions.TransactionCapableDatastore
 import org.grails.datastore.mapping.validation.ValidationException
@@ -276,6 +277,11 @@ class GormInstanceApi<D> extends AbstractGormApi<D> implements GormInstanceOpera
 
     @Override
     Serializable ident(D instance) {
+        ProxyHandler proxyHandler = mappingContext.proxyHandler
+        if (proxyHandler != null && proxyHandler.isProxy(instance) && !proxyHandler.isInitialized(instance)) {
+            return proxyHandler.getIdentifier(instance)
+        }
+
         PersistentEntity entity = mappingContext.getPersistentEntity(persistentClass.name)
         if (entity == null) {
             return (Serializable) InvokerHelper.getProperty(instance, 'id')
