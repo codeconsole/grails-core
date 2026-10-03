@@ -237,6 +237,28 @@ println "${result.created()} created, ${result.alreadyPresent()} already present
 
 The result carries the counts the summary line reports, and created and already-present indexes are always told apart, whatever the log level. A declaration that cannot be applied is counted in `failures()` and logged as it fails, and the future still completes; an exception that stops the build partway, such as a lost connection or a write concern the server could not satisfy, completes the future exceptionally instead. Builds on a connection run one at a time, so a build requested while another is running waits for it, whether either runs in the background or on the thread that called `buildIndex()`, and cancelling the future does not stop the build. If the datastore is stopped or closed, the future fails at once; a build that stopping the datastore cuts short fails its future and runs again, without one, when the datastore is restarted.
 
+A declaration that fails does not fail startup, whatever the settings. To refuse to start without every declared index, wait for the build in `BootStrap` and stop on any failure. `BootStrap` runs before the application reports itself ready for traffic, and an exception thrown from it stops the application:
+
+[source,groovy]
+----
+import org.grails.datastore.mapping.mongo.IndexBuildResult
+import org.grails.datastore.mapping.mongo.MongoDatastore
+
+class BootStrap {
+
+    MongoDatastore mongoDatastore
+
+    def init = { servletContext ->
+        IndexBuildResult result = mongoDatastore.buildIndexAsync().get()
+        if (result.failures()) {
+            throw new IllegalStateException("${result.failures()} declared index(es) could not be built")
+        }
+    }
+}
+----
+
+`get()` throws as well when an error stops the build. With `buildIndexes` left on, the startup build has already run by then, and this one confirms what it created and fails on the same declarations; set it to `false` to build only here.
+
 ==== Building Indexes in the Background
 
 
@@ -256,7 +278,7 @@ Startup then continues without waiting. The indexes are still built one at a tim
 Two consequences are worth planning for:
 
 * A query issued before its index has been built is served without it — correctly, but with the performance of an unindexed query. The same applies to a `unique` index: it constrains nothing until the build finishes.
-* Because startup no longer waits, a failure to build an index can no longer fail startup. It is logged at error level, and the application runs without that index. With the default synchronous build the exception propagates and the application does not start.
+* Because startup no longer waits, an error that stops the build, such as a lost connection, can no longer fail startup. It is logged at error level, and the application runs without the indexes the build had not reached. With the default synchronous build that error propagates and the application does not start. A declaration the server refuses, such as a `unique` index over duplicate values, fails startup with neither setting: it is logged and counted, and the build goes on. To refuse to start without it, see <<buildIndexesOnDemand,Building Indexes on Demand>>.
 
 The setting also applies with `buildIndexes` set to `false`, to the builds the application starts with `buildIndex()`. A domain class registered after startup is indexed on the thread registering it.
 
