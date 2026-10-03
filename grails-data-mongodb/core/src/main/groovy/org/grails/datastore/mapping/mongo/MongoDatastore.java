@@ -327,9 +327,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                             return;
                         }
                         if (running) {
-                            childDatastore.startClient(connectionSources.getFactory(), false);
-                            childDatastore.buildIndexAutomatically();
-                            childDatastore.startupBuildDone = true;
+                            // Unless the start() this waited for found it in the map, and has connected and
+                            // built it already.
+                            if (!childDatastore.startupBuildDone) {
+                                childDatastore.startClient(connectionSources.getFactory(), false);
+                                childDatastore.buildIndexAutomatically();
+                                childDatastore.startupBuildDone = true;
+                            }
                         }
                         else if (stopped && childDatastore.ownsClient()) {
                             // Refused, like the others, until start() connects it and builds its indexes.

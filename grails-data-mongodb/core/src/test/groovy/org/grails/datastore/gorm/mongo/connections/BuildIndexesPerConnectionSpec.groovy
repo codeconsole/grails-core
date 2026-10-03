@@ -288,6 +288,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
     void "test a connection another thread registers while the datastore starts has its indexes"() {
         given: "a datastore whose index build waits while another thread registers a connection"
         Thread registering = null
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.DEBUG)
         def parent = new ConnectionRegisteringDatastore(DatastoreUtils.createPropertyResolver([
                 'grails.mongodb.url': dbContainer.getReplicaSetUrl('concurrentParentDb')
         ]), AsyncPerConnectionThing)
@@ -311,8 +312,16 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         parent.registered
         [name: 1] in inspector.getDatabase('registeredConcurrentlyDb').getCollection('asyncPerConnectionThing').listIndexes()*.key
 
+        and: "it is built once: by start(), which found it, and not again by the registration once start() has finished"
+        log.events.count {
+            String message = it.formattedMessage
+            message.contains('[registeredConcurrentlyDb]') &&
+                    (message.startsWith('Index build for database') || message.startsWith('No indexes are declared'))
+        } == 1
+
         cleanup:
         registering?.join(30000)
+        log?.close()
         parent?.close()
         inspector?.close()
     }
