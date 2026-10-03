@@ -310,6 +310,22 @@ logging:
         org.grails.datastore.mapping.mongo: DEBUG
 ----
 
+[[missingIndexes]]
+==== Finding Missing Indexes
+
+
+With `buildIndexes` off, a declared index exists only once something builds it, and nothing reports one that has not been built yet. `findMissingIndexes()` on the `MongoDatastore` bean lists the indexes the domain classes declare that their collections do not have, without changing anything. Logged at startup, it shows when a build has been forgotten:
+
+[source,groovy]
+----
+def missing = mongoDatastore.findMissingIndexes()
+if (missing) {
+    log.warn "Declared indexes not built: ${missing.collect { "${it.collection()} ${it.key().toJson()}" }}"
+}
+----
+
+Each `MissingIndex` gives the database, the collection, the domain class declaring the index, its key pattern and the options declared with it. A declared index is present when its collection has an index on the same key pattern, the same fields in the same order, whatever its name and options: an option that differs is for the build to reconcile (see <<reconcilingIndexOptions,Reconciling Index Option Changes>>). Keys that several classes mapped to one collection declare are reported once. `buildIndex()` or `buildIndexAsync()` creates what is missing. Each named connection covers its own domain classes, so call it through that connection's datastore for those.
+
 [[undeclaredIndexes]]
 ==== Finding and Dropping Undeclared Indexes
 

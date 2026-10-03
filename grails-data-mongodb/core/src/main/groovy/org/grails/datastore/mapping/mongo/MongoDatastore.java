@@ -994,6 +994,63 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
+     * The collections whose declared indexes this datastore builds, each with the declarations of every class
+     * mapped to it: every class in an inheritance hierarchy maps to its root's collection, and several classes
+     * can name the same one.
+     */
+    private Map<MongoNamespace, CollectionDeclarations> declarationsByCollection() {
+        Map<MongoNamespace, CollectionDeclarations> collections = new LinkedHashMap<>();
+        for (PersistentEntity entity : indexedEntities()) {
+            com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
+            CollectionDeclarations declarations = collections.computeIfAbsent(collection.getNamespace(),
+                    namespace -> new CollectionDeclarations(collection, new ArrayList<>()));
+            for (IndexDeclaration declaration : declaredIndexes(entity)) {
+                declarations.declarations().add(new EntityDeclaration(entity, declaration));
+            }
+        }
+        return collections;
+    }
+
+    private record CollectionDeclarations(com.mongodb.client.MongoCollection<Document> collection,
+                                          List<EntityDeclaration> declarations) {
+    }
+
+    private record EntityDeclaration(PersistentEntity entity, IndexDeclaration declaration) {
+    }
+
+    /**
+     * Lists the indexes the domain classes declare that their collections do not have, on the collections
+     * whose declared indexes {@link #buildIndex()} builds for this datastore's connection.
+     *
+     * <p>A declared index is present when its collection has an index on the same key pattern, the same fields
+     * in the same order, whatever its name and options: an option that differs is the build's to reconcile.
+     * Keys that several classes mapped to one collection declare are reported once. Nothing is changed:
+     * {@link #buildIndex()} or {@link #buildIndexAsync()} creates them. Each named connection has its own
+     * domain classes, so call this on {@link #getDatastoreForConnection(String)} for those.
+     *
+     * @return the missing indexes, collection by collection, in the order the domain classes declare them
+     */
+    public List<MissingIndex> findMissingIndexes() {
+        List<MissingIndex> missing = new ArrayList<>();
+        for (Map.Entry<MongoNamespace, CollectionDeclarations> entry : declarationsByCollection().entrySet()) {
+            MongoNamespace namespace = entry.getKey();
+            List<Document> existing = entry.getValue().collection().listIndexes().into(new ArrayList<>());
+            List<Document> reported = new ArrayList<>();
+            for (EntityDeclaration declared : entry.getValue().declarations()) {
+                Document keys = declared.declaration().keys();
+                if (findIndexByKeyPattern(existing, keys) != null || matchesAny(keys, reported)) {
+                    continue;
+                }
+                reported.add(keys);
+                Map<String, Object> options = declared.declaration().options();
+                missing.add(new MissingIndex(namespace.getDatabaseName(), namespace.getCollectionName(),
+                        declared.entity().getName(), keys, options != null ? new Document(options) : new Document()));
+            }
+        }
+        return missing;
+    }
+
+    /**
      * Lists the indexes that no domain class declares, on the collections whose declared indexes
      * {@link #buildIndex()} builds for this datastore's connection.
      *
@@ -1010,28 +1067,18 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * @return the undeclared indexes, collection by collection, in the order the server lists them
      */
     public List<UndeclaredIndex> findUndeclaredIndexes() {
-        Map<MongoNamespace, com.mongodb.client.MongoCollection<Document>> collections = new LinkedHashMap<>();
-        Map<MongoNamespace, List<Document>> declaredKeys = new HashMap<>();
-        for (PersistentEntity entity : indexedEntities()) {
-            com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
-            MongoNamespace namespace = collection.getNamespace();
-            // Every class in an inheritance hierarchy maps to its root's collection, and several classes can
-            // name the same one, so a collection's declarations are those of all of them.
-            collections.putIfAbsent(namespace, collection);
-            List<Document> keys = declaredKeys.computeIfAbsent(namespace, n -> new ArrayList<>());
-            for (IndexDeclaration declaration : declaredIndexes(entity)) {
-                keys.add(declaration.keys());
-            }
-        }
         List<UndeclaredIndex> undeclared = new ArrayList<>();
-        for (Map.Entry<MongoNamespace, com.mongodb.client.MongoCollection<Document>> entry : collections.entrySet()) {
+        for (Map.Entry<MongoNamespace, CollectionDeclarations> entry : declarationsByCollection().entrySet()) {
             MongoNamespace namespace = entry.getKey();
-            List<Document> declared = declaredKeys.get(namespace);
-            for (Document index : entry.getValue().listIndexes()) {
+            List<Document> declared = new ArrayList<>();
+            for (EntityDeclaration declaration : entry.getValue().declarations()) {
+                declared.add(declaration.declaration().keys());
+            }
+            for (Document index : entry.getValue().collection().listIndexes()) {
                 if (ID_INDEX_NAME.equals(index.getString("name"))) {
                     continue;
                 }
-                if (index.get("key") instanceof Document key && !isDeclared(key, declared)) {
+                if (index.get("key") instanceof Document key && !matchesAny(key, declared)) {
                     undeclared.add(new UndeclaredIndex(namespace.getDatabaseName(), namespace.getCollectionName(),
                             index.getString("name"), key, index));
                 }
@@ -1929,9 +1976,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         return null;
     }
 
-    private static boolean isDeclared(Document existingKey, List<Document> declaredKeys) {
+    private static boolean matchesAny(Document key, List<Document> declaredKeys) {
         for (Document keys : declaredKeys) {
-            if (matchesDeclaration(existingKey, keys)) {
+            if (matchesDeclaration(key, keys)) {
                 return true;
             }
         }
