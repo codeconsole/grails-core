@@ -120,6 +120,7 @@ class Product {
 The `type` attribute sets the index type for that field, so it can equally be used to declare other special index types such as `'2d'` or `'2dsphere'`. Note that MongoDB allows at most one text index per collection. See <<textSearch>> for how to query a text index once it has been created.
 
 
+[[reconcilingIndexOptions]]
 ==== Reconciling Index Option Changes
 
 
@@ -296,6 +297,48 @@ logging:
     level:
         org.grails.datastore.mapping.mongo: DEBUG
 ----
+
+[[undeclaredIndexes]]
+==== Finding and Dropping Undeclared Indexes
+
+
+GORM never drops an index. One that a mapping stops declaring, or declares again with its keys in another order, stays on the server, still maintained on every write. `findUndeclaredIndexes()` on the `MongoDatastore` bean lists them without changing anything:
+
+[source,groovy]
+----
+import org.grails.datastore.mapping.mongo.MongoDatastore
+import org.grails.datastore.mapping.mongo.UndeclaredIndex
+
+class IndexMaintenanceService {
+
+    MongoDatastore mongoDatastore
+
+    List<UndeclaredIndex> undeclaredIndexes() {
+        mongoDatastore.findUndeclaredIndexes()
+    }
+}
+----
+
+Each `UndeclaredIndex` gives the database, collection, name and key pattern of the index, and the whole description `listIndexes` returned for it, options included.
+
+An index counts as declared when a domain class mapped to its collection declares the same key pattern, the same fields in the same order, through `compoundIndex`, `index` or a property's `index: true`. Its name and options do not matter: those differences are what the build reconciles (see <<reconcilingIndexOptions,Reconciling Index Option Changes>>). The declarations of every class mapped to a collection count, so a subclass's index on its root's collection is declared. The `_id` index is never reported, and nor is any index on a collection that no domain class maps.
+
+`dropUndeclaredIndexes()` drops everything `findUndeclaredIndexes()` reports, logging each index at `INFO`, and returns what it dropped. To drop only some, pass the reviewed list to `dropUndeclaredIndexes(List)`. An index or collection that has gone since it was listed is skipped:
+
+[source,groovy]
+----
+def undeclared = mongoDatastore.findUndeclaredIndexes()
+mongoDatastore.dropUndeclaredIndexes(undeclared.findAll { it.collection() != 'auditLog' })
+----
+
+Like the index build, each named connection covers its own domain classes, so call these through that connection's datastore:
+
+[source,groovy]
+----
+mongoDatastore.getDatastoreForConnection('reporting').findUndeclaredIndexes()
+----
+
+WARNING: Drop indexes deliberately, once every instance of the application runs the release whose mappings declare the indexes to keep, and never automatically at startup. An instance still on an earlier release does not declare an index that a later release adds, or one created by hand ahead of a deployment, so to that instance those indexes are undeclared. An index that application code creates outside the mappings, by calling `createIndex` itself, is not a declaration either, and is reported and dropped like any other.
 
 ==== Indexing using the 'index' method
 

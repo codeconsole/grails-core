@@ -20,11 +20,13 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -167,6 +169,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /** MongoDB server error code for {@code IndexKeySpecsConflict}: the name is taken by an index on other keys. */
     private static final int INDEX_KEY_SPECS_CONFLICT_CODE = 86;
+
+    /** MongoDB server error code for {@code IndexNotFound}. */
+    private static final int INDEX_NOT_FOUND_CODE = 27;
+
+    /** The name MongoDB gives the index every collection has on {@code _id}, which cannot be dropped. */
+    private static final String ID_INDEX_NAME = "_id_";
     public static final String CODEC_ENGINE = MongoConstants.CODEC_ENGINE;
 
     private static final Logger LOG = LoggerFactory.getLogger(MongoDatastore.class);
@@ -875,14 +883,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * startup, or the background build thread — actually spends waiting.
      */
     private void buildDeclaredIndexes(IndexBuildSummary summary) {
-        List<PersistentEntity> entities = new ArrayList<>();
-        for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
-            // Only create Mongo templates for entities that are mapped with Mongo
-            if (!entity.isExternal() &&
-                    !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA)) {
-                entities.add(entity);
-            }
-        }
+        List<PersistentEntity> entities = indexedEntities();
         summary.entitiesTotal = entities.size();
         IndexBuildSummary previousSummary = indexBuildSummary.get();
         indexBuildSummary.set(summary);
@@ -899,6 +900,127 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             else {
                 indexBuildSummary.set(previousSummary);
             }
+        }
+    }
+
+    /**
+     * The entities whose declared indexes this datastore builds.
+     */
+    private List<PersistentEntity> indexedEntities() {
+        List<PersistentEntity> entities = new ArrayList<>();
+        for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
+            // Only create Mongo templates for entities that are mapped with Mongo
+            if (!entity.isExternal() &&
+                    !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA)) {
+                entities.add(entity);
+            }
+        }
+        return entities;
+    }
+
+    /**
+     * Lists the indexes that no domain class declares, on the collections whose declared indexes
+     * {@link #buildIndex()} builds for this datastore's connection.
+     *
+     * <p>An index is declared when a domain class mapped to the same collection declares its key pattern, the
+     * same fields in the same order, with {@code compoundIndex}, {@code index} or a property's
+     * {@code index: true}. Its name and options do not matter. The {@code _id} index is never reported, and
+     * neither is any index on a collection that no domain class maps. An index that an
+     * {@link #initializeIndices(PersistentEntity)} override creates by itself is not a declaration, so it is
+     * reported.
+     *
+     * <p>Nothing is changed: see {@link #dropUndeclaredIndexes()}. Each named connection has its own domain
+     * classes, so call this on {@link #getDatastoreForConnection(String)} for those.
+     *
+     * @return the undeclared indexes, collection by collection, in the order the server lists them
+     */
+    public List<UndeclaredIndex> findUndeclaredIndexes() {
+        Map<MongoNamespace, com.mongodb.client.MongoCollection<Document>> collections = new LinkedHashMap<>();
+        Map<MongoNamespace, List<Document>> declaredKeys = new HashMap<>();
+        for (PersistentEntity entity : indexedEntities()) {
+            com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
+            MongoNamespace namespace = collection.getNamespace();
+            // Every class in an inheritance hierarchy maps to its root's collection, and several classes can
+            // name the same one, so a collection's declarations are those of all of them.
+            collections.putIfAbsent(namespace, collection);
+            List<Document> keys = declaredKeys.computeIfAbsent(namespace, n -> new ArrayList<>());
+            for (IndexDeclaration declaration : declaredIndexes(entity)) {
+                keys.add(declaration.keys());
+            }
+        }
+        List<UndeclaredIndex> undeclared = new ArrayList<>();
+        for (Map.Entry<MongoNamespace, com.mongodb.client.MongoCollection<Document>> entry : collections.entrySet()) {
+            MongoNamespace namespace = entry.getKey();
+            List<Document> declared = declaredKeys.get(namespace);
+            for (Document index : entry.getValue().listIndexes()) {
+                if (ID_INDEX_NAME.equals(index.getString("name"))) {
+                    continue;
+                }
+                if (index.get("key") instanceof Document key && !isDeclared(key, declared)) {
+                    undeclared.add(new UndeclaredIndex(namespace.getDatabaseName(), namespace.getCollectionName(),
+                            index.getString("name"), key, index));
+                }
+            }
+        }
+        return undeclared;
+    }
+
+    /**
+     * Drops every index that {@link #findUndeclaredIndexes()} reports.
+     *
+     * <p>Run this deliberately, once every instance of the application runs the release whose domain classes
+     * declare the indexes to keep. An instance still on an earlier release does not declare what a later
+     * release added, nor an index created by hand ahead of a deployment, so to it those indexes are
+     * undeclared and this drops them.
+     *
+     * @return the indexes dropped
+     */
+    public List<UndeclaredIndex> dropUndeclaredIndexes() {
+        return dropUndeclaredIndexes(findUndeclaredIndexes());
+    }
+
+    /**
+     * Drops the given indexes: those {@link #findUndeclaredIndexes()} reported, once they have been reviewed.
+     * An index that no longer exists, or whose collection no longer does, is skipped.
+     *
+     * @param indexes the indexes to drop
+     * @return the indexes dropped
+     */
+    public List<UndeclaredIndex> dropUndeclaredIndexes(List<UndeclaredIndex> indexes) {
+        List<UndeclaredIndex> dropped = new ArrayList<>();
+        // The driver answers a dropIndex on a collection that no longer exists as a success, so what is still
+        // there is listed first, once per collection, rather than inferred from the drop.
+        Map<MongoNamespace, Set<String>> present = new HashMap<>();
+        for (UndeclaredIndex index : indexes) {
+            com.mongodb.client.MongoCollection<Document> collection =
+                    getMongoClient().getDatabase(index.database()).getCollection(index.collection());
+            Set<String> names = present.computeIfAbsent(collection.getNamespace(),
+                    namespace -> collection.listIndexes().map(listed -> listed.getString("name")).into(new HashSet<>()));
+            if (!names.contains(index.name()) || !dropIndex(collection, index.name())) {
+                LOG.debug("Index [{}] on collection [{}] of database [{}] was not dropped: it no longer exists",
+                        index.name(), index.collection(), index.database());
+                continue;
+            }
+            LOG.info("Dropped index [{}] on collection [{}] of database [{}]: no domain class declares its keys {}",
+                    index.name(), index.collection(), index.database(), index.key().toJson());
+            dropped.add(index);
+        }
+        return dropped;
+    }
+
+    /**
+     * @return whether the index was dropped, false if it had gone since the collection was listed
+     */
+    private static boolean dropIndex(com.mongodb.client.MongoCollection<Document> collection, String name) {
+        try {
+            collection.dropIndex(name);
+            return true;
+        }
+        catch (MongoCommandException e) {
+            if (e.getErrorCode() == INDEX_NOT_FOUND_CODE) {
+                return false;
+            }
+            throw e;
         }
     }
 
@@ -1467,15 +1589,34 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private void initializeIndices(final PersistentEntity entity, final IndexBuildSummary summary) {
         final com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
         final ExistingIndexes existingIndexes = summary.existingIndexesOf(collection);
+        for (IndexDeclaration declaration : declaredIndexes(entity)) {
+            createOrUpdateIndex(entity, collection, declaration.keys(), declaration.options(),
+                    declaration.descriptor(), summary, existingIndexes);
+        }
+    }
+
+    /**
+     * An index a domain class declares: its key pattern, the options it is built with and how the build's
+     * log lines name it.
+     */
+    private record IndexDeclaration(Document keys, Map<String, Object> options, String descriptor) {
+    }
+
+    /**
+     * The indexes an entity's mapping declares, in the order the build applies them: its {@code index}
+     * entries, its {@code compoundIndex} entries, then each property mapped with {@code index: true}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private List<IndexDeclaration> declaredIndexes(final PersistentEntity entity) {
+        List<IndexDeclaration> declarations = new ArrayList<>();
         final ClassMapping<MongoCollection> classMapping = entity.getMapping();
         if (classMapping != null) {
             final MongoCollection mappedForm = classMapping.getMappedForm();
             if (mappedForm != null) {
                 List<MongoCollection.Index> indices = mappedForm.getIndices();
                 for (MongoCollection.Index index : indices) {
-                    createOrUpdateIndex(entity, collection, new Document(index.getDefinition()),
-                            index.getOptions(), "with definition [" + index.getDefinition() + "]",
-                            summary, existingIndexes);
+                    declarations.add(new IndexDeclaration(new Document(index.getDefinition()), index.getOptions(),
+                            "with definition [" + index.getDefinition() + "]"));
                 }
 
                 for (Map compoundIndex : mappedForm.getCompoundIndices()) {
@@ -1486,8 +1627,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     Object attributes = declaration.remove(INDEX_ATTRIBUTES);
                     Map indexAttributes = attributes instanceof Map ? (Map) attributes : null;
                     Document indexDef = new Document(declaration);
-                    createOrUpdateIndex(entity, collection, indexDef, indexAttributes,
-                            "compound index with definition [" + indexDef + "]", summary, existingIndexes);
+                    declarations.add(new IndexDeclaration(indexDef, indexAttributes,
+                            "compound index with definition [" + indexDef + "]"));
                 }
             }
         }
@@ -1511,11 +1652,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                         options.putAll(attributes);
                     }
                 }
-                createOrUpdateIndex(entity, collection, dbObject, options,
-                        "on property [" + property.getName() + "]", summary, existingIndexes);
+                declarations.add(new IndexDeclaration(dbObject, options, "on property [" + property.getName() + "]"));
             }
         }
-
+        return declarations;
     }
 
     /**
@@ -1699,29 +1839,40 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /**
      * Find an existing index whose key pattern matches the given keys, or {@code null} if none.
-     * Directions/types are compared numerically (1 vs 1.0) so driver-returned values match.
-     *
-     * <p>Text indexes are special-cased: a declared text index has key {@code {field: 'text'}}, but
-     * MongoDB reports an existing one with a synthetic {@code {_fts: 'text', _ftsx: 1}} key, so the
-     * two never match by pattern. Since MongoDB allows at most one text index per collection, an
-     * existing text index is unambiguously the one a newly-declared text index conflicts with —
-     * match it regardless of its key shape or name so {@code recreateOnConflict} can absorb it.</p>
      */
     private static Document findIndexByKeyPattern(Iterable<Document> indexes, Document keys) {
-        boolean desiredIsText = isTextIndex(keys);
         for (Document idx : indexes) {
-            Object key = idx.get("key");
-            if (!(key instanceof Document)) {
-                continue;
-            }
-            if (desiredIsText && isTextIndex((Document) key)) {
-                return idx;
-            }
-            if (sameKeyPattern((Document) key, keys)) {
+            if (idx.get("key") instanceof Document key && matchesDeclaration(key, keys)) {
                 return idx;
             }
         }
         return null;
+    }
+
+    private static boolean isDeclared(Document existingKey, List<Document> declaredKeys) {
+        for (Document keys : declaredKeys) {
+            if (matchesDeclaration(existingKey, keys)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether an existing index's key pattern is the one a declaration describes. Directions/types are
+     * compared numerically (1 vs 1.0) so driver-returned values match.
+     *
+     * <p>Text indexes are special-cased: a declared text index has key {@code {field: 'text'}}, but
+     * MongoDB reports an existing one with a synthetic {@code {_fts: 'text', _ftsx: 1}} key, so the
+     * two never match by pattern. Since MongoDB allows at most one text index per collection, an
+     * existing text index is unambiguously the one a declared text index describes or conflicts with —
+     * match it regardless of its key shape or name so {@code recreateOnConflict} can absorb it.</p>
+     */
+    private static boolean matchesDeclaration(Document existingKey, Document declaredKeys) {
+        if (isTextIndex(declaredKeys) && isTextIndex(existingKey)) {
+            return true;
+        }
+        return sameKeyPattern(existingKey, declaredKeys);
     }
 
     /**
