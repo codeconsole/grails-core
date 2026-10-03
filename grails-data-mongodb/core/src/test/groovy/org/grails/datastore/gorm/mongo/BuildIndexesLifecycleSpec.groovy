@@ -176,6 +176,30 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         log?.close()
     }
 
+    void "test a domain class registered while the datastore is stopped is indexed when it is started"() {
+        given: "a datastore stopped for a checkpoint"
+        def datastore = new MongoDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('registeredWhileStoppedDb')] as Map)
+        datastore.start()
+        datastore.stop()
+        def indexes = { -> realClient.getDatabase('registeredWhileStoppedDb').getCollection('registeredWhileStoppedThing').listIndexes()*.key }
+
+        when: "a domain class is registered before the restore"
+        datastore.mappingContext.addPersistentEntity(RegisteredWhileStoppedThing)
+
+        then: "its index is not built while the clients refuse to be used"
+        notThrown(Exception)
+        !([name: 1] in indexes())
+
+        when: "the datastore is started after the restore"
+        datastore.start()
+
+        then:
+        [name: 1] in indexes()
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test a build on the calling thread requested after close() is refused with a warning"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
@@ -324,6 +348,16 @@ class ClosedBuildThing {
     static mapping = {
         version false
         collection 'closedBuildThing'
+        name index: true
+    }
+}
+
+@Entity
+class RegisteredWhileStoppedThing {
+    String name
+
+    static mapping = {
+        collection 'registeredWhileStoppedThing'
         name index: true
     }
 }

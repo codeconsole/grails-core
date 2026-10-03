@@ -19,12 +19,17 @@
 package org.grails.datastore.mapping.mongo
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import ch.qos.logback.classic.Level
 import com.mongodb.MongoClientSettings
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
+import com.mongodb.event.ConnectionPoolClosedEvent
+import com.mongodb.event.ConnectionPoolCreatedEvent
+import com.mongodb.event.ConnectionPoolListener
+import grails.gorm.annotation.Entity
 
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.mongo.CapturedLog
@@ -90,6 +95,73 @@ class MongoDatastoreLifecycleSpec extends Specification {
 
         cleanup:
         session?.disconnect()
+        datastore.close()
+    }
+
+    void 'a client used before the datastore was started is closed when it is stopped'() {
+        given: 'a datastore nothing has started, whose client has been used, which builds a driver client'
+        DriverClients drivers = new DriverClients()
+        MongoDatastore datastore = ownedClientDatastore([:], false, drivers)
+        closed(datastore.mongoClient)
+
+        expect:
+        drivers.opened == 1
+        drivers.closed == 0
+        !datastore.running
+
+        when:
+        datastore.stop()
+
+        then: 'the driver client is closed, which releases its sockets'
+        drivers.closed == 1
+
+        and: 'the client refuses to be used'
+        closed(datastore.mongoClient)
+
+        when: 'a session is opened on the datastore'
+        datastore.connect().disconnect()
+
+        then: 'which does not start it'
+        !datastore.running
+        drivers.opened == 1
+
+        when: 'only start() does'
+        datastore.start()
+
+        then:
+        datastore.running
+        !closed(datastore.mongoClient)
+        drivers.opened == 2
+
+        cleanup:
+        datastore.close()
+    }
+
+    void 'a start that connects and then fails leaves nothing open once the datastore is stopped'() {
+        given: 'a datastore whose index build cannot reach a server'
+        DriverClients drivers = new DriverClients()
+        def factory = new MongoConnectionSourceFactory(clientOptionsBuilder: MongoClientSettings.builder()
+                .applyToConnectionPoolSettings { it.addConnectionPoolListener(drivers) })
+        MongoDatastore datastore = new MongoDatastore(
+                DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_URL): unreachableUrl('test')]),
+                factory, new DefaultApplicationEventPublisher(), LifecycleIndexedThing)
+
+        when: 'the first start connects its client and then fails on the build'
+        datastore.start()
+
+        then:
+        thrown(MongoTimeoutException)
+        !datastore.running
+        drivers.opened == 1
+
+        when:
+        datastore.stop()
+
+        then:
+        drivers.closed == 1
+        closed(datastore.mongoClient)
+
+        cleanup:
         datastore.close()
     }
 
@@ -430,9 +502,15 @@ class MongoDatastoreLifecycleSpec extends Specification {
     /**
      * A datastore whose clients GORM owns, started as the application context starts it unless asked not to be.
      */
-    private static MongoDatastore ownedClientDatastore(Map<String, Object> configuration = [:], boolean started = true) {
+    private static MongoDatastore ownedClientDatastore(Map<String, Object> configuration = [:], boolean started = true,
+                                                       DriverClients drivers = null) {
         MongoClientSettings.Builder clientOptions = MongoClientSettings.builder()
                 .applyToClusterSettings { it.serverSelectionTimeout(50, TimeUnit.MILLISECONDS) }
+                .applyToConnectionPoolSettings {
+                    if (drivers != null) {
+                        it.addConnectionPoolListener(drivers)
+                    }
+                }
         MongoDatastore datastore = new MongoDatastore(clientOptions,
                 DatastoreUtils.createPropertyResolver(configuration),
                 new MongoMappingContext('test'))
@@ -440,5 +518,46 @@ class MongoDatastoreLifecycleSpec extends Specification {
             datastore.start()
         }
         datastore
+    }
+}
+
+/**
+ * Counts the driver clients the datastore's client builds, and those it closes, as the driver reports them.
+ *
+ * <p>Each is counted by its connection pool, which the driver creates as it builds the client and closes as it closes
+ * it, telling its listeners on that same thread; each of these clients has one server, so one pool. Cluster events
+ * would not do: the driver delivers them on a thread of its own, so one can still be on its way when a test looks.
+ */
+class DriverClients implements ConnectionPoolListener {
+
+    private final AtomicInteger openedCount = new AtomicInteger()
+
+    private final AtomicInteger closedCount = new AtomicInteger()
+
+    @Override
+    void connectionPoolCreated(ConnectionPoolCreatedEvent event) {
+        openedCount.incrementAndGet()
+    }
+
+    @Override
+    void connectionPoolClosed(ConnectionPoolClosedEvent event) {
+        closedCount.incrementAndGet()
+    }
+
+    int getOpened() {
+        openedCount.get()
+    }
+
+    int getClosed() {
+        closedCount.get()
+    }
+}
+
+@Entity
+class LifecycleIndexedThing {
+    String name
+
+    static mapping = {
+        name index: true
     }
 }

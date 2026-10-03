@@ -19,12 +19,15 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -315,11 +318,25 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     MongoDatastore childDatastore = createChildDatastore(mappingContext, eventPublisher, parent, singletonConnectionSources);
                     datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
                     registerAllEntitiesWithEnhancer();
-                    // Registered first and then checked: either close() has not started, and will find this
-                    // child when it walks the map, or it has, and the build is never started. A connection
-                    // added before the datastore has started is built by start(), with the others.
-                    if (!closed && started) {
-                        childDatastore.buildIndexAutomatically();
+                    // Decided under the lifecycle monitor, so a connection registered while start() or stop() is
+                    // under way waits for it and is then treated as the datastore now is.
+                    synchronized (lifecycleMonitor) {
+                        // Registered first and then checked: either close() has not started, and will find this
+                        // child when it walks the map, or it has, and the build is never started.
+                        if (closed) {
+                            return;
+                        }
+                        if (running) {
+                            childDatastore.startClient(connectionSources.getFactory(), false);
+                            childDatastore.buildIndexAutomatically();
+                            childDatastore.startupBuildDone = true;
+                        }
+                        else if (stopped && childDatastore.ownsClient()) {
+                            // Refused, like the others, until start() connects it and builds its indexes.
+                            childDatastore.stopClient();
+                        }
+                        // Otherwise the datastore has not started, and start() connects and builds it with the
+                        // others, including when start() itself is what registered it.
                     }
                 }
             });
@@ -1791,12 +1808,18 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     "by entity [{}].", connectionName(), buildIndexesSettingName(), entity.getName());
             return;
         }
-        if (!started) {
-            // Not yet: start() builds the indexes of every entity registered by then, this one included, and
-            // building them now would connect before the datastore has been started.
-            return;
+        synchronized (lifecycleMonitor) {
+            if (!running) {
+                // Not now, which would connect a datastore that has not started, or one stopped for a checkpoint.
+                // start() builds the indexes of every entity registered by then, this one included; a datastore that
+                // has started before builds this connection's again when it is started.
+                if (started) {
+                    startupBuildDone = false;
+                }
+                return;
+            }
+            initializeIndices(entity);
         }
-        initializeIndices(entity);
     }
 
     /**
@@ -1815,6 +1838,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private volatile boolean started;
 
     /**
+     * Set by {@link #stop()} and cleared by {@link #start()}. A stopped datastore is started again only by a call to
+     * {@link #start()}, never by being used, and a connection added while it is stopped is stopped too.
+     */
+    private volatile boolean stopped;
+
+    /**
      * Set while the first start is under way, so that a session it opens does not start it again.
      */
     private boolean starting;
@@ -1826,6 +1855,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * exactly those.
      */
     private volatile boolean clientStopped;
+
+    /**
+     * Set on each datastore, this one and the one for each connection, once the index build {@link #start()} runs for
+     * it has finished, or been handed to its thread. A connection added while the datastore is stopped, or while it
+     * starts, has not had one, and the next pass of {@link #start()} runs it.
+     */
+    private volatile boolean startupBuildDone;
 
     /**
      * Stops the {@link MongoClient} of every connection, so the process can be checkpointed.
@@ -1842,6 +1878,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * them - works again once {@link #start()} has restarted it. Any other client GORM owns is
      * closed, and {@link #start()} builds a replacement.
      *
+     * <p>Every client is stopped whether or not the datastore has started: one used before it was started, or
+     * connected by a {@link #start()} that then failed, holds sockets as much as one the datastore started. Until
+     * {@link #start()} is called again the clients refuse to be used, and using the datastore does not start it.
+     *
      * <p>A client the application supplied is left alone. Its lifecycle belongs to whoever
      * created it, and {@link #start()} does not replace it. A datastore that owns none of its
      * clients stays {@link #isRunning() running}.
@@ -1852,37 +1892,25 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     @Override
     public void stop() {
         synchronized (this.lifecycleMonitor) {
-            stopClients();
-        }
-    }
-
-    private void stopClients() {
-        if (!this.running) {
-            return;
-        }
-        List<MongoDatastore> datastores = datastoresAndChildren();
-        List<MongoDatastore> owningTheirClient = new ArrayList<>();
-        for (MongoDatastore datastore : datastores) {
-            if (datastore.ownsClient()) {
-                owningTheirClient.add(datastore);
+            this.stopped = true;
+            List<MongoDatastore> datastores = datastoresAndChildren();
+            List<MongoDatastore> owningTheirClient = new ArrayList<>();
+            for (MongoDatastore datastore : datastores) {
+                if (datastore.ownsClient()) {
+                    owningTheirClient.add(datastore);
+                }
             }
-        }
-        if (owningTheirClient.isEmpty()) {
-            return;
-        }
-        for (MongoDatastore datastore : datastores) {
-            datastore.stopIndexBuild();
-        }
-        for (MongoDatastore datastore : owningTheirClient) {
-            if (datastore.mongo instanceof RestartableMongoClient restartable) {
-                restartable.stop();
+            if (owningTheirClient.isEmpty()) {
+                return;
             }
-            else {
-                datastore.mongo.close();
+            for (MongoDatastore datastore : datastores) {
+                datastore.stopIndexBuild();
             }
-            datastore.clientStopped = true;
+            for (MongoDatastore datastore : owningTheirClient) {
+                datastore.stopClient();
+            }
+            this.running = false;
         }
-        this.running = false;
     }
 
     /**
@@ -1904,7 +1932,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * apply. A replacement is handed out by the connection's {@link ConnectionSource} as well as by this datastore,
      * when that is a {@link MongoConnectionSource}. The indexes are not built again, since they outlive a checkpoint
      * on the server, but a background index build that {@link #stop()} cut short, or that was requested while
-     * stopped, runs again on a fresh executor, on every connection.
+     * stopped, runs again on a fresh executor, on every connection. A connection added while the datastore was
+     * stopped is connected and has its indexes built here.
+     *
+     * <p>A connection registered while this runs is not left out. One registered by another thread waits for it to
+     * finish and is then connected and built as the running datastore's connections are; one registered by this
+     * thread, from an index build hook, is taken up by another pass before this returns.
      */
     @Override
     public void start() {
@@ -1912,11 +1945,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             if (this.running) {
                 return;
             }
-            if (this.started) {
-                restartClients();
+            this.stopped = false;
+            this.starting = true;
+            try {
+                startConnections();
+                // Only once every build has finished, or been handed to its thread: one that failed is tried again
+                // by the next start, or by the next use of a datastore that has never started.
+                this.started = true;
+                this.running = true;
             }
-            else {
-                startForTheFirstTime();
+            finally {
+                this.starting = false;
             }
         }
     }
@@ -1926,56 +1965,78 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * not started here: whatever stopped it starts it again, and until then its clients refuse to be used.
      */
     void ensureStarted() {
-        if (this.started || this.closed) {
+        if (this.started || this.closed || this.stopped) {
             return;
         }
         synchronized (this.lifecycleMonitor) {
-            if (!this.started && !this.closed && !this.starting) {
+            if (!this.started && !this.closed && !this.stopped && !this.starting) {
                 start();
             }
         }
     }
 
-    private void startForTheFirstTime() {
-        this.starting = true;
-        try {
-            List<MongoDatastore> datastores = datastoresAndChildren();
-            for (MongoDatastore datastore : datastores) {
-                if (datastore.ownsClient() && datastore.mongo instanceof RestartableMongoClient restartable) {
-                    restartable.start();
+    /**
+     * Connects each client and runs each startup index build that is due, in passes, until a pass finds no
+     * datastore it has not already seen: an index build hook can register a connection while this runs.
+     */
+    private void startConnections() {
+        ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory = connectionSources.getFactory();
+        Set<MongoDatastore> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        List<MongoDatastore> pass = datastoresAndChildren();
+        while (!pass.isEmpty()) {
+            seen.addAll(pass);
+            for (MongoDatastore datastore : pass) {
+                datastore.startClient(factory, datastore == this);
+            }
+            for (MongoDatastore datastore : pass) {
+                if (datastore.startupBuildDone) {
+                    datastore.resumeIndexBuild();
+                }
+                else {
+                    datastore.buildIndexAutomatically();
+                    datastore.startupBuildDone = true;
                 }
             }
-            for (MongoDatastore datastore : datastores) {
-                datastore.buildIndexAutomatically();
+            List<MongoDatastore> next = new ArrayList<>();
+            for (MongoDatastore datastore : datastoresAndChildren()) {
+                if (!seen.contains(datastore)) {
+                    next.add(datastore);
+                }
             }
-            // Only once the build has finished, or been handed to its thread: one that failed is tried again by
-            // the next use rather than left undone.
-            this.started = true;
-            this.running = true;
-        }
-        finally {
-            this.starting = false;
+            pass = next;
         }
     }
 
-    private void restartClients() {
-        ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory = connectionSources.getFactory();
-        for (MongoDatastore datastore : datastoresAndChildren()) {
-            if (!datastore.clientStopped) {
-                continue;
-            }
-            if (datastore.mongo instanceof RestartableMongoClient restartable) {
+    /**
+     * Brings back a client {@link #stop()} stopped, or connects one GORM owns that has not connected yet.
+     */
+    private void startClient(ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory, boolean defaultConnection) {
+        if (this.clientStopped) {
+            if (this.mongo instanceof RestartableMongoClient restartable) {
                 restartable.start();
             }
             else {
-                datastore.replaceClient(factory, datastore == this);
+                replaceClient(factory, defaultConnection);
             }
-            datastore.clientStopped = false;
+            this.clientStopped = false;
         }
-        this.running = true;
-        for (MongoDatastore datastore : datastoresAndChildren()) {
-            datastore.resumeIndexBuild();
+        else if (ownsClient() && this.mongo instanceof RestartableMongoClient restartable) {
+            restartable.start();
         }
+    }
+
+    /**
+     * Stops a client GORM owns: a {@link RestartableMongoClient} closes its driver client and refuses to be used
+     * until it is started again, and any other is closed, for {@link #start()} to replace.
+     */
+    private void stopClient() {
+        if (this.mongo instanceof RestartableMongoClient restartable) {
+            restartable.stop();
+        }
+        else {
+            this.mongo.close();
+        }
+        this.clientStopped = true;
     }
 
     /**

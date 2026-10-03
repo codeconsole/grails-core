@@ -169,7 +169,7 @@ GORM creates and reconciles the indexes declared in your mapping blocks each tim
 GORM takes part in the Spring lifecycle, so an application can be checkpointed with https://openjdk.org/projects/crac/[CRaC] and restored, whether the checkpoint is taken while the application is running or as its context refreshes (`-Dspring.context.checkpoint=onRefresh`). CRaC refuses to checkpoint a process holding open sockets, and a connected `MongoClient` holds several:
 
 * GORM opens no connection to MongoDB until the datastore starts. The clients it creates connect when the datastore is started, and the declared indexes are built then rather than while the datastore is being created. A checkpoint taken as the context refreshes, which Spring takes after every bean has been created and before it starts any lifecycle bean, therefore finds nothing to refuse, and the datastore connects once the process is restored.
-* Before a checkpoint of a running application, GORM stops the client of every connection: the default one, each one under `grails.mongodb.connections`, and any added at runtime. When the application is restored, GORM starts each of them again with the same settings.
+* Before a checkpoint of a running application, GORM stops the client of every connection: the default one, each one under `grails.mongodb.connections`, and any added at runtime. When the application is restored, GORM starts each of them again with the same settings. Nothing connects in between: a connection added, or a domain class registered, while the application is stopped is connected and has its indexes built when it is restored.
 
 An <<embeddedMongo,embedded MongoDB>> is stopped after the clients and started again before them.
 
