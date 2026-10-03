@@ -92,4 +92,71 @@ class UrlMappingUtilsSpec extends Specification {
         and:
             includedContent
     }
+
+    void "test includeForUrlMappingInfo clears TEMPLATE_MODEL during include and restores it after"() {
+        given: "a TEMPLATE_MODEL set on the outer request before the include"
+            final Map<String, Object> outerTemplateModel = [outerKey: 'outerValue']
+            webRequest.setAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, outerTemplateModel, 0)
+            final String retUrl = '/testAction'
+            final UrlMappingInfo info = new ForwardUrlMappingInfo(controllerName: 'testController', actionName: 'testAction')
+            final Map model = [:]
+            Map<String, Object> capturedDuringInclude = [:]
+            MockHttpServletRequest capturingRequest = new MockHttpServletRequest() {
+                @Override
+                jakarta.servlet.RequestDispatcher getRequestDispatcher(String path) {
+                    return new jakarta.servlet.RequestDispatcher() {
+                        @Override
+                        void forward(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {}
+                        @Override
+                        void include(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {
+                            capturedDuringInclude.templateModel = req.getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL)
+                        }
+                    }
+                }
+            }
+            GrailsWebRequest capturingWebRequest = new GrailsWebRequest(capturingRequest, response, attr)
+            capturingWebRequest.setAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, new ModelAndView(), 0)
+            capturingWebRequest.setAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, outerTemplateModel, 0)
+            capturingRequest.setAttribute(GrailsApplicationAttributes.WEB_REQUEST, capturingWebRequest)
+
+        when: "the include is dispatched"
+            linkGenerator.link(_ as Map) >> retUrl
+            UrlMappingUtils.includeForUrlMappingInfo(capturingRequest, response, info, model, linkGenerator)
+
+        then: "TEMPLATE_MODEL was null during the include (not leaked from the outer action)"
+            capturedDuringInclude.templateModel == null
+
+        and: "TEMPLATE_MODEL is restored to the outer value after the include"
+            capturingWebRequest.getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, 0) == outerTemplateModel
+    }
+
+    void "test includeForUrlMappingInfo removes TEMPLATE_MODEL after include when it was not set before"() {
+        given: "no TEMPLATE_MODEL on the outer request before the include"
+            final String retUrl = '/testAction'
+            final UrlMappingInfo info = new ForwardUrlMappingInfo(controllerName: 'testController', actionName: 'testAction')
+            final Map model = [:]
+            MockHttpServletRequest capturingRequest = new MockHttpServletRequest() {
+                @Override
+                jakarta.servlet.RequestDispatcher getRequestDispatcher(String path) {
+                    return new jakarta.servlet.RequestDispatcher() {
+                        @Override
+                        void forward(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {}
+                        @Override
+                        void include(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {
+                            req.setAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, [fromIncluded: true])
+                        }
+                    }
+                }
+            }
+            GrailsWebRequest capturingWebRequest = new GrailsWebRequest(capturingRequest, response, attr)
+            capturingWebRequest.setAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, new ModelAndView(), 0)
+            capturingRequest.setAttribute(GrailsApplicationAttributes.WEB_REQUEST, capturingWebRequest)
+
+        when: "the include is dispatched and the included action sets TEMPLATE_MODEL"
+            linkGenerator.link(_ as Map) >> retUrl
+            UrlMappingUtils.includeForUrlMappingInfo(capturingRequest, response, info, model, linkGenerator)
+
+        then: "TEMPLATE_MODEL is removed after the include (not leaked back to the outer action)"
+            capturingWebRequest.getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, 0) == null
+    }
 }

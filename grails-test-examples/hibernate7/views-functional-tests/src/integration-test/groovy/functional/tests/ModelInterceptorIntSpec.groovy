@@ -75,4 +75,28 @@ class ModelInterceptorIntSpec extends Specification implements HttpClientSupport
         and: "the interceptor's after() received the model argument without the bean"
         modelInterceptor.latestModel == [title: 'x']
     }
+
+    @Issue('https://github.com/apache/grails-core/issues/12081')
+    void "TEMPLATE_MODEL does not leak into the interceptor of a forwarded action"() {
+        given: "a controller that renders a template (setting TEMPLATE_MODEL) then forwards to another action"
+        def response = http('/renderTemplate/forwardAfterTemplate')
+
+        expect: "the HTTP response succeeds"
+        response.assertStatus(200)
+
+        and: "the interceptor's after() for the forwarded action (forwardTarget) sees no model"
+        modelInterceptor.latestModel == null
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/12081')
+    void "TEMPLATE_MODEL does not leak into the interceptor of an included action"() {
+        given: "a controller that renders a template (setting TEMPLATE_MODEL) then includes another action"
+        def response = http('/renderTemplate/includeAfterTemplate')
+
+        expect: "the HTTP response succeeds"
+        response.assertStatus(200)
+
+        and: "the interceptor's after() for the included action (includeTarget) sees no model"
+        modelInterceptor.modelByAction['includeTarget'] == null
+    }
 }
