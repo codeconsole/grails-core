@@ -164,6 +164,47 @@ class InheritedCommandBindingSpec extends Specification implements ControllerUni
         !command.enabled
     }
 
+    @Unroll
+    void 'a subclass inheriting Validateable binds its own properties but not bindable false ones through #binding'() {
+        when:
+        def command = bindInheritedValidateable(binding)
+
+        then: 'the constraints declared by the subclass itself still protect its properties'
+        verifyAll(command) {
+            baseValues == ['item-1']
+            textValue == 'updated text'
+            dateValue == DATE_VALUE
+            enabled
+            protectedBaseValue == 'base value'
+            protectedChildValue == 'child value'
+        }
+
+        where:
+        binding << ['bindData', 'DataBindingUtils']
+    }
+
+    @Unroll
+    void 'secure mode binds the bindable true properties a subclass inheriting Validateable declares through #binding'() {
+        given:
+        grailsApplication.config.grails.databinding.denyByDefault = true
+
+        when:
+        def command = bindInheritedValidateable(binding)
+
+        then:
+        verifyAll(command) {
+            baseValues == ['item-1']
+            textValue == 'updated text'
+            dateValue == null
+            !enabled
+            protectedBaseValue == 'base value'
+            protectedChildValue == 'child value'
+        }
+
+        where:
+        binding << ['bindData', 'DataBindingUtils']
+    }
+
     void 'switching modes does not reuse the other modes cached include list'() {
         expect:
         controller.bindDynamic().command.dateValue == DATE_VALUE
@@ -179,6 +220,15 @@ class InheritedCommandBindingSpec extends Specification implements ControllerUni
 
         then:
         controller.bindDynamic().command.dateValue == DATE_VALUE
+    }
+
+    private InheritedValidateableCommand bindInheritedValidateable(String binding) {
+        if (binding == 'bindData') {
+            return controller.bindInheritedValidateable().command
+        }
+        def command = new InheritedValidateableCommand()
+        DataBindingUtils.bindObjectToInstance(command, requestValues())
+        command
     }
 
     private static Map requestValues() {
@@ -225,6 +275,12 @@ class InheritedCommandBindingController {
         [command: command]
     }
 
+    def bindInheritedValidateable() {
+        def command = new InheritedValidateableCommand()
+        bindData(command, params)
+        [command: command]
+    }
+
     def bindDeclared(InheritedBindingDeclaredCommand command) {
         [command: command]
     }
@@ -256,6 +312,19 @@ abstract class InheritedBindingIntermediateCommand extends InheritedBindingBaseC
 }
 
 class InheritedBindingDynamicCommand extends InheritedBindingIntermediateCommand implements InheritedBindingNullable {
+    String textValue
+    LocalDate dateValue
+    boolean enabled
+    String protectedChildValue = 'child value'
+
+    static constraints = {
+        textValue bindable: true
+        protectedChildValue bindable: false
+    }
+}
+
+// Inherits Validateable, and with it the superclass's constraints accessor, without implementing it again.
+class InheritedValidateableCommand extends InheritedBindingIntermediateCommand {
     String textValue
     LocalDate dateValue
     boolean enabled

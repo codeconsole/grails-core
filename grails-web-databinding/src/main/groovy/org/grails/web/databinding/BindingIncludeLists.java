@@ -61,6 +61,18 @@ public final class BindingIncludeLists {
     private static final List NO_BINDING_INCLUDE_LIST = new NoBindingIncludeList();
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
     private static final Map<Class, List> CLASS_TO_LEGACY_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+    private static final String CONSTRAINTS_MAP_ACCESSOR = "getConstraintsMap";
+    // Asked on every bind, so it is answered once for each class; a ClassValue does not keep a reloaded class reachable.
+    private static final ClassValue<Boolean> INHERITS_CONSTRAINTS_MAP = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(final Class<?> type) {
+            try {
+                return type.getMethod(CONSTRAINTS_MAP_ACCESSOR).getDeclaringClass() != type;
+            } catch (NoSuchMethodException | SecurityException ignored) {
+                return false;
+            }
+        }
+    };
 
     private static final class NoBindingIncludeList extends ArrayList {
     }
@@ -235,6 +247,18 @@ public final class BindingIncludeLists {
         return propertyNamesWithBindableValue(constrainedProperties(type), Boolean.TRUE);
     }
 
+    /**
+     * The properties a type constrains {@code bindable: false}, which binding never binds without an
+     * explicit include list naming them.
+     */
+    public static List<String> unbindablePropertyNames(final Class type) {
+        final List<String> names = new ArrayList<>();
+        for (Object name : propertyNamesWithBindableValue(constrainedProperties(type), Boolean.FALSE)) {
+            names.add(name.toString());
+        }
+        return Collections.unmodifiableList(names);
+    }
+
     public static List propertyNamesWithBindableValue(final Map constrainedProperties, final Boolean bindableValue) {
         if (constrainedProperties == null || constrainedProperties.isEmpty()) {
             return Collections.emptyList();
@@ -256,12 +280,20 @@ public final class BindingIncludeLists {
 
     /**
      * The constraints a type declares: through the {@code constraintsMap} a validateable type and a
-     * domain class have, or else evaluated from the class.
+     * domain class have, or else evaluated from the class. A subclass that inherits
+     * {@code getConstraintsMap()} instead of implementing {@code Validateable} itself would answer with
+     * its superclass's constraints alone, so its own are evaluated, with those it inherits.
      */
     public static Map constrainedProperties(final Class type) {
+        if (inheritsConstraintsMap(type)) {
+            final Map constrainedProperties = evaluateConstrainedProperties(type);
+            if (!constrainedProperties.isEmpty()) {
+                return constrainedProperties;
+            }
+        }
         MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(type);
         try {
-            Object constrainedProperties = metaClass.invokeStaticMethod(type, "getConstraintsMap", new Object[0]);
+            Object constrainedProperties = metaClass.invokeStaticMethod(type, CONSTRAINTS_MAP_ACCESSOR, new Object[0]);
             if (constrainedProperties instanceof Map) {
                 return (Map) constrainedProperties;
             }
@@ -282,6 +314,14 @@ public final class BindingIncludeLists {
         } catch (Exception ignored) {
         }
         return Collections.emptyMap();
+    }
+
+    /**
+     * Whether a type answers {@code getConstraintsMap()} with the accessor a superclass declares, and so
+     * with the constraints of that superclass rather than its own.
+     */
+    public static boolean inheritsConstraintsMap(final Class type) {
+        return INHERITS_CONSTRAINTS_MAP.get(type);
     }
 
     public static Map evaluateConstrainedProperties(final Class type) {
