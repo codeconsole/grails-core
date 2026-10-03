@@ -143,6 +143,25 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a unique index over duplicate values is counted as a failure and the build still completes"() {
+        given:
+        realClient.getDatabase('asyncResultDuplicateDb').getCollection('asyncResultUniqueThing')
+                .insertMany([new Document('code', 'same'), new Document('code', 'same')])
+        def datastore = new MongoDatastore(config('asyncResultDuplicateDb'), AsyncResultUniqueThing)
+
+        when:
+        def result = datastore.buildIndexAsync().get(30, TimeUnit.SECONDS)
+
+        then: "the unique index failed, and the other declaration was still applied"
+        result.failures() == 1
+        result.created() == 1
+        [name: 1] in indexKeys('asyncResultDuplicateDb', 'asyncResultUniqueThing')
+        !([code: 1] in indexKeys('asyncResultDuplicateDb', 'asyncResultUniqueThing'))
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test a build that stops partway completes the future with the exception that stopped it"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
@@ -260,6 +279,20 @@ class AsyncResultThing {
         collection 'asyncResultThing'
         name index: true
         compoundIndex([code: 1, name: -1])
+    }
+}
+
+@Entity
+class AsyncResultUniqueThing {
+
+    String name
+    String code
+
+    static mapping = {
+        version false
+        collection 'asyncResultUniqueThing'
+        name index: true
+        code index: true, indexAttributes: [unique: true]
     }
 }
 

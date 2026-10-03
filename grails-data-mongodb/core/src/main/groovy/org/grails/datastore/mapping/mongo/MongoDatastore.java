@@ -46,6 +46,7 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoInterruptedException;
 import com.mongodb.MongoNamespace;
+import com.mongodb.MongoServerException;
 import com.mongodb.MongoSocketException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoIterable;
@@ -1797,6 +1798,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      *       {@code collMod} (no drop, no rebuild, no gap); any other conflict is dropped and
      *       recreated only when {@code recreateOnConflict:true} was declared, else logged with guidance.</li>
      * </ol>
+     *
+     * <p>Any other refusal from the server, a duplicate key under a {@code unique} index included, is logged and
+     * counted as a failure, and the build goes on. An error that is not the server's answer, such as a lost
+     * connection, is left to stop the build.
      */
     private void createOrUpdateIndex(PersistentEntity entity,
                                      com.mongodb.client.MongoCollection<Document> collection,
@@ -1857,6 +1862,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 LOG.error("Failed to create index for entity [{}] {}: {}",
                     entity.getName(), descriptor, e.getMessage(), e);
             }
+        } catch (MongoServerException e) {
+            // The server refusing this one index in another form, such as a unique index over documents that
+            // already share a value, which the driver reports as a DuplicateKeyException rather than a command
+            // error. A lost connection or an interruption is not a server's answer, so it still stops the build.
+            summary.failures++;
+            LOG.error("Failed to create index for entity [{}] {}: {}",
+                entity.getName(), descriptor, e.getMessage(), e);
         }
     }
 
@@ -1923,14 +1935,24 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         }
 
         if (recreateOnConflict) {
+            boolean dropped = false;
             try {
                 collection.dropIndex(existingName);
+                dropped = true;
                 String indexName = collection.createIndex(keys, desired);
                 existingIndexes.record(keys, indexName, expireAfterSeconds);
                 LOG.info("Recreated index [{}] on entity [{}] {}", existingName, entity.getName(), descriptor);
                 return Reconciliation.RECREATED;
-            } catch (MongoCommandException recreateError) {
-                LOG.error("Failed to recreate index [{}] on entity [{}] {}: {}",
+            } catch (MongoServerException recreateError) {
+                if (!dropped) {
+                    LOG.error("Failed to recreate index [{}] on entity [{}] {}: {}",
+                        existingName, entity.getName(), descriptor, recreateError.getMessage(), recreateError);
+                    return Reconciliation.FAILED;
+                }
+                // Listed again, so that a later declaration on these keys is not counted as already present.
+                existingIndexes.refresh();
+                LOG.error("Dropped index [{}] on entity [{}] to recreate it {}, but it could not be built again: {}. " +
+                        "The collection has no index on these keys until the cause is fixed and the index built.",
                     existingName, entity.getName(), descriptor, recreateError.getMessage(), recreateError);
                 return Reconciliation.FAILED;
             }

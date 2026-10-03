@@ -138,7 +138,7 @@ class Person {
 }
 ----
 
-WARNING: Dropping and recreating an index rebuilds it from scratch, during which queries that rely on the index are not served by it. Enable `recreateOnConflict` deliberately, and prefer applying it during a maintenance window for large collections.
+WARNING: Dropping and recreating an index rebuilds it from scratch, during which queries that rely on the index are not served by it. Enable `recreateOnConflict` deliberately, and prefer applying it during a maintenance window for large collections. The existing index is dropped first, so if the new one cannot be built — a `unique` index over documents that already share a value, say — the collection is left with no index on those keys. GORM logs that it dropped the index and could not build it again, and counts the declaration as failed.
 
 A declared index whose `name` is already held by an index on different keys is the same kind of conflict, reported by MongoDB as an `IndexKeySpecsConflict`, and `recreateOnConflict` resolves it the same way:
 
@@ -280,6 +280,8 @@ The split between created and already present is what makes that time interpreta
 ----
 Index build for database [myDb] finished in 9315ms: 0 created, 1 recreated, 6 already present, from 3 domain class(es)
 ----
+
+A declaration the server refuses does not end the build: an option conflict GORM is not authorised to resolve, an invalid specification, or a `unique` index over documents that already share a value is logged at `ERROR` as it fails and counted, and the build goes on with the remaining declarations. Only an error that stops the build itself, such as a lost connection, ends it early, and with the default synchronous build that fails startup.
 
 If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen. A build that stops partway — a lost connection or a timeout — reports how far it got before stopping, also at `WARN`:
 
