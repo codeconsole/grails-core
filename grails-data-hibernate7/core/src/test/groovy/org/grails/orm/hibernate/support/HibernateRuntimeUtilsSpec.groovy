@@ -233,18 +233,17 @@ class HibernateRuntimeUtilsSpec extends HibernateGormDatastoreSpec {
         errors.getFieldErrors("name").size() == 1
     }
 
-    void "setupErrorsProperty copies ObjectError"() {
+    void 'validation resets an existing ObjectError'() {
         given:
-        def profile = new HibernateRuntimeUtilsSpecProfile(name: "Alice")
-        def existing = new ValidationErrors(profile)
-        existing.addError(new org.springframework.validation.ObjectError("profile", "global error"))
-        profile.errors = existing
+        def profile = new HibernateRuntimeUtilsSpecProfile(name: 'Alice')
+        profile.errors.reject('global.error')
 
         when:
-        def errors = HibernateRuntimeUtils.setupErrorsProperty(profile)
+        boolean valid = profile.validate()
 
         then:
-        errors.getGlobalErrors().size() == 1
+        valid
+        !profile.hasErrors()
     }
 
     void "convertValueToType converts String to other Number types"() {
