@@ -1729,7 +1729,6 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * @param settings
      */
     protected MongoGormEnhancer initialize(final MongoConnectionSourceSettings settings) {
-        getMappingContext().addMappingContextListener(this);
         initializeConverters(this.mappingContext);
 
         this.mappingContext.addMappingContextListener(new MappingContext.Listener() {
@@ -1739,6 +1738,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 registerEntity(entity);
             }
         });
+        // Listeners are called in the order they were added, and indexing an entity needs the collection and
+        // database registerEntity resolves from its mapping: indexed first, it was indexed on its default
+        // collection, and getCollectionName cached that name.
+        getMappingContext().addMappingContextListener(this);
 
         buildIndexAutomatically();
 

@@ -301,6 +301,26 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a class registered after startup is indexed on the collection and database its mapping names"() {
+        given:
+        def datastore = datastore('undeclaredLateNamedDb')
+
+        when:
+        datastore.mappingContext.addPersistentEntity(UndeclaredIndexesLateDefaultThing)
+        datastore.mappingContext.addPersistentEntity(UndeclaredIndexesLateElsewhereThing)
+
+        then: "on its mapped collection, and not on one named after the class"
+        'name_1' in indexNames('undeclaredLateNamedDb', 'undeclaredIndexesLateDefault')
+        !('undeclaredIndexesLateDefaultThing' in realClient.getDatabase('undeclaredLateNamedDb').listCollectionNames())
+
+        and: "in its mapped database, and not in the default one"
+        'name_1' in indexNames('undeclaredLateElsewhereDb', 'undeclaredIndexesLateElsewhere')
+        !('undeclaredIndexesLateElsewhere' in realClient.getDatabase('undeclaredLateNamedDb').listCollectionNames())
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test a connection covers only the collections of the classes mapped to it"() {
         given: "a class mapped to the default connection, one mapped to reporting, and one mapped to both"
         def datastore = new MongoDatastore(config('undeclaredOwnDefaultDb', [
@@ -447,6 +467,29 @@ class UndeclaredIndexesDefaultOnlyThing {
 
     static mapping = {
         collection 'undeclaredIndexesDefaultOnly'
+        name index: true
+    }
+}
+
+@Entity
+class UndeclaredIndexesLateDefaultThing {
+
+    String name
+
+    static mapping = {
+        collection 'undeclaredIndexesLateDefault'
+        name index: true
+    }
+}
+
+@Entity
+class UndeclaredIndexesLateElsewhereThing {
+
+    String name
+
+    static mapping = {
+        collection 'undeclaredIndexesLateElsewhere'
+        database 'undeclaredLateElsewhereDb'
         name index: true
     }
 }
