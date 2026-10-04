@@ -243,6 +243,17 @@ grails {
 
 All three options are disabled by default and independent, or `compileStatic { all = true }` can be used as a shortcut to enable all of them. Any class that declares its own `@CompileDynamic` (or `@GrailsCompileStatic`/`@CompileStatic`/`@GrailsTypeChecked`/`@TypeChecked`) annotation keeps that setting, so the opt-in never overrides an explicit per-class choice. Tag libraries that still declare tags as closure fields (the deprecated form) are skipped automatically by the `tagLibs` opt-in and left dynamically compiled with a build warning, so define tags as methods to opt them in. See the <<grailsCompileStatic,GrailsCompileStatic>> section for details.
 
+==== Generate an Application That Compiles Statically
+
+Grails Forge has a new `grails-compile-static` feature that generates the `compileStatic` block with `controllers`, `services` and `tagLibs` enabled, adding `gsp = true` when the application uses GSP, so the generated controllers, services, tag libraries and views all compile statically:
+
+[source,console]
+----
+grails -t forge create-app --features=grails-compile-static com.example.demo
+----
+
+See <<gspStaticCompilation,Static Compilation>> for what static compilation asks of a GSP page.
+
 ==== GORM Domain Classes Can Take Their Identity Type from the Datastore
 
 A domain class that declares no `id` has always been given a `Long` one. That is right for Hibernate and
