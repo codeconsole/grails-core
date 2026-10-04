@@ -581,10 +581,10 @@
                      maps are the exact chain: FilterRegistrationBeans, plain Filter beans Boot
                      adapted and container-added filters like WsFilter alike. Elsewhere, replay
                      the order Boot registers its filters in (ServletContextInitializerBeans,
-                     matchAfter ones last), then append what else the Servlet API reports,
-                     unnumbered because no portable API exposes its position. Either way the
-                     spec chains URL-pattern matches before servlet-name matches, hence the
-                     stable sorts. --%>
+                     disabled ones skipped, matchAfter ones last), then append what else the
+                     Servlet API reports, unnumbered because no portable API exposes its
+                     position. Either way the spec chains URL-pattern matches before
+                     servlet-name matches, hence the stable sorts. --%>
                 <g:set var="tomcatContext"
                        value="${ { ->
                            try {
@@ -610,12 +610,13 @@
                                : { ->
                                    List springFilters = new org.springframework.boot.web.servlet.ServletContextInitializerBeans(
                                                (org.springframework.beans.factory.ListableBeanFactory) applicationContext).toList()
-                                           .findAll { it instanceof org.springframework.boot.web.servlet.AbstractFilterRegistrationBean }
+                                           .findAll { it instanceof org.springframework.boot.web.servlet.AbstractFilterRegistrationBean && it.enabled }
                                            .collect { initializer ->
                                                def rb = (org.springframework.boot.web.servlet.AbstractFilterRegistrationBean) initializer
-                                               List urlPatterns = (rb.urlPatterns || rb.servletNames) ? rb.urlPatterns as List : ['/*']
+                                               List servletNames = (rb.servletNames as List) + rb.servletRegistrationBeans*.servletName
+                                               List urlPatterns = (rb.urlPatterns || servletNames) ? rb.urlPatterns as List : ['/*']
                                                [name: rb.filterName, className: rb.filter?.getClass()?.name ?: '', urlPatterns: urlPatterns,
-                                                mappings: urlPatterns + rb.servletNames, matchAfter: rb.matchAfter, ordered: true]
+                                                mappings: urlPatterns + servletNames, matchAfter: rb.matchAfter, ordered: true]
                                            }
                                            .sort { (it.urlPatterns ? 0 : 2) + (it.matchAfter ? 1 : 0) }
                                    Set springNames = springFilters*.name as Set
