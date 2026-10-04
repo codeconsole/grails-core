@@ -172,13 +172,13 @@ public class CriteriaMethodInvoker {
         if (method != null) {
             switch (method) {
                 case AND:
-                    hibernateQuery.and(callable);
+                    builder.and(callable);
                     return name;
                 case OR:
-                    hibernateQuery.or(callable);
+                    builder.or(callable);
                     return name;
                 case NOT:
-                    hibernateQuery.not(callable);
+                    builder.not(callable);
                     return name;
                 case PROJECTIONS:
                     if (args.length == 1 && (args[0] instanceof Closure)) {

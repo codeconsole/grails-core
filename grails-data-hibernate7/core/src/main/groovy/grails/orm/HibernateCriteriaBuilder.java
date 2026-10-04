@@ -28,6 +28,7 @@ import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import groovy.lang.GroovyObjectSupport;
 import groovy.util.logging.Slf4j;
+import org.codehaus.groovy.runtime.GroovyCategorySupport;
 
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.JoinType;
@@ -53,6 +54,7 @@ import org.grails.orm.hibernate.HibernateSession;
 import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersistentEntity;
 import org.grails.orm.hibernate.query.HibernateQuery;
 import org.grails.orm.hibernate.query.SqlRestriction;
+import org.grails.orm.hibernate.query.SqlRestrictionCategory;
 import org.grails.orm.hibernate.support.hibernate7.SessionHolder;
 
 /**
@@ -882,19 +884,19 @@ public class HibernateCriteriaBuilder extends GroovyObjectSupport implements Bui
 
     @Override
     public Criteria and(Closure<?> callable) {
-        hibernateQuery.and(callable);
+        inJunction(() -> hibernateQuery.and(callable));
         return this;
     }
 
     @Override
     public Criteria or(Closure<?> callable) {
-        hibernateQuery.or(callable);
+        inJunction(() -> hibernateQuery.or(callable));
         return this;
     }
 
     @Override
     public Criteria not(Closure<?> callable) {
-        hibernateQuery.not(callable);
+        inJunction(() -> hibernateQuery.not(callable));
         return this;
     }
 
@@ -1111,6 +1113,20 @@ public class HibernateCriteriaBuilder extends GroovyObjectSupport implements Bui
     public Criteria sizeLt(String propertyName, int size) {
         hibernateQuery.sizeLt(propertyName, size);
         return this;
+    }
+
+    /**
+     * Builds a junction, whose block {@link DetachedCriteria} resolves its calls against, with
+     * {@code sqlRestriction} added to the detached criteria of the block and of the association blocks inside it.
+     */
+    private void inJunction(Runnable junction) {
+        GroovyCategorySupport.use(SqlRestrictionCategory.class, new Closure<Object>(this) {
+            @Override
+            public Object call() {
+                junction.run();
+                return null;
+            }
+        });
     }
 
     /**

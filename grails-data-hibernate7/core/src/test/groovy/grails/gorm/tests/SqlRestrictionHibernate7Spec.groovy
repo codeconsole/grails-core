@@ -62,7 +62,7 @@ class SqlRestrictionHibernate7Spec extends HibernateGormDatastoreSpec {
 
         new SqlRestrictionParent(name: 'ABC').save()
         new SqlRestrictionParent(name: 'ABCDEF').addToChildren(name: 'ABCDEF-kid').save()
-        new SqlRestrictionParent(name: 'ABCDEFGHI').save(flush: true)
+        new SqlRestrictionParent(name: 'ABCDEFGHI').addToChildren(name: 'XYZ-kid').save(flush: true)
         manager.session.clear()
 
         expect: 'a condition without parameters'
@@ -97,6 +97,27 @@ class SqlRestrictionHibernate7Spec extends HibernateGormDatastoreSpec {
                 eq('name', 'ABCDEFGHI')
             }
         }*.name.sort() == ['ABC', 'ABCDEFGHI']
+
+        and: 'a condition with or, grouped as a whole'
+        SqlRestrictionParent.createCriteria().list {
+            sqlRestriction("{alias}.name = 'ABC' or {alias}.name = 'ABCDEF'")
+            eq('name', 'ABCDEF')
+        }*.name == ['ABCDEF']
+
+        and: 'a question mark in a string literal or a comment is not a placeholder'
+        SqlRestrictionParent.createCriteria().list {
+            sqlRestriction("{alias}.name not like '%?' and length({alias}.name) > ? -- why?", [6])
+        }*.name == ['ABCDEFGHI']
+
+        and: 'a condition in an association block inside a junction'
+        SqlRestrictionParent.createCriteria().listDistinct {
+            or {
+                children {
+                    sqlRestriction('{alias}.name = ?', ['ABCDEF-kid'])
+                }
+                eq('name', 'ABC')
+            }
+        }*.name == ['ABCDEF']
 
         and: 'a count'
         SqlRestrictionParent.createCriteria().count {

@@ -42,8 +42,8 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
                     (Settings.SETTING_DB_CREATE): 'create-drop',
                     'hibernate.session_factory.statement_inspector': sqlCapture
             ),
-            SqlRestrictionAuthor, SqlRestrictionBook, SqlRestrictionChapter, SqlRestrictionEdition,
-            SqlRestrictionPrinting, SqlRestrictionShape, SqlRestrictionCircle
+            SqlRestrictionAuthor, SqlRestrictionBook, SqlRestrictionChapter, SqlRestrictionNote, SqlRestrictionEdition,
+            SqlRestrictionPrinting, SqlRestrictionImprint, SqlRestrictionShape, SqlRestrictionCircle
     )
 
     @Shared
@@ -54,7 +54,7 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
     }
 
     @Rollback
-    void 'the condition is rendered as is, with {alias} replaced and the values bound'() {
+    void 'the condition is rendered as is in parentheses, with {alias} replaced and the values bound'() {
         given:
         saveBooks()
 
@@ -66,7 +66,7 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
 
         then:
         books*.title == ['Dune']
-        sql =~ /where length\((\w+)\.title\) < \? and \1\.pages > \?$/
+        sql =~ /where \(length\((\w+)\.title\) < \? and \1\.pages > \?\)$/
     }
 
     @Rollback
@@ -130,6 +130,125 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
     }
 
     @Rollback
+    void 'a condition with or is grouped as a whole'() {
+        given:
+        saveBooks()
+
+        expect:
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction("{alias}.title = 'Dune' or {alias}.title = 'Emma'")
+            eq('title', 'Emma')
+        }*.title == ['Emma']
+        SqlRestrictionBook.createCriteria().list {
+            not {
+                sqlRestriction("{alias}.title = 'Dune' or {alias}.title = 'Emma'")
+            }
+        }*.title == ['Ulysses']
+    }
+
+    @Rollback
+    void 'a question mark in a string literal, a quoted identifier or a comment is not a placeholder'() {
+        given:
+        new SqlRestrictionBook(title: 'Why?', pages: 100).save()
+        new SqlRestrictionBook(title: 'Who?', pages: 10).save()
+        new SqlRestrictionBook(title: "It's?", pages: 200).save(flush: true)
+
+        expect:
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction("{alias}.title like '%?' and {alias}.pages > ?", [50])
+        }*.title.sort() == ["It's?", 'Why?']
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction("{alias}.title like '%?%'")
+        }*.title.sort() == ["It's?", 'Who?', 'Why?']
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction("{alias}.title = 'It''s?' and {alias}.pages > ?", [50])
+        }*.title == ["It's?"]
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction('{alias}."PAGES" > ? /* why? */ and {alias}.title <> ? -- who?', [50, 'Why?'])
+        }*.title == ["It's?"]
+    }
+
+    @Rollback
+    void 'an association block inside a junction'() {
+        given:
+        saveBooks()
+
+        expect:
+        titles {
+            or {
+                chapters {
+                    sqlRestriction('{alias}.title = ?', ['Epilogue'])
+                }
+                eq('title', 'Dune')
+            }
+        } == ['Dune', 'Emma']
+        titles {
+            not {
+                chapters {
+                    sqlRestriction('{alias}.title = ?', ['Epilogue'])
+                }
+            }
+        } == ['Dune', 'Ulysses']
+        titles {
+            or {
+                and {
+                    chapters {
+                        sqlRestriction('{alias}.title = ?', ['Epilogue'])
+                    }
+                }
+                eq('title', 'Dune')
+            }
+        } == ['Dune', 'Emma']
+        titles {
+            or {
+                chapters {
+                    or {
+                        sqlRestriction('{alias}.title = ?', ['Epilogue'])
+                        eq('title', 'Missing')
+                    }
+                }
+                eq('title', 'Dune')
+            }
+        } == ['Dune', 'Emma']
+    }
+
+    @Rollback
+    void 'nested association blocks'() {
+        given:
+        saveBooks()
+
+        expect:
+        titles {
+            chapters {
+                notes {
+                    sqlRestriction('{alias}.text = ?', ['footnote'])
+                }
+            }
+        } == ['Emma']
+
+        and: 'inside a junction, the same as the equivalent criterion'
+        titles {
+            or {
+                chapters {
+                    notes {
+                        sqlRestriction('{alias}.text = ?', ['footnote'])
+                    }
+                }
+                eq('title', 'Dune')
+            }
+        } == titles {
+            or {
+                chapters {
+                    notes {
+                        eq('text', 'footnote')
+                    }
+                }
+                eq('title', 'Dune')
+            }
+        }
+    }
+
+    @Rollback
     void 'an entity with a composite identifier'() {
         given:
         new SqlRestrictionEdition(isbn: '978-0', number: 1, label: 'first').save()
@@ -151,6 +270,22 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
         expect:
         SqlRestrictionPrinting.createCriteria().list {
             sqlRestriction('{alias}.place = ?', ['Bath'])
+        }*.code == ['B']
+    }
+
+    @Rollback
+    void 'an entity whose composite identifier starts with an association to an entity with a composite identifier'() {
+        given:
+        SqlRestrictionEdition edition = new SqlRestrictionEdition(isbn: '978-0', number: 1, label: 'first').save()
+        new SqlRestrictionImprint(edition: edition, code: 'A', place: 'London').save()
+        new SqlRestrictionImprint(edition: edition, code: 'B', place: 'Bath').save(flush: true)
+
+        expect:
+        SqlRestrictionImprint.createCriteria().list {
+            sqlRestriction('{alias}.place = ?', ['Bath'])
+        }*.code == ['B']
+        SqlRestrictionImprint.createCriteria().list {
+            sqlRestriction('place = ?', ['Bath'])
         }*.code == ['B']
     }
 
@@ -197,8 +332,14 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
 
     private static void saveBooks() {
         new SqlRestrictionBook(title: 'Dune', pages: 412).addToChapters(title: 'Prologue').save()
-        new SqlRestrictionBook(title: 'Emma', pages: 250).addToChapters(title: 'Epilogue').save()
-        new SqlRestrictionBook(title: 'Ulysses', pages: 120).save(flush: true)
+        new SqlRestrictionBook(title: 'Emma', pages: 250)
+                .addToChapters(new SqlRestrictionChapter(title: 'Epilogue').addToNotes(text: 'footnote'))
+                .save()
+        new SqlRestrictionBook(title: 'Ulysses', pages: 120).addToChapters(title: 'Telemachus').save(flush: true)
+    }
+
+    private static List<String> titles(Closure criteria) {
+        SqlRestrictionBook.createCriteria().listDistinct(criteria)*.title.sort()
     }
 }
 
@@ -226,6 +367,14 @@ class SqlRestrictionChapter {
 
     String title
     static belongsTo = [book: SqlRestrictionBook]
+    static hasMany = [notes: SqlRestrictionNote]
+}
+
+@Entity
+class SqlRestrictionNote {
+
+    String text
+    static belongsTo = [chapter: SqlRestrictionChapter]
 }
 
 @Entity
@@ -253,6 +402,17 @@ class SqlRestrictionPrinting implements Serializable {
     String place
     static mapping = {
         id(composite: ['author', 'code'])
+    }
+}
+
+@Entity
+class SqlRestrictionImprint implements Serializable {
+
+    SqlRestrictionEdition edition
+    String code
+    String place
+    static mapping = {
+        id(composite: ['edition', 'code'])
     }
 }
 

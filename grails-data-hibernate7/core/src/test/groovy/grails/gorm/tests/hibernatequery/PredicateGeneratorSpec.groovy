@@ -413,6 +413,26 @@ class PredicateGeneratorSpec extends HibernateGormDatastoreSpec {
         query.resultList == ['Bobby']
     }
 
+    def "test getPredicates with SqlRestriction without {alias} and with a question mark in a string literal"() {
+        given:
+        new PredicateGeneratorSpecNullableAgeEntity(name: 'Bob?', age: 11).save(failOnError: true)
+        new PredicateGeneratorSpecNullableAgeEntity(name: 'Bobby?', age: 12).save(failOnError: true)
+        new PredicateGeneratorSpecNullableAgeEntity(name: 'Bobby', age: 13).save(flush: true, failOnError: true)
+        CriteriaQuery<String> nameQuery = cb.createQuery(String)
+        Root<PredicateGeneratorSpecNullableAgeEntity> nameRoot = nameQuery.from(PredicateGeneratorSpecNullableAgeEntity)
+        GrailsHibernatePersistentEntity nullableAgeEntity = session.datastore.mappingContext.getPersistentEntity(PredicateGeneratorSpecNullableAgeEntity.name) as GrailsHibernatePersistentEntity
+        JpaQueryContext context = new JpaQueryContext(nameRoot)
+        Predicate[] predicates = predicateGenerator.getPredicates(nameQuery, nameRoot, [new SqlRestriction("name like '%?' and age > ?", [11])], context, nullableAgeEntity)
+
+        when:
+        nameQuery.select(nameRoot.get('name')).where(predicates)
+        var query = sessionFactory.currentSession.createQuery(nameQuery)
+        context.parameterValues.each { parameter, value -> query.setParameter(parameter, value) }
+
+        then:
+        query.resultList == ['Bobby?']
+    }
+
     def "test getPredicates with IdEquals criterion"() {
         given:
         List criteria = [new Query.IdEquals(1L)]

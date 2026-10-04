@@ -35,8 +35,9 @@ import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.spi.TypeConfiguration;
 
 /**
- * Renders a {@link SqlRestriction} as a predicate. The arguments are the SQL condition as a literal, a column of
- * the queried entity whose table alias replaces {@code {alias}}, and the value of each {@code ?} placeholder.
+ * Renders a {@link SqlRestriction} as a predicate, in parentheses. The arguments are the SQL condition as a literal,
+ * a column of the queried entity whose table alias replaces {@code {alias}} if the SQL contains it, and the value of
+ * each {@code ?} placeholder.
  *
  * @since 8.0.0
  */
@@ -49,7 +50,7 @@ public class GrailsSqlRestrictionFunction extends AbstractSqmSelfRenderingFuncti
     public GrailsSqlRestrictionFunction(TypeConfiguration typeConfiguration) {
         super(
                 NAME,
-                StandardArgumentsValidators.min(2),
+                StandardArgumentsValidators.min(1),
                 StandardFunctionReturnTypeResolvers.invariant(
                         typeConfiguration.getBasicTypeRegistry().resolve(StandardBasicTypes.BOOLEAN)),
                 null);
@@ -69,23 +70,29 @@ public class GrailsSqlRestrictionFunction extends AbstractSqmSelfRenderingFuncti
         if (!(arguments.get(0) instanceof Literal literal) || !(literal.getLiteralValue() instanceof String sql)) {
             throw new IllegalArgumentException("The first argument of " + NAME + " must be the SQL as a literal");
         }
+        int firstValue = 1;
         if (sql.contains(ALIAS_PLACEHOLDER)) {
             sql = sql.replace(ALIAS_PLACEHOLDER, tableAlias(arguments.get(1)));
+            firstValue = 2;
         }
+        List<Integer> placeholders = SqlRestriction.placeholderIndexes(sql);
+        if (placeholders.size() != arguments.size() - firstValue) {
+            throw new IllegalArgumentException("The SQL restriction has " + placeholders.size() +
+                    " ? placeholders but " + (arguments.size() - firstValue) + " values: " + sql);
+        }
+        sqlAppender.append('(');
         int index = 0;
-        for (int i = 2; i < arguments.size(); i++) {
-            int placeholder = sql.indexOf('?', index);
-            if (placeholder == -1) {
-                throw new IllegalArgumentException("The SQL restriction has fewer ? placeholders than values: " + sql);
-            }
+        for (int i = 0; i < placeholders.size(); i++) {
+            int placeholder = placeholders.get(i);
             sqlAppender.append(sql, index, placeholder);
-            arguments.get(i).accept(walker);
+            arguments.get(firstValue + i).accept(walker);
             index = placeholder + 1;
         }
-        if (sql.indexOf('?', index) != -1) {
-            throw new IllegalArgumentException("The SQL restriction has more ? placeholders than values: " + sql);
-        }
         sqlAppender.append(sql, index, sql.length());
+        if (SqlRestriction.endsInLineComment(sql)) {
+            sqlAppender.append('\n');
+        }
+        sqlAppender.append(')');
     }
 
     private static String tableAlias(SqlAstNode column) {
