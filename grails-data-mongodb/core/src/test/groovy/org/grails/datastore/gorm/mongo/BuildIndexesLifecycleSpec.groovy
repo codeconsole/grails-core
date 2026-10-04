@@ -176,12 +176,15 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         log?.close()
     }
 
-    void "test a domain class registered while the datastore is stopped is indexed when it is started"() {
+    void "test a domain class registered while the datastore is stopped is indexed when it is started (async: #async)"() {
         given: "a datastore stopped for a checkpoint"
-        def datastore = new MongoDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('registeredWhileStoppedDb')] as Map)
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def datastore = new MongoDatastore(['grails.mongodb.url'                       : dbContainer.getReplicaSetUrl(database),
+                                            (MongoSettings.SETTING_BUILD_INDEXES_ASYNC): async] as Map)
         datastore.start()
         datastore.stop()
-        def indexes = { -> realClient.getDatabase('registeredWhileStoppedDb').getCollection('registeredWhileStoppedThing').listIndexes()*.key }
+        def indexes = { -> realClient.getDatabase(database).getCollection('registeredWhileStoppedThing').listIndexes()*.key }
 
         when: "a domain class is registered before the restore"
         datastore.mappingContext.addPersistentEntity(RegisteredWhileStoppedThing)
@@ -193,11 +196,89 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         when: "the datastore is started after the restore"
         datastore.start()
 
-        then:
-        [name: 1] in indexes()
+        then: "it is built, rather than put off as though the datastore were still stopped"
+        conditions.eventually {
+            assert [name: 1] in indexes()
+        }
+        !deferred(log)
+
+        when: "a build is requested now that it is running"
+        datastore.buildIndex()
+
+        then: "that is not put off either"
+        !deferred(log)
 
         cleanup:
+        log?.close()
         datastore?.close()
+
+        where:
+        async << [false, true]
+        database = async ? 'registeredWhileStoppedAsyncDb' : 'registeredWhileStoppedDb'
+    }
+
+    void "test a datastore stopped before it was ever started builds its indexes when it is started (async: #async)"() {
+        given: "a datastore stopped before its first start"
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def datastore = new MongoDatastore(['grails.mongodb.url'                       : dbContainer.getReplicaSetUrl(database),
+                                            (MongoSettings.SETTING_BUILD_INDEXES_ASYNC): async] as Map, StoppedBeforeStartThing)
+        def indexes = { -> realClient.getDatabase(database).getCollection('stoppedBeforeStartThing').listIndexes()*.key }
+        datastore.stop()
+
+        when:
+        datastore.start()
+
+        then: "its indexes are built, rather than put off as though the datastore were still stopped"
+        conditions.eventually {
+            assert [name: 1] in indexes()
+        }
+        !deferred(log)
+
+        when: "a build is requested now that it is running"
+        datastore.buildIndex()
+
+        then: "that is not put off either"
+        !deferred(log)
+
+        cleanup:
+        log?.close()
+        datastore?.close()
+
+        where:
+        async << [false, true]
+        database = async ? 'stoppedBeforeStartAsyncDb' : 'stoppedBeforeStartDb'
+    }
+
+    void "test a build requested before the first start runs when the datastore starts, with index creation off"() {
+        given: "a datastore that builds no index by itself, stopped before its first start"
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def datastore = new MongoDatastore(asyncConfig('requestedBeforeStartDb') + [(MongoSettings.SETTING_BUILD_INDEXES): false],
+                RequestedBeforeStartThing)
+        def indexes = { -> realClient.getDatabase('requestedBeforeStartDb').getCollection('requestedBeforeStartThing').listIndexes()*.key }
+        datastore.stop()
+
+        when: "a build is requested while it is stopped, and it is then started"
+        datastore.buildIndex()
+        datastore.start()
+
+        then: "the requested build runs, though the startup build does not"
+        log.events.any { it.formattedMessage.contains('Index creation on startup is disabled for connection [default]') }
+        conditions.eventually {
+            assert [name: 1] in indexes()
+        }
+
+        cleanup:
+        log?.close()
+        datastore?.close()
+    }
+
+    /**
+     * Whether a build was put off until the next start, which is right only while the datastore is stopped.
+     */
+    private static boolean deferred(CapturedLog log) {
+        log.events.any { it.formattedMessage.contains('while the datastore is stopped') }
     }
 
     void "test a build on the calling thread requested after close() is refused with a warning"() {
@@ -358,6 +439,26 @@ class RegisteredWhileStoppedThing {
 
     static mapping = {
         collection 'registeredWhileStoppedThing'
+        name index: true
+    }
+}
+
+@Entity
+class RequestedBeforeStartThing {
+    String name
+
+    static mapping = {
+        collection 'requestedBeforeStartThing'
+        name index: true
+    }
+}
+
+@Entity
+class StoppedBeforeStartThing {
+    String name
+
+    static mapping = {
+        collection 'stoppedBeforeStartThing'
         name index: true
     }
 }

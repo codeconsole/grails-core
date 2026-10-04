@@ -1993,13 +1993,18 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 datastore.startClient(factory, datastore == this);
             }
             for (MongoDatastore datastore : pass) {
-                if (datastore.startupBuildDone) {
-                    datastore.resumeIndexBuild();
-                }
-                else {
+                // Before either build: one submitted to the executor stop() shut down would be put off as
+                // though the datastore were still stopped.
+                datastore.replaceStoppedIndexBuildExecutor();
+                if (!datastore.startupBuildDone) {
+                    if (datastore.buildIndexes) {
+                        // The full build does whatever a build cut short, or requested while stopped, would have.
+                        datastore.indexBuildPending = false;
+                    }
                     datastore.buildIndexAutomatically();
                     datastore.startupBuildDone = true;
                 }
+                datastore.runPendingIndexBuild();
             }
             List<MongoDatastore> next = new ArrayList<>();
             for (MongoDatastore datastore : datastoresAndChildren()) {
@@ -2090,11 +2095,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Replaces the executor {@link #stop()} shut down and runs any build it cut short. A build that was
-     * running when it was interrupted records that it was cut short as it exits, so this waits for it to
-     * have exited before deciding.
+     * Replaces the executor {@link #stop()} shut down, so that a build submitted from here on runs. A build that
+     * was running when it was interrupted records that it was cut short as it exits, so this waits for it to
+     * have exited first.
      */
-    private void resumeIndexBuild() {
+    private void replaceStoppedIndexBuildExecutor() {
         ExecutorService stopped = this.indexBuildExecutor;
         if (stopped == null || !stopped.isShutdown()) {
             // Never shut down - a connection added while the datastore was stopped - so no build of it was
@@ -2113,6 +2118,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             indexBuildPending = true;
         }
         this.indexBuildExecutor = newIndexBuildExecutor(connectionSources.getDefaultConnectionSource().getName());
+    }
+
+    /**
+     * Runs a build {@link #stop()} cut short, or one requested while the datastore was stopped.
+     */
+    private void runPendingIndexBuild() {
         if (indexBuildPending) {
             indexBuildPending = false;
             LOG.info("Resuming the index build for connection [{}] that was pending while the datastore was stopped.",
