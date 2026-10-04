@@ -129,9 +129,13 @@ public class MultiTenantEventListener implements PersistenceEventListener {
                             }
 
                             if (currentId != null) {
-                                Object existingId = preInsertEvent.getEntityAccess().getProperty(tenantId.getName());
-                                if (existingId != null) {
-                                    currentId = (Serializable) existingId;
+                                // The current tenant decides the tenant id. Only outside a tenant, with the default
+                                // connection source as the current id, is a tenant id set on the instance kept.
+                                if (ConnectionSource.DEFAULT.equals(currentId)) {
+                                    Object existingId = preInsertEvent.getEntityAccess().getProperty(tenantId.getName());
+                                    if (existingId != null) {
+                                        currentId = (Serializable) existingId;
+                                    }
                                 }
                                 if (ConnectionSource.DEFAULT.equals(currentId) && Number.class.isAssignableFrom(tenantId.getType())) {
                                     currentId = 0L;

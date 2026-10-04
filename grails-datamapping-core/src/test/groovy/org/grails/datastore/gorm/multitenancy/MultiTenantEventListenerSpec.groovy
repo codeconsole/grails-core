@@ -249,20 +249,42 @@ class MultiTenantEventListenerSpec extends Specification {
         eventType << [ValidationEvent, PreInsertEvent, PreUpdateEvent]
     }
 
-    void "onApplicationEvent PreInsertEvent prefers an already-set entity property over the resolved tenant id"() {
+    @Unroll
+    void "onApplicationEvent #eventType.simpleName replaces a tenant id already set on the entity with the current tenant id"() {
         given:
         def tenantId = Mock(TenantId) { getName() >> 'tenantId'; getType() >> String }
         def entity = Mock(PersistentEntity) { isMultiTenant() >> true; getTenantId() >> tenantId }
-        def entityAccess = Mock(EntityAccess) { getProperty('tenantId') >> 'already_set_tenant' }
-        def event = new PreInsertEvent(boundDatastore, entity, entityAccess)
+        def entityAccess = Mock(EntityAccess) { getProperty('tenantId') >> 'another_tenant' }
+        def event = eventType.getConstructor(Datastore, PersistentEntity, EntityAccess)
+                .newInstance(boundDatastore, entity, entityAccess)
 
         when:
-        CurrentTenantHolder.withTenant(boundDatastore, 'resolved_tenant') {
+        CurrentTenantHolder.withTenant(boundDatastore, 'current_tenant') {
             listener.onApplicationEvent(event)
         }
 
-        then: "the pre-existing property value wins over the resolved current tenant id"
-        1 * entityAccess.setProperty('tenantId', 'already_set_tenant')
+        then:
+        1 * entityAccess.setProperty('tenantId', 'current_tenant')
+        0 * entityAccess.setProperty('tenantId', 'another_tenant')
+
+        where:
+        eventType << [ValidationEvent, PreInsertEvent, PreUpdateEvent]
+    }
+
+    void "onApplicationEvent PreInsertEvent keeps a tenant id already set on the entity when the current id is the DEFAULT connection source"() {
+        given:
+        def tenantId = Mock(TenantId) { getName() >> 'tenantId'; getType() >> Long }
+        def entity = Mock(PersistentEntity) { isMultiTenant() >> true; getTenantId() >> tenantId }
+        def entityAccess = Mock(EntityAccess) { getProperty('tenantId') >> 55L }
+        def event = new PreInsertEvent(boundDatastore, entity, entityAccess)
+
+        when:
+        CurrentTenantHolder.withTenant(boundDatastore, ConnectionSource.DEFAULT) {
+            listener.onApplicationEvent(event)
+        }
+
+        then:
+        1 * entityAccess.setProperty('tenantId', 55L)
     }
 
     void "onApplicationEvent PreInsertEvent coerces a DEFAULT connection source id to 0L for a numeric tenant id"() {
