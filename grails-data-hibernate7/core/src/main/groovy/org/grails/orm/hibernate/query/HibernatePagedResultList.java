@@ -30,7 +30,6 @@ import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersi
 /**
  * A PagedResultList for Hibernate 7.
  *
- * @author burt
  * @since 8.0
  */
 public class HibernatePagedResultList extends grails.gorm.PagedResultList {

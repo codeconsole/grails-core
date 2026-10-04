@@ -38,7 +38,6 @@ import groovy.transform.CompileStatic
 /**
  * Enum representing the supported keywords in the Hibernate ORM mapping DSL.
  *
- * @author walter.duquedeestrada
  * @since 8.0
  */
 @CompileStatic

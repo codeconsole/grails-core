@@ -44,8 +44,6 @@ import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersi
 /**
  * A class that creates a JPA {@link CriteriaQuery} from a GORM {@link Query} and {@link DetachedCriteria}.
  *
- * @author burt
- * @author graemerocher
  * @since 8.0
  */
 public class JpaCriteriaQueryCreator<T> {

@@ -30,7 +30,6 @@ import org.grails.datastore.mapping.query.Query;
 /**
  * Adapts Grails datastore projections to JPA Selections.
  *
- * @author walterduquedeestrada
  * @since 8.0
  */
 public class JpaProjectionAdapter {

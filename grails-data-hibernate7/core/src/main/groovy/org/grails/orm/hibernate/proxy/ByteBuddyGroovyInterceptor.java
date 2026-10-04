@@ -27,7 +27,6 @@ import org.hibernate.type.CompositeType;
 /**
  * A ByteBuddy interceptor that avoids initializing the proxy for Groovy-specific methods.
  *
- * @author Graeme Rocher
  * @since 8.0
  */
 public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {

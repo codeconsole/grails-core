@@ -28,7 +28,6 @@ import org.hibernate.query.QueryFlushMode;
 /**
  * An enum that maps traditional GORM/Hibernate flush modes to Hibernate 7 {@link QueryFlushMode}.
  *
- * @author Graeme Rocher
  * @since 8.0
  */
 public enum GrailsQueryFlushMode {

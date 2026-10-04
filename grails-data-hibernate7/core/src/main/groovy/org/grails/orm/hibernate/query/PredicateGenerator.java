@@ -55,8 +55,6 @@ import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateToManyPrope
 /**
  * A class that generates predicates for a given list of criteria.
  *
- * @author walterduquedeestrada
- * @author graemerocher
  * @since 8.0
  */
 public class PredicateGenerator {

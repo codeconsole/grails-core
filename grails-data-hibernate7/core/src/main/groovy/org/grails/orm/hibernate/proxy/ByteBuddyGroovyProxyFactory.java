@@ -35,7 +35,6 @@ import static org.hibernate.internal.util.collections.ArrayHelper.EMPTY_CLASS_AR
 /**
  * A ProxyFactory implementation for ByteBuddy that uses {@link ByteBuddyGroovyInterceptor}.
  *
- * @author Graeme Rocher
  * @since 8.0
  */
 public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {

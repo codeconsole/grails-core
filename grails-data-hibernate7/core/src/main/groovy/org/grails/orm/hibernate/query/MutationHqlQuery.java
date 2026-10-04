@@ -30,7 +30,6 @@ import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersi
 /**
  * A query implementation for HQL mutation queries (UPDATE/DELETE).
  *
- * @author Graeme Rocher
  * @since 8.0
  */
 @SuppressWarnings("rawtypes")

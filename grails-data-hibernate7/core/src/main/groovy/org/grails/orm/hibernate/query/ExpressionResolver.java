@@ -22,7 +22,6 @@ import jakarta.persistence.criteria.Path;
 /**
  * Resolves string paths and aliases into JPA Expressions and Paths.
  *
- * @author walterduquedeestrada
  * @since 8.0
  */
 public class ExpressionResolver {
