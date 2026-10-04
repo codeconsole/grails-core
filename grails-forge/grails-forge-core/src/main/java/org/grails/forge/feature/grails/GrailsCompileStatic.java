@@ -55,6 +55,6 @@ public class GrailsCompileStatic implements Feature {
 
     @Override
     public String getCategory() {
-        return Category.LANGUAGES;
+        return Category.CONFIGURATION;
     }
 }
