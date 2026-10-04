@@ -349,7 +349,9 @@ version from Maven Central.
 
 ### Close out the `grails-core` release
 
-The last step in the `grails-core` release workflow is to run the `Close Release` step.  This will create a merge branch for the original tag with version number and then open a PR to merge back into the next branch.  You will need to merge this PR into the branch after correcting any merge conflict.
+The last step in the `grails-core` release workflow is to run the `Close Release` step.  This will create a merge branch for the original tag with version number and then open a PR to merge back into the next branch.  You will need to merge this PR into the branch after correcting any merge conflict.  Merge it with a merge commit, not a squash or rebase, so that the release tag becomes part of the branch history.
+
+If the post-release step fails, for example because GitHub refuses to let the workflow token push a merge branch that it considers to change a workflow file, the `Close Release` job still runs its remaining steps.  The `🩹 MANUAL - Finish post-release` step then raises a warning, and the workflow summary lists the commands to create the merge branch and PR by hand.
 
 After this PR is merged, deploy the new SNAPSHOT to Forge via https://github.com/apache/grails-core/actions/workflows/forge-deploy-aws.yml (Use workflow from the snapshot branch, slot `snapshot`).
 
