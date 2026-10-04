@@ -309,6 +309,40 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a domain class registered while a background build is running is indexed after it"() {
+        given: "a datastore that built its indexes at startup"
+        def datastore = new SerializedBuildDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('asyncResultRegisterWaitsDb')],
+                AsyncResultThing)
+        SerializedBuildDatastore.reset()
+
+        when: "a background build is under way"
+        SerializedBuildDatastore.BLOCK.set(true)
+        def background = datastore.buildIndexAsync()
+        SerializedBuildDatastore.REACHED.await(30, TimeUnit.SECONDS)
+
+        and: "another domain class is registered on another thread"
+        def registered = new CountDownLatch(1)
+        Thread.start { datastore.mappingContext.addPersistentEntity(AsyncResultLateThing); registered.countDown() }
+
+        then: "its indexes are not applied while the background build is running"
+        !registered.await(1, TimeUnit.SECONDS)
+        SerializedBuildDatastore.ENTERED.get() == 1
+
+        when:
+        SerializedBuildDatastore.RELEASE.countDown()
+
+        then: "both ran, one after the other"
+        background.get(30, TimeUnit.SECONDS).failures() == 0
+        registered.await(30, TimeUnit.SECONDS)
+        SerializedBuildDatastore.ENTERED.get() == 2
+        SerializedBuildDatastore.MOST_AT_ONCE.get() == 1
+        [label: 1] in indexKeys('asyncResultRegisterWaitsDb', 'asyncResultLateThing')
+
+        cleanup:
+        SerializedBuildDatastore.RELEASE?.countDown()
+        datastore?.close()
+    }
+
     private static MongoWriteConcernException writeConcernFailure() {
         new MongoWriteConcernException(new WriteConcernError(64, 'WriteConcernFailed', 'waiting for replication timed out',
                 new BsonDocument()), new ServerAddress())
@@ -440,6 +474,18 @@ class AsyncResultThing {
         collection 'asyncResultThing'
         name index: true
         compoundIndex([code: 1, name: -1])
+    }
+}
+
+@Entity
+class AsyncResultLateThing {
+
+    String label
+
+    static mapping = {
+        version false
+        collection 'asyncResultLateThing'
+        label index: true
     }
 }
 

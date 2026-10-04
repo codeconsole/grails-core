@@ -218,8 +218,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private volatile ExecutorService indexBuildExecutor;
 
     /**
-     * Held for the whole of every build on this connection, on the background thread or a caller's, so that a
-     * synchronous {@link #buildIndex()} and a background build never apply declarations at the same time: two
+     * Held for the whole of every build on this connection, on the background thread or a caller's, and while a
+     * domain class registered after startup is indexed, so that no two apply declarations at the same time: two
      * {@code recreateOnConflict} drop-and-recreate sequences on one index would undo each other.
      */
     private final ReentrantLock indexBuildLock = new ReentrantLock();
@@ -719,7 +719,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * {@code grails.mongodb.buildIndexesAsync} enabled the work goes to a background thread and this
      * returns immediately instead. {@link #buildIndexAsync()} runs it in the background whatever the setting,
      * and reports the outcome to its caller. Builds on a connection run one at a time, wherever they run: a
-     * build on the calling thread first waits for one running in the background, and the other way round.
+     * build on the calling thread first waits for one running in the background, and the other way round, and a
+     * domain class registered after startup is indexed once neither is running.
      */
     public void buildIndex() {
         String connection = connectionName();
@@ -757,7 +758,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * lost connection or a write concern the server could not satisfy. Created and already-present indexes are always told apart, whatever the log level.
      *
      * <p>Builds on a connection run one at a time, so a build requested while another is running waits for it,
-     * including one running on a caller's thread with {@link #buildIndex()}.
+     * including one running on a caller's thread with {@link #buildIndex()}, or one indexing a domain class
+     * registered after startup.
      * Cancelling the future does not stop the build. If the datastore is stopped or closed, the future completes
      * exceptionally at once, and a build that stopping or closing the datastore cuts short completes
      * exceptionally too; a restart runs the cut-short build again, without a future. Each named connection
@@ -2313,7 +2315,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         if (!isIndexedHere(entity)) {
             return;
         }
-        initializeIndices(entity);
+        // After any build running on this connection, as every build on it is: two at once could each drop and
+        // recreate the same index.
+        lockIndexBuild();
+        try {
+            initializeIndices(entity);
+        }
+        finally {
+            indexBuildLock.unlock();
+        }
     }
 
     /**

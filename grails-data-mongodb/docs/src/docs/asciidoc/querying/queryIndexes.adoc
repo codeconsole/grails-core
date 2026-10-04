@@ -280,7 +280,7 @@ Two consequences are worth planning for:
 * A query issued before its index has been built is served without it — correctly, but with the performance of an unindexed query. The same applies to a `unique` index: it constrains nothing until the build finishes.
 * Because startup no longer waits, an error that stops the build, such as a lost connection, can no longer fail startup. It is logged at error level, and the application runs without the indexes the build had not reached. With the default synchronous build that error propagates and the application does not start. A declaration the server refuses, such as a `unique` index over duplicate values, fails startup with neither setting: it is logged and counted, and the build goes on. To refuse to start without it, see <<buildIndexesOnDemand,Building Indexes on Demand>>.
 
-The setting also applies with `buildIndexes` set to `false`, to the builds the application starts with `buildIndex()`. A domain class registered after startup is indexed on the thread registering it, and only when it is mapped to the default connection.
+The setting also applies with `buildIndexes` set to `false`, to the builds the application starts with `buildIndex()`. A domain class registered after startup is indexed on the thread registering it, once any build running on the connection has finished, and only when it is mapped to the default connection.
 
 NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for. A datastore stopped for a checkpoint and restored (with CRaC) runs a build it cut short again once it is restarted, on every connection, and logs that it is resuming it.
 
