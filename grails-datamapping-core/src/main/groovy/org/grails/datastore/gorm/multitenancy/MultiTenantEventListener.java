@@ -40,6 +40,7 @@ import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.datastore.mapping.model.types.TenantId;
 import org.grails.datastore.mapping.multitenancy.MultiTenantCapableDatastore;
 import org.grails.datastore.mapping.multitenancy.exceptions.TenantException;
+import org.grails.datastore.mapping.multitenancy.exceptions.TenantNotFoundException;
 import org.grails.datastore.mapping.query.Query;
 import org.grails.datastore.mapping.query.event.PreQueryEvent;
 
@@ -138,6 +139,8 @@ public class MultiTenantEventListener implements PersistenceEventListener {
                                 }
                                 preInsertEvent.getEntityAccess().setProperty(tenantId.getName(), currentId);
                             }
+                        } catch (TenantNotFoundException e) {
+                            throw e;
                         } catch (Exception e) {
                             throw new TenantException("Could not assigned tenant id [" + currentId + "] to property [" + tenantId + "], probably due to a type mismatch. You should return a type from the tenant resolver that matches the property type of the tenant id!: " + e.getMessage(), e);
                         }
