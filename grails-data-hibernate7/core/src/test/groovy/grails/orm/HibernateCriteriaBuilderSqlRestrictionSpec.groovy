@@ -1,0 +1,272 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package grails.orm
+
+import org.hibernate.resource.jdbc.spi.StatementInspector
+import org.springframework.transaction.PlatformTransactionManager
+import spock.lang.AutoCleanup
+import spock.lang.Shared
+import spock.lang.Specification
+
+import grails.gorm.annotation.Entity
+import grails.gorm.transactions.Rollback
+import org.grails.datastore.mapping.core.DatastoreUtils
+import org.grails.orm.hibernate.HibernateDatastore
+import org.grails.orm.hibernate.cfg.Settings
+
+class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
+
+    @Shared
+    SqlRestrictionCapture sqlCapture = new SqlRestrictionCapture()
+
+    @Shared
+    @AutoCleanup
+    HibernateDatastore hibernateDatastore = new HibernateDatastore(
+            DatastoreUtils.createPropertyResolver(
+                    (Settings.SETTING_DB_CREATE): 'create-drop',
+                    'hibernate.session_factory.statement_inspector': sqlCapture
+            ),
+            SqlRestrictionAuthor, SqlRestrictionBook, SqlRestrictionChapter, SqlRestrictionEdition,
+            SqlRestrictionPrinting, SqlRestrictionShape, SqlRestrictionCircle
+    )
+
+    @Shared
+    PlatformTransactionManager transactionManager = hibernateDatastore.transactionManager
+
+    void setup() {
+        sqlCapture.statements.clear()
+    }
+
+    @Rollback
+    void 'the condition is rendered as is, with {alias} replaced and the values bound'() {
+        given:
+        saveBooks()
+
+        when:
+        List<SqlRestrictionBook> books = SqlRestrictionBook.createCriteria().list {
+            sqlRestriction('length({alias}.title) < ? and {alias}.pages > ?', [7, 300])
+        }
+        String sql = sqlCapture.statements.find { it.contains('length(') }
+
+        then:
+        books*.title == ['Dune']
+        sql =~ /where length\((\w+)\.title\) < \? and \1\.pages > \?$/
+    }
+
+    @Rollback
+    void 'a condition without values'() {
+        given:
+        saveBooks()
+
+        expect:
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction('{alias}.pages > 300')
+        }*.title == ['Dune']
+    }
+
+    @Rollback
+    void '{alias} stands for the queried entity when a join adds a column with the same name'() {
+        given:
+        saveBooks()
+
+        expect:
+        SqlRestrictionBook.createCriteria().listDistinct {
+            chapters {
+                eq('title', 'Prologue')
+            }
+            sqlRestriction('{alias}.title = ?', ['Dune'])
+        }*.title == ['Dune']
+    }
+
+    @Rollback
+    void 'inside an association block {alias} stands for the association'() {
+        given:
+        saveBooks()
+
+        expect:
+        SqlRestrictionBook.createCriteria().listDistinct {
+            chapters {
+                sqlRestriction('{alias}.title = ?', ['Epilogue'])
+            }
+        }*.title == ['Emma']
+    }
+
+    @Rollback
+    void 'a condition combined with not, or and count'() {
+        given:
+        saveBooks()
+
+        expect:
+        SqlRestrictionBook.createCriteria().list {
+            not {
+                sqlRestriction('{alias}.pages > ?', [300])
+            }
+        }*.title.sort() == ['Emma', 'Ulysses']
+        SqlRestrictionBook.createCriteria().list {
+            or {
+                sqlRestriction('{alias}.pages > ?', [300])
+                eq('title', 'Emma')
+            }
+        }*.title.sort() == ['Dune', 'Emma']
+        SqlRestrictionBook.createCriteria().count {
+            sqlRestriction('{alias}.pages < ?', [300])
+        } == 2
+    }
+
+    @Rollback
+    void 'an entity with a composite identifier'() {
+        given:
+        new SqlRestrictionEdition(isbn: '978-0', number: 1, label: 'first').save()
+        new SqlRestrictionEdition(isbn: '978-0', number: 2, label: 'second').save(flush: true)
+
+        expect:
+        SqlRestrictionEdition.createCriteria().list {
+            sqlRestriction('{alias}.label = ?', ['second'])
+        }*.number == [2]
+    }
+
+    @Rollback
+    void 'an entity whose composite identifier starts with an association'() {
+        given:
+        SqlRestrictionAuthor author = new SqlRestrictionAuthor(name: 'Austen').save()
+        new SqlRestrictionPrinting(author: author, code: 'A', place: 'London').save()
+        new SqlRestrictionPrinting(author: author, code: 'B', place: 'Bath').save(flush: true)
+
+        expect:
+        SqlRestrictionPrinting.createCriteria().list {
+            sqlRestriction('{alias}.place = ?', ['Bath'])
+        }*.code == ['B']
+    }
+
+    @Rollback
+    void 'a subclass mapped to its own table'() {
+        given:
+        new SqlRestrictionShape(name: 'square').save()
+        new SqlRestrictionCircle(name: 'small', radius: 1).save()
+        new SqlRestrictionCircle(name: 'large', radius: 10).save(flush: true)
+
+        expect: '{alias} stands for the table of the queried class'
+        SqlRestrictionCircle.createCriteria().list {
+            sqlRestriction('{alias}.radius > ?', [5])
+        }*.name == ['large']
+    }
+
+    void 'the number of ? placeholders must match the number of values'() {
+        when:
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction(sql, values)
+        }
+
+        then:
+        IllegalArgumentException e = thrown()
+        e.message.contains(message)
+
+        where:
+        sql                 | values || message
+        '{alias}.pages > ?' | []     || 'has 1 ? placeholders but 0 values'
+        '{alias}.pages > ?' | [1, 2] || 'has 1 ? placeholders but 2 values'
+        '{alias}.pages > 1' | [1]    || 'has 0 ? placeholders but 1 values'
+    }
+
+    void 'a null value is rejected'() {
+        when:
+        SqlRestrictionBook.createCriteria().list {
+            sqlRestriction('{alias}.title = ?', [null])
+        }
+
+        then:
+        IllegalArgumentException e = thrown()
+        e.message.contains('must not be null')
+    }
+
+    private static void saveBooks() {
+        new SqlRestrictionBook(title: 'Dune', pages: 412).addToChapters(title: 'Prologue').save()
+        new SqlRestrictionBook(title: 'Emma', pages: 250).addToChapters(title: 'Epilogue').save()
+        new SqlRestrictionBook(title: 'Ulysses', pages: 120).save(flush: true)
+    }
+}
+
+class SqlRestrictionCapture implements StatementInspector {
+
+    final List<String> statements = Collections.synchronizedList([])
+
+    @Override
+    String inspect(String sql) {
+        statements << sql
+        sql
+    }
+}
+
+@Entity
+class SqlRestrictionBook {
+
+    String title
+    Integer pages
+    static hasMany = [chapters: SqlRestrictionChapter]
+}
+
+@Entity
+class SqlRestrictionChapter {
+
+    String title
+    static belongsTo = [book: SqlRestrictionBook]
+}
+
+@Entity
+class SqlRestrictionEdition implements Serializable {
+
+    String isbn
+    Integer number
+    String label
+    static mapping = {
+        id(composite: ['isbn', 'number'])
+    }
+}
+
+@Entity
+class SqlRestrictionAuthor {
+
+    String name
+}
+
+@Entity
+class SqlRestrictionPrinting implements Serializable {
+
+    SqlRestrictionAuthor author
+    String code
+    String place
+    static mapping = {
+        id(composite: ['author', 'code'])
+    }
+}
+
+@Entity
+class SqlRestrictionShape {
+
+    String name
+    static mapping = {
+        tablePerHierarchy(false)
+    }
+}
+
+@Entity
+class SqlRestrictionCircle extends SqlRestrictionShape {
+
+    Integer radius
+}

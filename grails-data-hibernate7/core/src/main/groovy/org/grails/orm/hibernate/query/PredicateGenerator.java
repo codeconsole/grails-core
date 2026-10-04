@@ -18,6 +18,7 @@
  */
 package org.grails.orm.hibernate.query;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -33,6 +34,7 @@ import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.ParameterExpression;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 
@@ -45,6 +47,7 @@ import grails.gorm.DetachedCriteria;
 import org.grails.datastore.gorm.query.criteria.DetachedAssociationCriteria;
 import org.grails.datastore.mapping.core.exceptions.ConfigurationException;
 import org.grails.datastore.mapping.model.PersistentProperty;
+import org.grails.datastore.mapping.model.types.Association;
 import org.grails.datastore.mapping.query.Projections;
 import org.grails.datastore.mapping.query.Query;
 import org.grails.datastore.mapping.query.api.QueryableCriteria;
@@ -190,7 +193,9 @@ public class PredicateGenerator {
             }
         }
 
-        if (criterion instanceof Query.Junction junction) {
+        if (criterion instanceof SqlRestriction sqlRestriction) {
+            return handleSqlRestriction(root, fromsByProvider, entity, sqlRestriction);
+        } else if (criterion instanceof Query.Junction junction) {
             return handleJunction(criteriaQuery, root, fromsByProvider, entity, junction);
         } else if (criterion instanceof Query.DistinctProjection) {
             return criteriaBuilder.conjunction();
@@ -446,6 +451,38 @@ public class PredicateGenerator {
         }
 
         throw new UnsupportedOperationException("Unsupported criterion: " + pc.getClass().getName());
+    }
+
+    /**
+     * Returns a column of the entity's own table, whose table alias replaces {@code {alias}} in a SQL restriction.
+     */
+    private static Expression<?> aliasColumn(From<?, ?> root, GrailsHibernatePersistentEntity entity) {
+        PersistentProperty identity = entity.getIdentity();
+        if (identity == null) {
+            HibernatePersistentProperty[] compositeIdentity = entity.getCompositeIdentity();
+            if (compositeIdentity == null || compositeIdentity.length == 0) {
+                throw new ConfigurationException("Cannot use sqlRestriction on class [" + entity.getJavaClass().getName() + "] without an identifier");
+            }
+            identity = compositeIdentity[0];
+        }
+        Path<?> path = root.get(identity.getName());
+        if (identity instanceof Association<?> association && association.getAssociatedEntity() != null) {
+            path = path.get(association.getAssociatedEntity().getIdentity().getName());
+        }
+        return path;
+    }
+
+    private Predicate handleSqlRestriction(From<?, ?> root, JpaQueryContext context, GrailsHibernatePersistentEntity entity, SqlRestriction restriction) {
+        List<Expression<?>> arguments = new ArrayList<>();
+        arguments.add(criteriaBuilder.literal(restriction.sql()));
+        arguments.add(aliasColumn(root, entity));
+        for (Object value : restriction.values()) {
+            ParameterExpression<?> parameter = criteriaBuilder.parameter(value.getClass());
+            context.bindParameter(parameter, value);
+            arguments.add(parameter);
+        }
+        return criteriaBuilder.isTrue(criteriaBuilder.function(
+                GrailsSqlRestrictionFunction.NAME, Boolean.class, arguments.toArray(new Expression<?>[0])));
     }
 
     private Predicate handleRLike(Expression<String> propertyPath, Query.RLike c) {
