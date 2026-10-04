@@ -1035,7 +1035,8 @@
                         <div id="filters-list">
                             <ul class="list-group list-group-flush">
                                 <g:each var="f" in="${servletFilters}" status="fi">
-                                    <g:set var="fSimpleName" value="${f.className.tokenize('.').last() ?: f.name}"/>
+                                    <%-- Lambda and anonymous filter classes have no readable simple name. --%>
+                                    <g:set var="fSimpleName" value="${f.className && !f.className.contains('$') ? f.className.tokenize('.').last() : f.name}"/>
                                     <g:set var="fPackage" value="${f.className.contains('.') ? f.className.substring(0, f.className.lastIndexOf('.')) : ''}"/>
                                     <g:set var="fMappings" value="${f.mappings}"/>
                                     <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2"
