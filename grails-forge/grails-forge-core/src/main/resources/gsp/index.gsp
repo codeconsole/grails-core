@@ -583,6 +583,9 @@
                      per map, URL-pattern maps first, numbered in that order: a filter mapped
                      more than once can run at a different position for different requests.
                      A bare `*` is held in the match-all flags rather than in the arrays.
+                     Tomcat also skips a map that is not for the request's dispatcher type, and
+                     a map that states none is for REQUEST, so a map that leaves out REQUEST is
+                     badged with the dispatcher types it is for.
                      Other containers expose no order, so list Spring Boot's enabled
                      registrations in the order it registers them, then the container's other
                      filters, all unnumbered. --%>
@@ -604,7 +607,8 @@
                                            mappings << '*'
                                        }
                                        mappings.addAll(values as List)
-                                       [name: fm.filterName, className: tomcatContext.findFilterDef(fm.filterName)?.filterClass ?: '', mappings: mappings]
+                                       [name: fm.filterName, className: tomcatContext.findFilterDef(fm.filterName)?.filterClass ?: '', mappings: mappings,
+                                        dispatchers: (fm.dispatcherNames as List) ?: ['REQUEST']]
                                    }
                                    List byUrl = maps.findAll { it.matchAllUrlPatterns || it.URLPatterns }
                                            .collect { fm -> row(fm, fm.matchAllUrlPatterns, fm.URLPatterns) }
@@ -621,14 +625,16 @@
                                                def rb = (org.springframework.boot.web.servlet.AbstractFilterRegistrationBean) initializer
                                                List servletNames = (rb.servletNames as List) + rb.servletRegistrationBeans*.servletName
                                                List urlPatterns = (rb.urlPatterns || servletNames) ? rb.urlPatterns as List : ['/*']
-                                               [name: rb.filterName, className: rb.filter?.getClass()?.name ?: '', mappings: urlPatterns + servletNames]
+                                               [name: rb.filterName, className: rb.filter?.getClass()?.name ?: '', mappings: urlPatterns + servletNames,
+                                                dispatchers: rb.determineDispatcherTypes()*.name()]
                                            }
                                    Set springNames = springFilters*.name as Set
                                    [[code: null, rows: springFilters + request.servletContext.filterRegistrations.values()
                                            .findAll { !(it.name in springNames) }
                                            .sort { it.name.toLowerCase() }
                                            .collect { reg ->
-                                               [name: reg.name, className: reg.className ?: '', mappings: reg.urlPatternMappings + reg.servletNameMappings]
+                                               [name: reg.name, className: reg.className ?: '', mappings: reg.urlPatternMappings + reg.servletNameMappings,
+                                                dispatchers: []]
                                            }]]
                                }()).findAll { it.rows }}"/>
                 <g:def type="int" var="numServletFilters" value="${(servletFilterGroups.sum { g -> g.rows.size() } ?: 0)}"/>
@@ -1053,13 +1059,16 @@
                                             <g:set var="fSimpleName" value="${f.className && !f.className.contains('$') ? f.className.tokenize('.').last() : f.name}"/>
                                             <g:set var="fPackage" value="${f.className.contains('.') ? f.className.substring(0, f.className.lastIndexOf('.')) : ''}"/>
                                             <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2"
-                                                data-name="${fSimpleName} ${f.name} ${fPackage} ${f.mappings.join(' ')}" title="${f.name} (${f.className})">
+                                                data-name="${fSimpleName} ${f.name} ${fPackage} ${f.mappings.join(' ')} ${f.dispatchers.join(' ')}" title="${f.name} (${f.className})">
                                                 <span class="d-flex align-items-center gap-2 min-w-0">
                                                     <g:if test="${f.position}">
                                                         <span class="small text-body-secondary" style="font-variant-numeric: tabular-nums;">${f.position.toString().padLeft(2, '0')}</span>
                                                     </g:if>
                                                     <span class="fw-semibold text-body text-truncate">${fSimpleName}</span>
                                                     <span class="small text-nowrap"><g:each var="m" in="${f.mappings}"><code class="me-1">${m}</code></g:each></span>
+                                                    <g:if test="${f.dispatchers && !f.dispatchers.contains('REQUEST')}">
+                                                        <span class="text-nowrap" title="${message(code: 'welcome.filters.dispatchers')}"><g:each var="d" in="${f.dispatchers}"><span class="badge bg-body-tertiary text-body-secondary border fw-normal me-1">${d}</span></g:each></span>
+                                                    </g:if>
                                                 </span>
                                                 <span class="small text-body-secondary text-truncate">${fPackage}</span>
                                             </li>

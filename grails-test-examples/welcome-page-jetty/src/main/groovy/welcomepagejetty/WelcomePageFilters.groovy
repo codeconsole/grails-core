@@ -47,6 +47,9 @@ class UrlFilter extends PassThroughFilter {}
 class DisabledFilter extends PassThroughFilter {}
 
 @CompileStatic
+class ErrorOnlyFilter extends PassThroughFilter {}
+
+@CompileStatic
 class ContainerFilter extends PassThroughFilter {}
 
 /**

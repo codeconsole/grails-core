@@ -59,13 +59,17 @@ class WelcomePageFiltersJettySpec extends Specification {
         and: 'a filter mapped through a servlet registration shows the servlet name rather than /*'
         rows.find { it.name == 'servletMappedFilter' }.mappings == [dispatcherServletRegistration.servletName]
 
+        and: 'a registration that leaves out REQUEST is badged with the dispatcher types it is for, and one for REQUEST is not'
+        rows.find { it.name == 'errorOnlyFilter' }.dispatchers == ['ERROR']
+        rows.find { it.name == 'urlFilter' }.dispatchers == []
+
         and: 'a disabled registration, which the container never sees, is not listed'
         !names.contains('disabledFilter')
     }
 
     /**
      * The rows of the Servlet Filters panel: the group heading each sits under, its position, its
-     * registration name and its mappings.
+     * registration name, its mappings and the dispatcher types it is badged with.
      */
     static List<Map> filterRows(String page) {
         int start = page.indexOf('id="filters-list"')
@@ -82,7 +86,8 @@ class WelcomePageFiltersJettySpec extends Specification {
             rows << [group   : group,
                      position: position ? position[0][1] as int : null,
                      name    : title.substring(0, title.lastIndexOf(' (')),
-                     mappings: (match[2] =~ /<code class="me-1">(.*?)<\/code>/).collect { it[1] }]
+                     mappings: (match[2] =~ /<code class="me-1">(.*?)<\/code>/).collect { it[1] },
+                     dispatchers: (match[2] =~ /<span class="badge[^"]*">([A-Z]+)<\/span>/).collect { it[1] }]
         }
         rows
     }

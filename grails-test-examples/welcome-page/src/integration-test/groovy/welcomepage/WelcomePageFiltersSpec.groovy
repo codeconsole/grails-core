@@ -63,13 +63,17 @@ class WelcomePageFiltersSpec extends Specification {
         and: 'a filter added straight to the container is listed with its own mapping'
         byUrl.find { it.name == 'containerFilter' }.mappings == ['/container/*']
 
+        and: 'a map that leaves out REQUEST is badged with the dispatcher types it is for, and one for REQUEST is not'
+        byUrl.find { it.name == 'errorOnlyFilter' }.dispatchers == ['ERROR']
+        byUrl.find { it.name == 'urlFilter' }.dispatchers == []
+
         and: 'a disabled registration never reaches the container'
         !rows.any { it.name == 'disabledFilter' }
     }
 
     /**
      * The rows of the Servlet Filters panel: the group heading each sits under, its position, its
-     * registration name and its mappings.
+     * registration name, its mappings and the dispatcher types it is badged with.
      */
     static List<Map> filterRows(String page) {
         int start = page.indexOf('id="filters-list"')
@@ -86,7 +90,8 @@ class WelcomePageFiltersSpec extends Specification {
             rows << [group   : group,
                      position: position ? position[0][1] as int : null,
                      name    : title.substring(0, title.lastIndexOf(' (')),
-                     mappings: (match[2] =~ /<code class="me-1">(.*?)<\/code>/).collect { it[1] }]
+                     mappings: (match[2] =~ /<code class="me-1">(.*?)<\/code>/).collect { it[1] },
+                     dispatchers: (match[2] =~ /<span class="badge[^"]*">([A-Z]+)<\/span>/).collect { it[1] }]
         }
         rows
     }

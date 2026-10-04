@@ -17,10 +17,13 @@
  *  under the License.
  */
 
+import jakarta.servlet.DispatcherType
+
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 
 import welcomepagejetty.ContainerFilterInitializer
 import welcomepagejetty.DisabledFilter
+import welcomepagejetty.ErrorOnlyFilter
 import welcomepagejetty.ServletMappedFilter
 import welcomepagejetty.UrlFilter
 
@@ -34,6 +37,12 @@ beans = {
         filter = new ServletMappedFilter()
         servletRegistrationBeans = [ref('dispatcherServletRegistration')]
         order = 200
+    }
+    errorOnlyFilter(FilterRegistrationBean) {
+        filter = new ErrorOnlyFilter()
+        urlPatterns = ['/*']
+        dispatcherTypes = EnumSet.of(DispatcherType.ERROR)
+        order = 400
     }
     disabledFilter(FilterRegistrationBean) {
         filter = new DisabledFilter()
