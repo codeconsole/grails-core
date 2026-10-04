@@ -1097,6 +1097,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     public List<MissingIndex> findMissingIndexes() {
         List<MissingIndex> missing = new ArrayList<>();
         for (Map.Entry<MongoNamespace, CollectionDeclarations> entry : declarationsByCollection().entrySet()) {
+            if (entry.getValue().declarations().isEmpty()) {
+                continue;
+            }
             MongoNamespace namespace = entry.getKey();
             List<Document> existing = entry.getValue().collection().listIndexes().into(new ArrayList<>());
             List<Document> reported = new ArrayList<>();

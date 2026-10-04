@@ -20,12 +20,14 @@ package org.grails.datastore.gorm.mongo
 
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
+import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.IndexOptions
 import grails.gorm.annotation.Entity
 import org.bson.Document
 import spock.lang.Shared
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.mongo.MissingIndex
 import org.grails.datastore.mapping.mongo.MongoDatastore
@@ -140,6 +142,29 @@ class MissingIndexesSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a collection whose classes declare no index is not listed"() {
+        given:
+        List<String> listed = []
+        MongoClient counting = FailingMongoClient.wrap(realClient, 'listIndexes') { Closure proceed, target ->
+            listed << (target as MongoCollection).namespace.collectionName
+            proceed()
+        }
+        def datastore = new MongoDatastore(counting, DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.databaseName'        : 'missingUndeclaringDb',
+                (MongoSettings.SETTING_BUILD_INDEXES): false
+        ]), MissingIndexesThing, MissingIndexesNothingDeclared)
+
+        when:
+        datastore.findMissingIndexes()
+
+        then:
+        'missingIndexesThing' in listed
+        !('missingIndexesNothingDeclared' in listed)
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test keys declared by several classes mapped to one collection are reported once"() {
         given:
         def datastore = new MongoDatastore(config('missingSharedDb'), MissingIndexesSharedA, MissingIndexesSharedB,
@@ -213,6 +238,17 @@ class MissingIndexesThing {
         code index: true, indexAttributes: [unique: true, sparse: true]
         description index: true, indexAttributes: [type: 'text']
         compoundIndex([code: 1, name: -1])
+    }
+}
+
+@Entity
+class MissingIndexesNothingDeclared {
+
+    String name
+
+    static mapping = {
+        version false
+        collection 'missingIndexesNothingDeclared'
     }
 }
 
