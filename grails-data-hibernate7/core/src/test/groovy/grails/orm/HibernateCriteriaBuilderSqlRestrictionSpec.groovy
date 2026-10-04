@@ -18,12 +18,15 @@
  */
 package grails.orm
 
+import org.codehaus.groovy.runtime.GroovyCategorySupport
 import org.hibernate.resource.jdbc.spi.StatementInspector
+import org.springframework.dao.InvalidDataAccessResourceUsageException
 import org.springframework.transaction.PlatformTransactionManager
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
 
+import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity
 import grails.gorm.transactions.Rollback
 import org.grails.datastore.mapping.core.DatastoreUtils
@@ -210,6 +213,105 @@ class HibernateCriteriaBuilderSqlRestrictionSpec extends Specification {
                 eq('title', 'Dune')
             }
         } == ['Dune', 'Emma']
+    }
+
+    @Rollback
+    void 'a junction does not use a Groovy category, which would invalidate the call sites of every thread'() {
+        given:
+        saveBooks()
+        List<Boolean> categoryInUse = []
+
+        when:
+        List<String> found = titles {
+            or {
+                categoryInUse << GroovyCategorySupport.hasCategoryInAnyThread()
+                chapters {
+                    categoryInUse << GroovyCategorySupport.hasCategoryInAnyThread()
+                    sqlRestriction('{alias}.title = ?', ['Epilogue'])
+                }
+                and {
+                    categoryInUse << GroovyCategorySupport.hasCategoryInAnyThread()
+                    eq('title', 'Dune')
+                }
+            }
+            not {
+                categoryInUse << GroovyCategorySupport.hasCategoryInAnyThread()
+                eq('title', 'Ulysses')
+            }
+        }
+
+        then:
+        found == ['Dune', 'Emma']
+        categoryInUse == [false, false, false, false]
+    }
+
+    @Rollback
+    void 'a detached criteria'() {
+        given:
+        saveBooks()
+        DetachedCriteria<SqlRestrictionBook> longBooks = new DetachedCriteria(SqlRestrictionBook).build {
+            sqlRestriction('{alias}.pages > ?', [200])
+        }
+
+        expect:
+        longBooks.list()*.title.sort() == ['Dune', 'Emma']
+        longBooks.count() == 2
+        longBooks.list { eq('title', 'Emma') }*.title == ['Emma']
+        new DetachedCriteria(SqlRestrictionBook).build {
+            sqlRestriction('{alias}.title = ?', ['Dune'])
+        }.get().pages == 412
+        new DetachedCriteria(SqlRestrictionBook).build {
+            chapters {
+                sqlRestriction('{alias}.title = ?', ['Epilogue'])
+            }
+        }.list()*.title == ['Emma']
+        new DetachedCriteria(SqlRestrictionBook).build {
+            or {
+                sqlRestriction('{alias}.pages < ?', [200])
+                eq('title', 'Dune')
+            }
+        }.list()*.title.sort() == ['Dune', 'Ulysses']
+    }
+
+    @Rollback
+    void 'a detached criteria as a subquery, where {alias} stands for the entity of the subquery'() {
+        given:
+        saveBooks()
+        DetachedCriteria<SqlRestrictionChapter> epilogueBookIds = new DetachedCriteria(SqlRestrictionChapter).build {
+            sqlRestriction('{alias}.title = ?', ['Epilogue'])
+            projections {
+                property('book.id')
+            }
+        }
+
+        expect:
+        SqlRestrictionBook.createCriteria().list {
+            inList('id', epilogueBookIds)
+        }*.title == ['Emma']
+    }
+
+    @Rollback
+    void 'a batch operation on a detached criteria does not support a condition'() {
+        given:
+        saveBooks()
+        DetachedCriteria<SqlRestrictionBook> longBooks = new DetachedCriteria(SqlRestrictionBook).build {
+            sqlRestriction('{alias}.pages > ?', [200])
+        }
+
+        when:
+        longBooks.updateAll(pages: 1)
+
+        then:
+        InvalidDataAccessResourceUsageException updateFailure = thrown()
+        updateFailure.message.contains('SqlRestriction')
+
+        when:
+        longBooks.deleteAll()
+
+        then:
+        InvalidDataAccessResourceUsageException deleteFailure = thrown()
+        deleteFailure.message.contains('SqlRestriction')
+        SqlRestrictionBook.list()*.pages.sort() == [120, 250, 412]
     }
 
     @Rollback

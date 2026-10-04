@@ -215,6 +215,8 @@ def peopleWithShortFirstNames = c.list {
 
 Inside an association block, such as `pets { ... }`, the condition restricts the association, as the other criteria in the block do, and `{alias}` stands for the table alias of the association instead. This includes an association block inside an `and`, `or` or `not` block.
 
+A <<querying-detachedCriteria,detached criteria>> accepts `sqlRestriction` too.
+
 ==== Setting Properties in the Criteria Instance
 
 
