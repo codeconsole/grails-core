@@ -321,6 +321,22 @@ class UndeclaredIndexesSpec extends AutoStartedMongoSpec {
         datastore?.close()
     }
 
+    void "test a class registered after startup is not indexed by a connection it is not mapped to"() {
+        given:
+        def datastore = new MongoDatastore(config('undeclaredLateDefaultDb', [
+                'grails.mongodb.connections': [reporting: [url: dbContainer.getReplicaSetUrl('undeclaredLateReportingDb')]]
+        ]), UndeclaredIndexesDefaultOnlyThing).tap { start() }
+
+        when: "a class mapped only to reporting is registered"
+        datastore.mappingContext.addPersistentEntity(UndeclaredIndexesLateReportingThing)
+
+        then: "the default connection creates nothing for it, under its mapped name or the class's"
+        !realClient.getDatabase('undeclaredLateDefaultDb').listCollectionNames().any { it.startsWith('undeclaredIndexesLateReporting') }
+
+        cleanup:
+        datastore?.close()
+    }
+
     void "test a connection covers only the collections of the classes mapped to it"() {
         given: "a class mapped to the default connection, one mapped to reporting, and one mapped to both"
         def datastore = new MongoDatastore(config('undeclaredOwnDefaultDb', [
@@ -490,6 +506,18 @@ class UndeclaredIndexesLateElsewhereThing {
     static mapping = {
         collection 'undeclaredIndexesLateElsewhere'
         database 'undeclaredLateElsewhereDb'
+        name index: true
+    }
+}
+
+@Entity
+class UndeclaredIndexesLateReportingThing {
+
+    String name
+
+    static mapping = {
+        collection 'undeclaredIndexesLateReporting'
+        connection 'reporting'
         name index: true
     }
 }

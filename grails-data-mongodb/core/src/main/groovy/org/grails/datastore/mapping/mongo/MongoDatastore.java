@@ -1030,21 +1030,27 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * The entities whose declared indexes this datastore builds: those mapped to its connection. Every connection
-     * shares one mapping context, so an entity mapped only to another connection is in it too.
+     * The entities whose declared indexes this datastore builds.
      */
     private List<PersistentEntity> indexedEntities() {
-        String connection = connectionName();
         List<PersistentEntity> entities = new ArrayList<>();
         for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
-            // Only create Mongo templates for entities that are mapped with Mongo
-            if (!entity.isExternal() &&
-                    !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA) &&
-                    ConnectionSourcesSupport.usesConnectionSource(entity, connection)) {
+            if (isIndexedHere(entity)) {
                 entities.add(entity);
             }
         }
         return entities;
+    }
+
+    /**
+     * Whether this datastore builds an entity's declared indexes: an entity mapped with Mongo, outside schema
+     * multi-tenancy, to this datastore's connection. Every connection shares one mapping context, so an entity
+     * mapped only to another connection is in it too.
+     */
+    private boolean isIndexedHere(PersistentEntity entity) {
+        return !entity.isExternal() &&
+                !(entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA) &&
+                ConnectionSourcesSupport.usesConnectionSource(entity, connectionName());
     }
 
     /**
@@ -2302,6 +2308,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         if (!buildIndexes) {
             LOG.debug("Index creation is disabled for connection [{}] by [{} = false]. Skipping the indexes declared " +
                     "by entity [{}].", connectionName(), buildIndexesSettingName(), entity.getName());
+            return;
+        }
+        if (!isIndexedHere(entity)) {
             return;
         }
         initializeIndices(entity);
