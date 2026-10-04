@@ -95,7 +95,7 @@ class ModelInterceptorIntSpec extends Specification implements HttpClientSupport
         modelInterceptor.modelByAction['forwardTarget'] == null
 
         and: "the response body is the forwarded action's own output"
-        response.body.text == 'ok'
+        response.body() == 'ok'
     }
 
     @Issue('https://github.com/apache/grails-core/issues/12081')
