@@ -335,7 +335,6 @@ ext {
                 'hibernate-tools.version'       : '7.3.13.Final',
                 'hibernate.version'             : '7.4.10.Final',
                 'jandex.version'                : '3.6.0',
-                'liquibase-hibernate.version'   : '4.27.0',
                 'liquibase-test-harness.version': '1.0.11',
                 'liquibase.version'             : '4.27.0',
                 'mockito-inline.version'        : '5.2.0',
@@ -357,7 +356,6 @@ ext {
                 'liquibase'             : "org.liquibase:liquibase:${combinedVersions['liquibase.version']}",
                 'liquibase-cdi'         : "org.liquibase:liquibase-cdi:${combinedVersions['liquibase.version']}",
                 'liquibase-core'        : "org.liquibase:liquibase-core:${combinedVersions['liquibase.version']}",
-                'liquibase-hibernate'   : "org.liquibase.ext:liquibase-hibernate7:${combinedVersions['liquibase-hibernate.version']}",
                 'liquibase-test-harness': "org.liquibase:liquibase-test-harness:${combinedVersions['liquibase-test-harness.version']}",
                 'mockito-inline'        : "org.mockito:mockito-inline:${combinedVersions['mockito-inline.version']}",
         ]

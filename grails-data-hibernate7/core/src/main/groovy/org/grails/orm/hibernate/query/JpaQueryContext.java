@@ -31,9 +31,7 @@ import jakarta.persistence.criteria.Path;
  * {@link ExpressionResolver} receives the shared {@link AliasRegistry} and {@link JoinTracker}
  * so aliases and joins remain scoped to the current root or subquery context.
  *
- * @author walterduquedeestrada
- * @author graemerocher
- * @since 7.0.0
+ * @since 8.0
  */
 public class JpaQueryContext implements Cloneable {
 

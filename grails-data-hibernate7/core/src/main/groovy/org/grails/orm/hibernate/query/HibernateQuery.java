@@ -180,18 +180,13 @@ public class HibernateQuery extends Query {
         detachedCriteria.add(criterion);
     }
 
-    public void add(DetachedCriteria<?> detachedCriteria) {
-        detachedCriteria.add(new Conjunction(detachedCriteria.getCriteria()));
+    public void add(DetachedCriteria<?> criteria) {
+        detachedCriteria.add(new Conjunction(criteria.getCriteria()));
     }
 
     @Override
     public void add(Junction currentJunction, Criterion criterion) {
-        Disjunction disjunction = (Disjunction) detachedCriteria.getCriteria().stream()
-                .filter(it -> it instanceof Disjunction)
-                .findFirst()
-                .orElse(new Disjunction());
-        disjunction.add(criterion);
-        detachedCriteria.add(disjunction);
+        currentJunction.add(criterion);
     }
 
     // The factory junctions must operate on detachedCriteria (the source this query builds its JPA
@@ -221,6 +216,18 @@ public class HibernateQuery extends Query {
     @Override
     public Query eq(String property, Object value) {
         detachedCriteria.eq(calculatePropertyName(property), value);
+        return this;
+    }
+
+    /**
+     * Restricts the results to those where the property equals the value when both are compared in lower case.
+     *
+     * @param property the name of the property
+     * @param value the value the property must equal, ignoring case
+     * @return this query
+     */
+    public Query eqIgnoreCase(String property, Object value) {
+        detachedCriteria.add(new EqualsIgnoreCase(calculatePropertyName(property), value));
         return this;
     }
 

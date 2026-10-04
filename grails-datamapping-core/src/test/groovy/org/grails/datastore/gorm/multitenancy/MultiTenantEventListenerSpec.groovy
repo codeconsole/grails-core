@@ -30,6 +30,7 @@ import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.types.TenantId
 import org.grails.datastore.mapping.multitenancy.MultiTenantCapableDatastore
 import org.grails.datastore.mapping.multitenancy.exceptions.TenantException
+import org.grails.datastore.mapping.multitenancy.exceptions.TenantNotFoundException
 import org.grails.datastore.mapping.query.Query
 import org.grails.datastore.mapping.query.event.PreQueryEvent
 import org.springframework.context.ApplicationEvent
@@ -317,6 +318,25 @@ class MultiTenantEventListenerSpec extends Specification {
         listener.onApplicationEvent(event)
 
         then:
+        0 * entityAccess.setProperty(_, _)
+    }
+
+    void "onApplicationEvent PreInsertEvent rethrows a TenantNotFoundException from the tenant resolver unwrapped"() {
+        given:
+        def tenantId = Mock(TenantId) { getName() >> 'tenantId'; getType() >> String }
+        def entity = Mock(PersistentEntity) { isMultiTenant() >> true; getTenantId() >> tenantId }
+        def entityAccess = Mock(EntityAccess)
+        def event = new PreInsertEvent(boundDatastore, entity, entityAccess)
+        boundDatastore.getTenantResolver() >> Mock(org.grails.datastore.mapping.multitenancy.TenantResolver) {
+            resolveTenantIdentifier() >> { throw new TenantNotFoundException('no tenant') }
+        }
+
+        when:
+        listener.onApplicationEvent(event)
+
+        then:
+        def e = thrown(TenantNotFoundException)
+        e.message == 'no tenant'
         0 * entityAccess.setProperty(_, _)
     }
 

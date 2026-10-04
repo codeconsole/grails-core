@@ -98,6 +98,17 @@ class PartitionMultiTenancySpec extends Specification {
         System.setProperty(SystemPropertyTenantResolver.PROPERTY_NAME, '')
     }
 
+    void 'saving without a tenant throws the TenantNotFoundException of the tenant resolver'() {
+        given: 'no current tenant'
+        System.setProperty(SystemPropertyTenantResolver.PROPERTY_NAME, '')
+
+        when: 'a book is saved'
+        Book.withTransaction { new Book(title: 'No tenant').save(flush: true) }
+
+        then: 'the exception says that no tenant was found'
+        thrown(TenantNotFoundException)
+    }
+
     void 'Test partitioned multi-tenancy with GORM services'() {
         setup:
         BookService bookService = new BookService()

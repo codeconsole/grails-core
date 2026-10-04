@@ -926,8 +926,8 @@ public class HibernateCriteriaBuilder extends GroovyObjectSupport implements Bui
      * @return A Criterion instance
      */
     public Criteria eq(String propertyName, Object propertyValue, Map<?, ?> params) {
-        if (Boolean.TRUE.equals(params.get("ignoreCase"))) {
-            hibernateQuery.like(propertyName, "%" + propertyValue.toString() + "%");
+        if (Boolean.TRUE.equals(params.get("ignoreCase")) && propertyValue instanceof CharSequence) {
+            hibernateQuery.eqIgnoreCase(propertyName, propertyValue.toString());
         } else {
             hibernateQuery.eq(propertyName, propertyValue);
         }
