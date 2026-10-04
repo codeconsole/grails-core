@@ -59,16 +59,23 @@ class HibernateQuerySpec extends HibernateGormDatastoreSpec {
         oldBob == newBob
     }
 
-    def 'eqIgnoreCase matches the whole value in any case'() {
+    def 'eqIgnoreCase(#property, #value.inspect()) matches the whole value in any case'() {
         given: 'a person whose first name starts with the value'
         new Person(firstName: 'Bobby', lastName: 'Rogers', age: 51).save(flush: true)
-        hibernateQuery.eqIgnoreCase('firstName', 'BOB')
+        hibernateQuery.eqIgnoreCase(property, value)
 
         when:
         var results = hibernateQuery.list()
 
         then:
-        results == [oldBob]
+        results*.firstName == expected
+
+        where:
+        property    | value  || expected
+        'firstName' | 'BOB'  || ['Bob']
+        'firstName' | 'bob%' || []
+        'age'       | 50     || ['Bob']
+        'age'       | '50'   || ['Bob']
     }
 
     def equalsJoins() {

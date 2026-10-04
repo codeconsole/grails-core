@@ -355,11 +355,12 @@ class HibernateCriteriaBuilderDirectSpec extends HibernateGormDatastoreSpec {
         c.list { eq([ignoreCase: true], 'name', 'ann') }*.name == ['Ann']
     }
 
-    void "test eq with ignoreCase false or a non-String value compares with plain equality"() {
+    void "test eq with ignoreCase false, a non-String value or a non-String property compares with plain equality"() {
         expect:
         c.list { eq('name', 'a', [ignoreCase: false]) }.empty
         c.list { eq('name', 'A', [ignoreCase: false]) }*.name == ['A']
         c.list { eq('amount', 20, [ignoreCase: true]) }*.name == ['B']
+        c.list { eq('amount', '20', [ignoreCase: true]) }*.name == ['B']
     }
 
     void "test eq with ignoreCase param inside an association"() {
