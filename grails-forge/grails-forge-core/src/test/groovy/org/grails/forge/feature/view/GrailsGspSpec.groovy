@@ -250,11 +250,13 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('mappingContext.eventListeners')
         index.contains('<g:message code="welcome.datastores.listeners"/>')
 
-        and: "the request's effective filter pipeline is derived from the rendering call stack"
+        and: "servlet filters list every filter in the container in chain order, with a portable fallback"
         index.contains('data-switch-type="filters"')
-        index.contains('Thread.currentThread().stackTrace')
-        index.contains('jakarta.servlet.Filter.isAssignableFrom')
-        index.contains('<g:message code="welcome.filters.request"/>')
+        index.contains('tomcatContext.findFilterMaps()')
+        index.contains('(org.springframework.beans.factory.ListableBeanFactory) applicationContext')
+        index.contains('request.servletContext.filterRegistrations')
+        index.contains('<g:message code="welcome.filters.description"/>')
+        !index.contains('Thread.currentThread().stackTrace')
 
         and: "filter registrations render sorted by their order value"
         index.contains('data-switch-type="registrations"')
