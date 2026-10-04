@@ -946,12 +946,15 @@ class HibernateQuerySpec extends HibernateGormDatastoreSpec {
     }
 
     def addDetachedCriteria() {
-        given:
-        hibernateQuery.add(new DetachedCriteria(Person).eq("firstName", "Bob"))
+        given: 'a second person the detached criteria does not match'
+        new Person(firstName: 'Fred', lastName: 'Rogers', age: 51).save(flush: true)
+        hibernateQuery.add(new DetachedCriteria(Person).eq('firstName', 'Bob'))
+
         when:
-        def bob = hibernateQuery.singleResult()
-        then:
-        bob == oldBob
+        var results = hibernateQuery.list()
+
+        then: 'the criteria of the detached criteria restrict the query'
+        results == [oldBob]
     }
 
     def addJunctionCriterion() {

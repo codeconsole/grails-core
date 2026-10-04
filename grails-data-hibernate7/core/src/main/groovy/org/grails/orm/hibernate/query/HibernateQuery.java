@@ -180,8 +180,8 @@ public class HibernateQuery extends Query {
         detachedCriteria.add(criterion);
     }
 
-    public void add(DetachedCriteria<?> detachedCriteria) {
-        detachedCriteria.add(new Conjunction(detachedCriteria.getCriteria()));
+    public void add(DetachedCriteria<?> criteria) {
+        detachedCriteria.add(new Conjunction(criteria.getCriteria()));
     }
 
     @Override
