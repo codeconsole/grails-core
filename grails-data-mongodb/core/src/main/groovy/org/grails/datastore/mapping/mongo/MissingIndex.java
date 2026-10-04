@@ -16,25 +16,19 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package org.grails.datastore.mapping.mongo;
 
-package functional.tests
+import org.bson.Document;
 
-class ModelInterceptor {
-
-    Object latestModel
-    Map<String, Object> modelByAction = [:]
-
-    ModelInterceptor() {
-        match(controller: 'modelAndView|respond|return|renderTemplate')
-    }
-
-    boolean before() {
-        true
-    }
-
-    boolean after() {
-        latestModel = model
-        modelByAction[actionName] = model
-        true
-    }
+/**
+ * An index a domain class declares that its collection does not have.
+ *
+ * @param database    the database the collection is in
+ * @param collection  the collection the index belongs on
+ * @param domainClass the name of the domain class declaring it, the first of them if several do
+ * @param key         the declared key pattern
+ * @param options     the options declared with it, such as {@code unique} or {@code expireAfterSeconds}
+ * @see MongoDatastore#findMissingIndexes()
+ */
+public record MissingIndex(String database, String collection, String domainClass, Document key, Document options) {
 }

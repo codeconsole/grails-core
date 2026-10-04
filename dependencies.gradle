@@ -128,8 +128,8 @@ ext {
             // Not managed by spring-boot-dependencies. Kept at the version springdoc-openapi
             // resolves, which grails-openapi compiles against without requiring springdoc.
             'swagger.version'               : '2.2.52',
-            'starter-sitemesh.version'      : '3.3.0-RC3',
-            'spring-webmvc-sitemesh.version': '3.3.0-RC3',
+            'starter-sitemesh.version'      : '3.3.0',
+            'spring-webmvc-sitemesh.version': '3.3.0',
             // Spring Boot 4 no longer manages spring-retry; pin it here so the
             // grails-shell-cli SpringRetryCompilerAutoConfiguration's unversioned
             // reference resolves and consumer apps using @Retryable get a known version.

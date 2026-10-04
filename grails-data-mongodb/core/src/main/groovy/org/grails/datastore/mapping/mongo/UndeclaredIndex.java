@@ -16,25 +16,20 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package org.grails.datastore.mapping.mongo;
 
-package functional.tests
+import org.bson.Document;
 
-class ModelInterceptor {
-
-    Object latestModel
-    Map<String, Object> modelByAction = [:]
-
-    ModelInterceptor() {
-        match(controller: 'modelAndView|respond|return|renderTemplate')
-    }
-
-    boolean before() {
-        true
-    }
-
-    boolean after() {
-        latestModel = model
-        modelByAction[actionName] = model
-        true
-    }
+/**
+ * An index on a collection that domain classes map, whose keys none of those domain classes declares.
+ *
+ * @param database   the database the collection is in
+ * @param collection the collection the index is on
+ * @param name       the name of the index
+ * @param key        the index's key pattern, as {@code listIndexes} reports it
+ * @param definition the whole index description {@code listIndexes} reports, options included
+ * @see MongoDatastore#findUndeclaredIndexes()
+ * @see MongoDatastore#dropUndeclaredIndexes()
+ */
+public record UndeclaredIndex(String database, String collection, String name, Document key, Document definition) {
 }
