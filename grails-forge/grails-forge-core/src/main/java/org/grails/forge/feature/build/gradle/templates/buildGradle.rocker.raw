@@ -123,7 +123,9 @@ tasks.withType(Test).configureEach {
 @if (features.contains("grails-compile-static")) {
 grails {
     compileStatic {
-        all = true
+        controllers = true
+        services = true
+        tagLibs = true
 @if (features.contains("gsp")) {
         gsp = true
 }

@@ -187,7 +187,7 @@ grails {
 }
 ----
 
-Grails Forge generates this block for a new application with the `grails-compile-static` feature, which writes `all = true`, and `gsp = true` when the application uses GSP:
+Grails Forge generates the same opt-ins for a new application with the `grails-compile-static` feature. It sets `controllers`, `services` and `tagLibs` individually rather than through `all`, so an artefact type a later release adds to `all` is not opted in without being asked for, and adds `gsp = true` when the application uses GSP:
 
 [source,console]
 ----

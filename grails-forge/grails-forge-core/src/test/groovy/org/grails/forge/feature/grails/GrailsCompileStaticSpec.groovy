@@ -35,11 +35,16 @@ class GrailsCompileStaticSpec extends ApplicationContextSpec {
         template.contains('''\
             grails {
                 compileStatic {
-                    all = true
+                    controllers = true
+                    services = true
+                    tagLibs = true
                     gsp = true
                 }
             }
             '''.stripIndent(12))
+
+        and: 'each artefact type is opted in on its own, so one a later release adds to all is not'
+        !template.contains('all = true')
     }
 
     void 'test grails-compile-static leaves out gsp for an application without GSP'() {
@@ -50,8 +55,11 @@ class GrailsCompileStaticSpec extends ApplicationContextSpec {
                 .render()
 
         then:
-        template.contains('all = true')
+        template.contains('controllers = true')
+        template.contains('services = true')
+        template.contains('tagLibs = true')
         !template.contains('gsp = true')
+        !template.contains('all = true')
     }
 
     void 'test no compileStatic block without grails-compile-static'() {

@@ -25,8 +25,10 @@ import org.grails.forge.feature.Feature;
 
 /**
  * Compiles the application statically through the Grails Gradle plugin's {@code compileStatic} options:
- * {@code all} for controllers, services and tag libraries, and {@code gsp} for the views when the
- * application has GSP. The block itself is written by the {@code build.gradle} template.
+ * {@code controllers}, {@code services} and {@code tagLibs}, and {@code gsp} for the views when the
+ * application has GSP. Each is set on its own rather than through {@code all}, so an artefact type a later
+ * release adds to {@code all} is not compiled statically without being asked for. The block itself is
+ * written by the {@code build.gradle} template.
  */
 @Singleton
 public class GrailsCompileStatic implements Feature {
@@ -50,7 +52,7 @@ public class GrailsCompileStatic implements Feature {
 
     @Override
     public String getDescription() {
-        return "Compiles controllers, services, tag libraries and GSP views statically by enabling the Grails Gradle plugin's compileStatic options.";
+        return "Compiles controllers, services and tag libraries statically, and GSP views in applications that use GSP, by enabling the Grails Gradle plugin's compileStatic options.";
     }
 
     @Override

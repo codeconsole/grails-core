@@ -245,7 +245,7 @@ All three options are disabled by default and independent, or `compileStatic { a
 
 ==== Generate an Application That Compiles Statically
 
-Grails Forge has a new `grails-compile-static` feature that generates the `compileStatic` block with `all = true`, adding `gsp = true` when the application uses GSP, so the generated controllers, services, tag libraries and views all compile statically:
+Grails Forge has a new `grails-compile-static` feature that generates the `compileStatic` block with `controllers`, `services` and `tagLibs` enabled, adding `gsp = true` when the application uses GSP, so the generated controllers, services, tag libraries and views all compile statically:
 
 [source,console]
 ----
