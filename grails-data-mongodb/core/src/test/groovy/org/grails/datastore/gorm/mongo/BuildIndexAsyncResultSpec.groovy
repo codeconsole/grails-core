@@ -101,6 +101,11 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
                     it.threadName.startsWith('gorm-mongo-index-build-default-')
         }
 
+        and: "the build says a caller is waiting on it, not that startup does not wait"
+        log.events*.formattedMessage.contains('Building the indexes declared by the domain classes for connection ' +
+                '[default] on a background thread, for a caller waiting on the result.')
+        !log.events.any { it.formattedMessage.contains('Startup does not wait') }
+
         when: "it runs again"
         def again = datastore.buildIndexAsync().get(30, TimeUnit.SECONDS)
 

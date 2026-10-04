@@ -789,9 +789,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             executor.execute(new IndexBuildTask(result, () -> {
                 // The first thing the build does: said only of a build that is under way, and ahead of
                 // everything it logs, which it would not be if the submitting thread said it.
-                LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
-                        "background thread. Startup does not wait for them, so a query issued before its index " +
-                        "exists is served without it.", connectionName());
+                if (result == null) {
+                    LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
+                            "background thread. Startup does not wait for them, so a query issued before its index " +
+                            "exists is served without it.", connectionName());
+                }
+                else {
+                    LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
+                            "background thread, for a caller waiting on the result.", connectionName());
+                }
                 // Classified whenever a caller is waiting for the counts, which are then the product.
                 runIndexBuild(executor, result != null || LOG.isInfoEnabled(), result);
             }));
