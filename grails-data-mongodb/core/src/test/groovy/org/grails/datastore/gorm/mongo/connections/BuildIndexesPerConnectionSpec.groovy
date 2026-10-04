@@ -248,6 +248,14 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         then: "it is refused, as the others are"
         thrown(IllegalStateException)
 
+        when: "a build is requested on it while the datastore is stopped"
+        (parent.getDatastoreForConnection('addedWhileStopped') as MongoDatastore).buildIndex()
+
+        then: "it is put off until the restart, as on any other connection, rather than run against the stopped client"
+        log.events.any {
+            it.formattedMessage.contains('for connection [addedWhileStopped] while the datastore is stopped')
+        }
+
         when: "the datastore is started after the restore"
         parent.start()
 
@@ -256,6 +264,41 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         conditions.eventually {
             assert [name: 1] in addedIndexes()
         }
+
+        and: "no build failed along the way"
+        !log.events.any { it.level.isGreaterOrEqual(Level.ERROR) }
+
+        cleanup:
+        parent?.close()
+        inspector?.close()
+        log?.close()
+    }
+
+    void "test a build requested on a connection added while the datastore is stopped runs when it is started, with index creation off"() {
+        given: "a datastore stopped for a checkpoint, whose connections build no index by themselves"
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('requestingParentDb'),
+                'grails.mongodb.buildIndexes'     : false,
+                'grails.mongodb.buildIndexesAsync': true
+        ]), AsyncPerConnectionThing)
+        parent.start()
+        parent.stop()
+        MongoClient inspector = MongoClients.create(dbContainer.getReplicaSetUrl('requestedWhileStoppedDb'))
+        def addedIndexes = { -> inspector.getDatabase('requestedWhileStoppedDb').getCollection('asyncPerConnectionThing').listIndexes()*.key }
+
+        when: "a connection is added, a build is requested on it, and the datastore is then started"
+        parent.connectionSources.addConnectionSource('requestedWhileStopped',
+                [url: dbContainer.getReplicaSetUrl('requestedWhileStoppedDb'), buildIndexes: false])
+        (parent.getDatastoreForConnection('requestedWhileStopped') as MongoDatastore).buildIndex()
+        parent.start()
+
+        then: "the requested build runs, though the connection builds none by itself"
+        conditions.eventually {
+            assert [name: 1] in addedIndexes()
+        }
+        !log.events.any { it.level.isGreaterOrEqual(Level.ERROR) }
 
         cleanup:
         parent?.close()

@@ -335,9 +335,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                                 childDatastore.startupBuildDone = true;
                             }
                         }
-                        else if (stopped && childDatastore.ownsClient()) {
-                            // Refused, like the others, until start() connects it and builds its indexes.
-                            childDatastore.stopClient();
+                        else if (stopped) {
+                            // As stop() left the others: a build requested on it waits for start(), which
+                            // connects it and builds its indexes, and its client, if GORM's, refuses use.
+                            childDatastore.stopIndexBuild();
+                            if (childDatastore.ownsClient()) {
+                                childDatastore.stopClient();
+                            }
                         }
                         // Otherwise the datastore has not started, and start() connects and builds it with the
                         // others, including when start() itself is what registered it.
@@ -2102,8 +2106,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private void replaceStoppedIndexBuildExecutor() {
         ExecutorService stopped = this.indexBuildExecutor;
         if (stopped == null || !stopped.isShutdown()) {
-            // Never shut down - a connection added while the datastore was stopped - so no build of it was
-            // interrupted, and one requested since was submitted rather than deferred.
+            // Never shut down: the datastore has not been stopped, or its builds run on the calling thread.
             return;
         }
         try {
