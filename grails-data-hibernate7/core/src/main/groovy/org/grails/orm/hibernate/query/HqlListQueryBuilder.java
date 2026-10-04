@@ -36,7 +36,7 @@ import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernatePersistentP
  *
  * @author walterduquedeestrada
  * @author graemerocher
- * @since 7.0.0
+ * @since 8.0
  */
 public class HqlListQueryBuilder {
 

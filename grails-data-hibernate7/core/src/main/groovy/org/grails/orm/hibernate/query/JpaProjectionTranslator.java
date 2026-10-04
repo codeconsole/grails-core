@@ -27,7 +27,7 @@ import org.grails.datastore.mapping.query.Query;
  *
  * @author burt
  * @author graemerocher
- * @since 7.0.0
+ * @since 8.0
  */
 public class JpaProjectionTranslator {
 

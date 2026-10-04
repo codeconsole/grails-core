@@ -39,7 +39,7 @@ import org.grails.orm.hibernate.GrailsHibernateTemplate;
  * Implementation of the ProxyHandler interface for Hibernate 7.
  *
  * @author Graeme Rocher
- * @since 7.0
+ * @since 1.2.2
  */
 @SuppressWarnings("PMD.CloseResource")
 public class HibernateProxyHandler implements ProxyHandler, ProxyFactory {

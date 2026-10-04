@@ -33,7 +33,7 @@ import jakarta.persistence.criteria.Path;
  *
  * @author walterduquedeestrada
  * @author graemerocher
- * @since 7.0.0
+ * @since 8.0
  */
 public class JpaQueryContext implements Cloneable {
 
