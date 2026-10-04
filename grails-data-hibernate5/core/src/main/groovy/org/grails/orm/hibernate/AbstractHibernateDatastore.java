@@ -354,13 +354,16 @@ public abstract class AbstractHibernateDatastore extends AbstractDatastore imple
     /**
      * Obtains a hibernate template for the given flush mode
      *
-     * @param flushMode The flush mode
+     * @param flushMode The flush mode, one of the {@code FLUSH_*} constants of {@link GrailsHibernateTemplate}
      * @return The IHibernateTemplate
      */
     public abstract IHibernateTemplate getHibernateTemplate(int flushMode);
 
+    /**
+     * @return A hibernate template that uses the default flush mode of this datastore
+     */
     public IHibernateTemplate getHibernateTemplate() {
-        return getHibernateTemplate(defaultFlushMode);
+        return getHibernateTemplate(GrailsHibernateTemplate.flushModeNameToConstant(defaultFlushModeName));
     }
 
     /**
