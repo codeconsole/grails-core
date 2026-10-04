@@ -313,6 +313,7 @@ class BuildIndexAsyncResultSpec extends AutoStartedMongoSpec {
         given: "a datastore that built its indexes at startup"
         def datastore = new SerializedBuildDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('asyncResultRegisterWaitsDb')],
                 AsyncResultThing)
+        datastore.start()
         SerializedBuildDatastore.reset()
 
         when: "a background build is under way"
