@@ -21,6 +21,7 @@ package org.grails.orm.hibernate.query;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
@@ -354,7 +355,9 @@ public class PredicateGenerator {
             throw new ConfigurationException("Cannot use comparison criteria on non-existent property [" + propertyName + "] of class [" + entity.getJavaClass().getName() + "]");
         }
 
-        if (pc instanceof Query.Equals) {
+        if (pc instanceof EqualsIgnoreCase) {
+            return handleEqualsIgnoreCase(criteriaQuery, pc, propertyPath, fromsByProvider, entity);
+        } else if (pc instanceof Query.Equals) {
             return handleEquals(criteriaQuery, pc, propertyPath, fromsByProvider, entity);
         } else if (pc instanceof Query.NotEquals) {
             return handleNotEquals(criteriaQuery, pc, propertyPath, fromsByProvider, entity);
@@ -521,6 +524,21 @@ public class PredicateGenerator {
         } else {
             return criteriaBuilder.equal(propertyPath, convertComparisonValue(entity, pc.getProperty(), pc.getValue(), fromsByProvider, propertyPath));
         }
+    }
+
+    /**
+     * Compares a {@link String} property with the value in lower case, as Hibernate 5's
+     * {@code Restrictions.eq(...).ignoreCase()} did. Any other property is compared with plain equality.
+     */
+    @SuppressWarnings("unchecked")
+    private Predicate handleEqualsIgnoreCase(AbstractQuery<?> criteriaQuery, Query.PropertyCriterion pc, Expression<?> propertyPath, JpaQueryContext fromsByProvider, GrailsHibernatePersistentEntity entity) {
+        Object value = pc.getValue();
+        if (!String.class.equals(propertyPath.getJavaType()) || !(value instanceof CharSequence)) {
+            return handleEquals(criteriaQuery, pc, propertyPath, fromsByProvider, entity);
+        }
+        return criteriaBuilder.equal(
+                criteriaBuilder.lower((Expression<String>) propertyPath),
+                value.toString().toLowerCase(Locale.ROOT));
     }
 
     @SuppressWarnings("unchecked")
