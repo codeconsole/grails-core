@@ -44,11 +44,11 @@ import spock.lang.Unroll
  * now compares against the listener's own bound datastore class rather than a fixed type, a new
  * {@code isValidSource} instance-equality guard replaced the old {@code supportsEventType} check,
  * a {@code ConnectionSource.DEFAULT} + numeric-typed-tenant-id coercion to {@code 0L} was added to
- * both the query and insert/update paths, and inserts now prefer an already-set entity property
- * over the resolved tenant id). Modeled directly on the equivalent, already-established
- * {@code org.grails.orm.hibernate.multitenancy.MultiTenantEventListenerSpec} in grails-data-hibernate7,
- * which exercises the sibling class's public {@code onApplicationEvent}/{@code supportsEventType}/
- * {@code supportsSourceType} contract the same way.
+ * both the query and insert/update paths, and a tenant id already set on the entity is kept only
+ * when the current id is {@code ConnectionSource.DEFAULT}). Modeled directly on the equivalent,
+ * already-established {@code org.grails.orm.hibernate.multitenancy.MultiTenantEventListenerSpec}
+ * in grails-data-hibernate7, which exercises the sibling class's public
+ * {@code onApplicationEvent}/{@code supportsEventType}/{@code supportsSourceType} contract the same way.
  */
 class MultiTenantEventListenerSpec extends Specification {
 

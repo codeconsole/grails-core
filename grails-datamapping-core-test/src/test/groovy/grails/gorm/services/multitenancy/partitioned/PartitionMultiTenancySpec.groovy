@@ -91,8 +91,10 @@ class PartitionMultiTenancySpec extends Specification {
             loaded.save(flush: true)
         }
 
-        then: 'it keeps the current tenant'
+        then: 'it keeps the current tenant, and only the current tenant sees it'
         updated.tenantId == 910
+        Book.withTransaction { Book.countByTitle('Inserted') } == 1
+        Book.withTenant('911') { Book.withTransaction { Book.countByTitle('Inserted') } } == 0
 
         cleanup:
         System.setProperty(SystemPropertyTenantResolver.PROPERTY_NAME, '')
