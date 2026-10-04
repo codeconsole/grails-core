@@ -250,12 +250,13 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('mappingContext.eventListeners')
         index.contains('<g:message code="welcome.datastores.listeners"/>')
 
-        and: "servlet filters list every filter in the container in chain order, with a portable fallback"
+        and: "servlet filters list Tomcat's filter maps by URL pattern then servlet name, and number nothing elsewhere"
+        // rendered and checked against real containers by the welcome-page and welcome-page-jetty test examples
         index.contains('data-switch-type="filters"')
         index.contains('tomcatContext.findFilterMaps()')
-        index.contains('(org.springframework.beans.factory.ListableBeanFactory) applicationContext')
-        index.contains('request.servletContext.filterRegistrations')
-        index.contains('<g:message code="welcome.filters.description"/>')
+        index.contains("'welcome.filters.byUrl'")
+        index.contains("'welcome.filters.byServlet'")
+        index.contains("'welcome.filters.unordered'")
         !index.contains('Thread.currentThread().stackTrace')
 
         and: "filter registrations render sorted by their order value"
