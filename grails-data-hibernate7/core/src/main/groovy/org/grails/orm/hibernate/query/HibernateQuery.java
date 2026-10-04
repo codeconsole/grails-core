@@ -186,12 +186,7 @@ public class HibernateQuery extends Query {
 
     @Override
     public void add(Junction currentJunction, Criterion criterion) {
-        Disjunction disjunction = (Disjunction) detachedCriteria.getCriteria().stream()
-                .filter(it -> it instanceof Disjunction)
-                .findFirst()
-                .orElse(new Disjunction());
-        disjunction.add(criterion);
-        detachedCriteria.add(disjunction);
+        currentJunction.add(criterion);
     }
 
     // The factory junctions must operate on detachedCriteria (the source this query builds its JPA
