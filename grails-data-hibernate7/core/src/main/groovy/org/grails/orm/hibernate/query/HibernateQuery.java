@@ -219,6 +219,18 @@ public class HibernateQuery extends Query {
         return this;
     }
 
+    /**
+     * Restricts the results to those where the property equals the value when both are compared in lower case.
+     *
+     * @param property the name of the property
+     * @param value the value the property must equal, ignoring case
+     * @return this query
+     */
+    public Query eqIgnoreCase(String property, Object value) {
+        detachedCriteria.add(new EqualsIgnoreCase(calculatePropertyName(property), value));
+        return this;
+    }
+
     @Override
     public Query idEq(Object value) {
         detachedCriteria.idEq(value);

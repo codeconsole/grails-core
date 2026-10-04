@@ -30,6 +30,7 @@ import org.hibernate.query.criteria.JpaExpression
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.query.Query
 import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersistentEntity
+import org.grails.orm.hibernate.query.EqualsIgnoreCase
 import org.grails.orm.hibernate.query.JpaQueryContext
 import org.grails.orm.hibernate.query.PredicateGenerator
 import org.grails.orm.hibernate.query.PropertyArithmetic
@@ -391,6 +392,29 @@ class PredicateGeneratorSpec extends HibernateGormDatastoreSpec {
 
         then:
         count == 2L
+    }
+
+    def "test getPredicates with EqualsIgnoreCase compares a String property in lower case"() {
+        given:
+        new PredicateGeneratorSpecNullableAgeEntity(name: 'Bob', age: 11).save(failOnError: true)
+        new PredicateGeneratorSpecNullableAgeEntity(name: 'Bobby', age: 12).save(flush: true, failOnError: true)
+        CriteriaQuery<String> nameQuery = cb.createQuery(String)
+        Root<PredicateGeneratorSpecNullableAgeEntity> nameRoot = nameQuery.from(PredicateGeneratorSpecNullableAgeEntity)
+        GrailsHibernatePersistentEntity nullableAgeEntity = session.datastore.mappingContext.getPersistentEntity(PredicateGeneratorSpecNullableAgeEntity.name) as GrailsHibernatePersistentEntity
+        Predicate[] predicates = predicateGenerator.getPredicates(nameQuery, nameRoot, [criterion], new JpaQueryContext(nameRoot), nullableAgeEntity)
+
+        when:
+        nameQuery.select(nameRoot.get('name')).where(predicates)
+        List<String> names = sessionFactory.currentSession.createQuery(nameQuery).resultList
+
+        then:
+        names == expected
+
+        where:
+        criterion                            || expected
+        new EqualsIgnoreCase('name', 'BOB')  || ['Bob']
+        new EqualsIgnoreCase('name', 'bob%') || []
+        new EqualsIgnoreCase('age', 12)      || ['Bobby']
     }
 
     def "test getPredicates with IdEquals criterion"() {
