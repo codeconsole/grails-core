@@ -26,7 +26,7 @@ ext {
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.1',
             'asm.version'                   : '9.10.1',
-            'asset-pipeline-gradle.version' : '5.2.0-RC4',
+            'asset-pipeline-gradle.version' : '5.2.0',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-groovy.version'         : '4.0.33',
@@ -70,7 +70,7 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.2.0-RC4',
+            'asset-pipeline-bom.version'    : '5.2.0',
             'cas-client-core.version'       : '4.1.1',
             'bootstrap-icons.version'       : '1.13.1',
             'bootstrap.version'             : '5.3.8',
@@ -116,8 +116,8 @@ ext {
             // Not managed by spring-boot-dependencies. Kept at the version springdoc-openapi
             // resolves, which grails-openapi compiles against without requiring springdoc.
             'swagger.version'               : '2.2.52',
-            'starter-sitemesh.version'      : '3.3.0-RC3',
-            'spring-webmvc-sitemesh.version': '3.3.0-RC3',
+            'starter-sitemesh.version'      : '3.3.0',
+            'spring-webmvc-sitemesh.version': '3.3.0',
             // Spring Boot 4 no longer manages spring-retry; pin it here so the
             // grails-shell-cli SpringRetryCompilerAutoConfiguration's unversioned
             // reference resolves and consumer apps using @Retryable get a known version.
@@ -318,7 +318,6 @@ ext {
                 'hibernate-tools.version'       : '7.3.13.Final',
                 'hibernate.version'             : '7.4.10.Final',
                 'jandex.version'                : '3.6.0',
-                'liquibase-hibernate.version'   : '4.27.0',
                 'liquibase-test-harness.version': '1.0.11',
                 'liquibase.version'             : '4.27.0',
                 'mockito-inline.version'        : '5.2.0',
@@ -340,7 +339,6 @@ ext {
                 'liquibase'             : "org.liquibase:liquibase:${combinedVersions['liquibase.version']}",
                 'liquibase-cdi'         : "org.liquibase:liquibase-cdi:${combinedVersions['liquibase.version']}",
                 'liquibase-core'        : "org.liquibase:liquibase-core:${combinedVersions['liquibase.version']}",
-                'liquibase-hibernate'   : "org.liquibase.ext:liquibase-hibernate7:${combinedVersions['liquibase-hibernate.version']}",
                 'liquibase-test-harness': "org.liquibase:liquibase-test-harness:${combinedVersions['liquibase-test-harness.version']}",
                 'mockito-inline'        : "org.mockito:mockito-inline:${combinedVersions['mockito-inline.version']}",
         ]
