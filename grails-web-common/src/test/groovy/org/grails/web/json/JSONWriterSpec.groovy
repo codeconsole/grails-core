@@ -167,6 +167,23 @@ class JSONWriterSpec extends Specification {
         out.toString() == '["1970-01-01T00:00:00.000Z",0]'
     }
 
+    void "a PrettyPrintJSONWriter indents as Grails 8 did"() {
+        given:
+        def writer = new PrettyPrintJSONWriter(out)
+        def newline = PrettyPrintJSONWriter.NEWLINE
+
+        when:
+        writer.object()
+                .key('a').value(1)
+                .key('b').array().value(1).object().key('c').value('d').endObject().endArray()
+                .key('e').object().endObject()
+                .endObject()
+
+        then: 'an array that is not an element on a line of its own, and "key": value'
+        out.toString() == ['{', '  "a": 1,', '  "b": ', '  [', '    1,', '    {', '      "c": "d"', '    }', '  ],',
+                           '  "e": {', '  }', '}'].join(newline)
+    }
+
     void "a PathCapturingJSONWriterWrapper passes flush() on"() {
         given:
         def wrapper = new PathCapturingJSONWriterWrapper(writer)

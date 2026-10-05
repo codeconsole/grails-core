@@ -29,6 +29,7 @@ import java.util.stream.BaseStream;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
+import tools.jackson.core.PrettyPrinter;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.SerializationContext;
@@ -114,6 +115,21 @@ public final class JsonMapperSupport {
      */
     public JsonGenerator createGenerator(Writer out, boolean prettyPrint) {
         ObjectWriter writer = (prettyPrint ? writingMapper.writerWithDefaultPrettyPrinter() : writingMapper.writer())
+                .without(StreamWriteFeature.AUTO_CLOSE_TARGET)
+                .without(StreamWriteFeature.FLUSH_PASSED_TO_STREAM);
+        return writer.createGenerator(new HtmlSafeJsonWriter(out));
+    }
+
+    /**
+     * Creates a generator that writes JSON to {@code out}, escaped for an HTML {@code <script>} element and indented
+     * by a pretty printer. The generator never flushes or closes {@code out}: whoever owns it does.
+     *
+     * @param out the writer to write JSON to
+     * @param prettyPrinter the pretty printer to indent the JSON with
+     * @return a generator writing to {@code out}
+     */
+    public JsonGenerator createGenerator(Writer out, PrettyPrinter prettyPrinter) {
+        ObjectWriter writer = writingMapper.writer().with(prettyPrinter)
                 .without(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .without(StreamWriteFeature.FLUSH_PASSED_TO_STREAM);
         return writer.createGenerator(new HtmlSafeJsonWriter(out));

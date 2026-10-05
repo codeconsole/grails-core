@@ -16,6 +16,7 @@ import groovy.lang.Writable;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.PrettyPrinter;
 
 import static org.grails.web.json.JSONWriter.Mode.ARRAY;
 import static org.grails.web.json.JSONWriter.Mode.DONE;
@@ -109,6 +110,22 @@ public class JSONWriter {
         this.writer = w;
         this.jsonMapper = jsonMapper;
         this.generator = w != null ? jsonMapper.createGenerator(w, prettyPrint) : null;
+    }
+
+    /**
+     * Makes a fresh JSONWriter that indents the JSON text with a pretty printer.
+     *
+     * @param w the writer to write the JSON text to
+     * @param jsonMapper the mapper to write the JSON text with
+     * @param prettyPrinter the pretty printer to indent the JSON text with
+     * @since 9.0
+     */
+    protected JSONWriter(Writer w, JsonMapperSupport jsonMapper, PrettyPrinter prettyPrinter) {
+        this.comma = false;
+        this.mode = INIT;
+        this.writer = w;
+        this.jsonMapper = jsonMapper;
+        this.generator = w != null ? jsonMapper.createGenerator(w, prettyPrinter) : null;
     }
 
     /**
