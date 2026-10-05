@@ -49,7 +49,8 @@ During the staging step, we must create a source distribution & stage any binary
    * extract the version # from the tag
    * verify that the release targets the version's maintenance branch and that `githubBranch` in `gradle.properties`
      names that branch, since the documentation links each page to its source on `githubBranch`. When creating a new
-     maintenance branch, set `githubBranch` to it in `gradle.properties`.
+     maintenance branch, set `githubBranch` to it in `gradle.properties`. The CI workflow fails on a maintenance branch,
+     and on a pull request into one, until it does.
    * run the pre-release workflow (updates gradle.properties to be the version specified by the user)
    * extract signing secrets from github action variables 
    * build the project, sign the jar files, and stage them to the necessary locations
