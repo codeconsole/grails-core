@@ -249,6 +249,17 @@ class JsonMapperRenderingSpec extends Specification {
                 '{"date":1759909726407,"optional":1759909726407,"record":{"when":1759909726407}}'
     }
 
+    void "a registered marshaller keeps the Grails 8 rendering of a type, as the upgrade guide shows"() {
+        given:
+        JSON.registerObjectMarshaller(Month) { Month month -> month.name() }
+        JSON.registerObjectMarshaller(Locale) { Locale locale -> locale.toString() }
+        JSON.registerObjectMarshaller(byte[]) { byte[] bytes -> bytes as List }
+
+        expect:
+        new JSON([month: Month.MAY, locale: Locale.forLanguageTag('zh-Hant-TW'), bytes: [1, 2, 3] as byte[]]).toString() ==
+                '{"month":"MAY","locale":"zh_TW_#Hant","bytes":[1,2,3]}'
+    }
+
     void "a marshaller an ObjectMarshallerRegisterer registers takes precedence"() {
         given:
         def context = applicationContext {

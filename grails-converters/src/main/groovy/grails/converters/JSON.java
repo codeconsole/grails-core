@@ -51,6 +51,7 @@ import org.grails.web.converters.configuration.DefaultConverterConfiguration;
 import org.grails.web.converters.exceptions.ConverterException;
 import org.grails.web.converters.marshaller.ClosureObjectMarshaller;
 import org.grails.web.converters.marshaller.ObjectMarshaller;
+import org.grails.web.json.JSONArray;
 import org.grails.web.json.JSONElement;
 import org.grails.web.json.JSONException;
 import org.grails.web.json.JSONObject;
@@ -58,6 +59,7 @@ import org.grails.web.json.JSONTokener;
 import org.grails.web.json.JSONWriter;
 import org.grails.web.json.JsonMapperSupport;
 import org.grails.web.json.PathCapturingJSONWriterWrapper;
+import org.grails.web.json.PrettyPrintJSONWriter;
 
 /**
  * A converter that converts domain classes, Maps, Lists, Arrays, POJOs and POGOs to JSON.
@@ -108,9 +110,12 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         this.prettyPrint = prettyPrint;
     }
 
+    @SuppressWarnings("removal")
     private void prepareRender(Writer out) {
         jsonMapper = ConvertersConfigurationHolder.getJsonMapper();
-        jsonWriter = new JSONWriter(out, jsonMapper, prettyPrint);
+        jsonWriter = prettyPrint && ConvertersConfigurationHolder.isLegacyJson() ?
+                new PrettyPrintJSONWriter(out, jsonMapper, PrettyPrintJSONWriter.DEFAULT_INDENT_STR) :
+                new JSONWriter(out, jsonMapper, prettyPrint);
         writer = jsonWriter;
         if (circularReferenceBehaviour == CircularReferenceBehaviour.PATH) {
             if (log.isInfoEnabled()) {
@@ -264,6 +269,18 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
      * @throws JSONException
      */
     public String toString(boolean prettyPrint) throws JSONException {
+        if (prettyPrint && ConvertersConfigurationHolder.isLegacyJson()) {
+            // as Grails 8 indented it
+            String json = super.toString();
+            Object value = new JSONTokener(json).nextValue();
+            if (value instanceof JSONObject jsonObject) {
+                return jsonObject.toString(3);
+            }
+            if (value instanceof JSONArray jsonArray) {
+                return jsonArray.toString(3);
+            }
+            return json;
+        }
         boolean configuredPrettyPrint = this.prettyPrint;
         this.prettyPrint = prettyPrint;
         try {

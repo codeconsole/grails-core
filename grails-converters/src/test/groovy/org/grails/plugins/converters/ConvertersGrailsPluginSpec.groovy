@@ -84,17 +84,21 @@ class ConvertersGrailsPluginSpec extends Specification {
         beanFactory.getBean('domainClassJacksonModule') instanceof DomainClassJacksonModule
     }
 
-    void "the domain class Jackson module is not registered when grails.converters.json.domain.jackson.enabled is false"() {
+    void "the domain class Jackson module is not registered when #setting is #value"() {
         given:
         def environment = new StandardEnvironment()
-        environment.propertySources.addFirst(new MapPropertySource('test',
-                [(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED): 'false']))
+        environment.propertySources.addFirst(new MapPropertySource('test', [(setting): value]))
         def factory = new DefaultListableBeanFactory()
         def registrar = new ConvertersGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(factory, environment, registrar.getClass()).register(registrar)
 
         expect:
         !factory.containsBeanDefinition('domainClassJacksonModule')
+
+        where:
+        setting                                                                       | value
+        ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED | 'false'
+        ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_LEGACY                 | 'true'
     }
 
     void "Spring Boot's JsonMapper renders domain classes as the JSON converter does"() {

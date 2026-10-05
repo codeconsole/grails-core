@@ -50,6 +50,8 @@ public class ConvertersConfigurationHolder {
 
     private static volatile JsonMapperSupport jsonMapper = JsonMapperSupport.DEFAULT;
 
+    private static volatile boolean legacyJson;
+
     @FunctionalInterface
     public interface ConverterAction {
         void run() throws ConverterException;
@@ -88,6 +90,7 @@ public class ConvertersConfigurationHolder {
         configurationHolder.threadLocalConfiguration = createThreadLocalConfiguration();
         observationRegistry = ObservationRegistry.NOOP;
         jsonMapper = JsonMapperSupport.DEFAULT;
+        legacyJson = false;
     }
 
     /**
@@ -107,6 +110,22 @@ public class ConvertersConfigurationHolder {
      */
     public static JsonMapperSupport getJsonMapper() {
         return jsonMapper;
+    }
+
+    /**
+     * @return whether the JSON converter renders JSON as Grails 8 did ({@code grails.converters.json.legacy})
+     * @since 9.0
+     */
+    public static boolean isLegacyJson() {
+        return legacyJson;
+    }
+
+    /**
+     * @param legacy whether the JSON converter renders JSON as Grails 8 did
+     * @since 9.0
+     */
+    public static void setLegacyJson(boolean legacy) {
+        legacyJson = legacy;
     }
 
     /**
