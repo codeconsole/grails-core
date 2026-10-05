@@ -56,11 +56,18 @@ jobs:
           ref: ${{ github.ref }}
       - name: "🔍 Verify the branch builds the requested version"
         # VERSION only picks the website folder. The documentation is built with the branch's projectVersion,
-        # so a branch on another version would publish that version's documentation under VERSION.
+        # so a branch on another version would publish that version's documentation under VERSION. Its pages
+        # link to their sources on githubBranch, which must stay the version's maintenance branch.
         run: |
           projectVersion=$(sed -n 's/^projectVersion=//p' gradle.properties)
           if [[ "${projectVersion}" != "${VERSION#v}" ]]; then
             echo "❌ ${GITHUB_REF_NAME} builds ${projectVersion:-an unknown version}, not ${VERSION#v}. Run this workflow from a branch created from the v${VERSION#v} tag." >&2
+            exit 1
+          fi
+          IFS=. read -r major minor _ <<< "${projectVersion}"
+          githubBranch=$(sed -n 's/^githubBranch=//p' gradle.properties)
+          if [[ "${githubBranch}" != "${major}.${minor}.x" ]]; then
+            echo "❌ githubBranch in gradle.properties is '${githubBranch}', not ${major}.${minor}.x. Fix it on ${GITHUB_REF_NAME}." >&2
             exit 1
           fi
       - name: "📅 Ensure Common Build Date" # to ensure a reproducible build
@@ -76,8 +83,8 @@ jobs:
           cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
       - name: "📖 Generate Documentation"
-        # githubBranch comes from the release commit's gradle.properties, so the source links point at the same branch as
-        # the voted documentation instead of the temporary correction branch
+        # githubBranch comes from gradle.properties, so the source links point at the same branch as the voted
+        # documentation instead of the temporary correction branch
         run: ./gradlew grails-doc:build
       - name: "🚀 Publish to GitHub Pages"
         uses: apache/grails-github-actions/deploy-github-pages@asf

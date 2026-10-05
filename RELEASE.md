@@ -35,7 +35,8 @@ During the staging step, we must create a source distribution & stage any binary
    * Click "Draft a new release" here: https://github.com/apache/grails-core/releases
    * On the draft new release screen, we execute the following steps:
      * The tag will have the prefix 'v', so for our release it would be 'v7.0.0-M4'
-     * The "Target" will be the branch we build out of (this case it's the default, 7.0.x)
+     * The "Target" will be the branch we build out of (this case it's the default, 7.0.x). It must be the version's
+       maintenance branch, for example `8.0.x` for `8.0.1`, or the `publish` job fails.
      * Previous tag will be auto
      * Click "Generate Release Notes"
        * This will then scan our commit history and we adjust the release notes per project agreement.
@@ -46,8 +47,10 @@ During the staging step, we must create a source distribution & stage any binary
    * checkout the project
    * setup gradle
    * extract the version # from the tag
-   * run the pre-release workflow (updates gradle.properties to be the version specified by the user, and records the
-     release's target branch as `githubBranch` so the documentation's source links come from the source distribution)
+   * verify that the release targets the version's maintenance branch and that `githubBranch` in `gradle.properties`
+     names that branch, since the documentation links each page to its source on `githubBranch`. When creating a new
+     maintenance branch, set `githubBranch` to it in `gradle.properties`.
+   * run the pre-release workflow (updates gradle.properties to be the version specified by the user)
    * extract signing secrets from github action variables 
    * build the project, sign the jar files, and stage them to the necessary locations
    * add the grails wrapper to the `grails-core` release
@@ -390,9 +393,9 @@ To correct the documentation of a version that is already released, create a bra
 (for example `v8.0.0`), commit the fix to it, and run the `Release - Publish Documentation` workflow from that branch
 with the same version. That workflow rebuilds the documentation from the branch instead of publishing the voted zip. It
 fails unless the branch's `projectVersion` equals the requested version, so it cannot publish documentation built from a
-maintenance branch, which has moved on to the next `-SNAPSHOT` version. The rebuilt pages link to their sources on the
-`githubBranch` that the release commit recorded in `gradle.properties`, the same branch as the voted documentation, so
-the correction branch can be deleted afterwards.
+maintenance branch, which has moved on to the next `-SNAPSHOT` version. It also fails unless `githubBranch` in
+`gradle.properties` names the version's maintenance branch, so the rebuilt pages link to their sources on the same branch
+as the voted documentation, and the correction branch can be deleted afterwards.
 
 ### Advertise the release via SDKMAN
 
