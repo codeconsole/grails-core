@@ -36,7 +36,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       # mirror the layout of the local verification container (etc/bin/Dockerfile):
       # the source is checked out at 'project' and verification runs from a

@@ -26,7 +26,6 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   JAVA_DISTRIBUTION: liberica
   JAVA_VERSION: 21.0.12
-  TARGET_BRANCH: ${{ github.ref_name }}
   VERSION: ${{ inputs.version }}
 jobs:
   docs:
@@ -77,7 +76,9 @@ jobs:
           cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
       - name: "📖 Generate Documentation"
-        run: ./gradlew grails-doc:build -PgithubBranch=${TARGET_BRANCH}
+        # githubBranch comes from the release commit's gradle.properties, so the source links point at the same branch as
+        # the voted documentation instead of the temporary correction branch
+        run: ./gradlew grails-doc:build
       - name: "🚀 Publish to GitHub Pages"
         uses: apache/grails-github-actions/deploy-github-pages@asf
         env:

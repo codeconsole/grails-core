@@ -390,7 +390,9 @@ To correct the documentation of a version that is already released, create a bra
 (for example `v8.0.0`), commit the fix to it, and run the `Release - Publish Documentation` workflow from that branch
 with the same version. That workflow rebuilds the documentation from the branch instead of publishing the voted zip. It
 fails unless the branch's `projectVersion` equals the requested version, so it cannot publish documentation built from a
-maintenance branch, which has moved on to the next `-SNAPSHOT` version.
+maintenance branch, which has moved on to the next `-SNAPSHOT` version. The rebuilt pages link to their sources on the
+`githubBranch` that the release commit recorded in `gradle.properties`, the same branch as the voted documentation, so
+the correction branch can be deleted afterwards.
 
 ### Advertise the release via SDKMAN
 

@@ -527,6 +527,7 @@ jobs:
       - name: "📧 Print Grails Vote Email"
         run: |
           export DIST_SVN_REVISION=$(awk '/Last Changed Rev:/ {print $4}' dev-repo/DIST_SVN_REVISION.txt)
+          export DOCS_ZIP_SIZE=$(numfmt --to=si --suffix=B "$(stat -c %s "dev-repo/${VERSION}/distribution/${DIST_NAME}-${VERSION}-docs.zip")")
           
           echo "::group::Grails PMC Vote Email"
           echo ""
@@ -628,18 +629,6 @@ jobs:
         run: |
           current_limit=$(gh api rate_limit --jq '.resources.graphql')
           echo "Current Rate Limit: $current_limit"
-      - name: "⚙️ Maximize build space"
-        run: |
-          echo "-- Dotnet"
-          sudo rm -rf /usr/share/dotnet
-          echo "-- Android"
-          sudo rm -rf /usr/local/lib/android
-          echo "-- Haskell"
-          sudo rm -rf /opt/ghc
-          echo "-- CodeQL"
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-
-          df -h
       - name: "📥 Download the voted documentation distribution"
         # The vote approved this exact ZIP, so it is published as-is instead of rebuilt. It is in
         # the release area once releaseDistributions.sh has promoted it, and in dev until then.
