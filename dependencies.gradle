@@ -89,7 +89,7 @@ ext {
             'commons-compress.version'      : '1.28.0',
             'commons-lang3.version'         : '3.20.0',
             'geb-spock.version'             : '8.0.1',
-            'graphql-java.version'          : '24.3',
+            'graphql-java.version'          : '24.4',
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '4.0.33',
             'guava.version'                 : '33.6.0-jre',
