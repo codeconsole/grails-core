@@ -29,6 +29,7 @@ import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupport
 import spock.lang.Specification
 
 class GrailsContentNegotiationStrategySpec extends Specification {
@@ -128,9 +129,33 @@ class GrailsContentNegotiationStrategySpec extends Specification {
         1 * configurer.mediaTypes({ Map<String, MediaType> aliases ->
             aliases['json'] == MediaType.APPLICATION_JSON &&
                     aliases['xml'] == MediaType.APPLICATION_XML &&
-                    aliases['html'] == MediaType.TEXT_HTML &&
+                    !aliases.containsKey('html') &&
                     !aliases.containsKey('all')
         })
+    }
+
+    void 'real default aliases prefer application XML and do not mark browser formats safe'() {
+        given:
+        def configured = (MimeType.createDefaults().toList() + new MimeType('text/ invalid', 'csv')) as MimeType[]
+        def grailsConfigurer = new GrailsMimeTypesWebMvcConfigurer(new GrailsContentNegotiationStrategy(configured, config([:])))
+        def mvc = new WebMvcConfigurationSupport() {
+            @Override
+            protected void configureContentNegotiation(ContentNegotiationConfigurer configurer) {
+                grailsConfigurer.configureContentNegotiation(configurer)
+                configurer.favorParameter(true).parameterName('format')
+            }
+        }
+        def manager = mvc.mvcContentNegotiationManager()
+        def request = new MockHttpServletRequest()
+        request.setParameter('format', 'xml')
+
+        expect:
+        manager.resolveMediaTypes(new ServletWebRequest(request)) == [MediaType.APPLICATION_XML]
+        manager.allFileExtensions.disjoint(['html', 'js', 'css', 'pdf', 'form', 'multipartform'])
+
+        and: 'Grails aliases precede Boot and application configurers'
+        GrailsMimeTypesWebMvcConfigurer.getAnnotation(org.springframework.core.annotation.Order).value() ==
+                org.springframework.core.Ordered.HIGHEST_PRECEDENCE
     }
 
     private static GrailsContentNegotiationStrategy strategy(Config config = config([:])) {

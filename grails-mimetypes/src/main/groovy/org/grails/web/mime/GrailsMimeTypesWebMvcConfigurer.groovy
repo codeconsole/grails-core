@@ -20,6 +20,9 @@ package org.grails.web.mime
 
 import groovy.transform.CompileStatic
 
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
+
 import grails.web.mime.MimeType
 
 import org.springframework.http.MediaType
@@ -30,7 +33,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
  * Installs Grails format negotiation as the Spring MVC content negotiation strategy.
  */
 @CompileStatic
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class GrailsMimeTypesWebMvcConfigurer implements WebMvcConfigurer {
+
+    private static final Set<String> DATA_FORMATS = Set.of('json', 'xml', 'hal', 'atom', 'rss', 'csv', 'text')
 
     private final GrailsContentNegotiationStrategy contentNegotiationStrategy
 
@@ -59,12 +65,20 @@ class GrailsMimeTypesWebMvcConfigurer implements WebMvcConfigurer {
         Map<String, MediaType> aliases = [:]
         for (MimeType mimeType in contentNegotiationStrategy.configuredMimeTypes) {
             String extension = mimeType.extension
-            if (!extension || extension == MimeType.ALL.extension) {
+            if (!DATA_FORMATS.contains(extension ?: '')) {
                 continue
             }
-            MediaType mediaType = SpringMediaTypeAdapter.toMediaType(mimeType)
+            MediaType mediaType
+            try {
+                mediaType = SpringMediaTypeAdapter.toMediaType(mimeType)
+            } catch (IllegalArgumentException ignored) {
+                continue
+            }
             if (mediaType != null && !mediaType.isWildcardType() && !mediaType.isWildcardSubtype()) {
-                aliases.putIfAbsent(extension, new MediaType(mediaType.type, mediaType.subtype))
+                MediaType existing = aliases.get(extension)
+                if (existing == null || (existing.type != 'application' && mediaType.type == 'application')) {
+                    aliases.put(extension, new MediaType(mediaType.type, mediaType.subtype))
+                }
             }
         }
         if (aliases) {

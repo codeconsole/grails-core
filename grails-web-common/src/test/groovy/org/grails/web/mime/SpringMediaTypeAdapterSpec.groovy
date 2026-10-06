@@ -84,4 +84,19 @@ class SpringMediaTypeAdapterSpec extends Specification {
         SpringMediaTypeAdapter.toMediaType(null) == null
         SpringMediaTypeAdapter.toMimeType(null) == null
     }
+
+    void 'invalid legacy quality values are dropped when adapting to Spring'() {
+        expect:
+        SpringMediaTypeAdapter.toMediaType(new MimeType('application/json', 'json', [q: quality])).qualityValue == 1d
+
+        where:
+        quality << ['2.0', '-1', 'abc', 'NaN', 'Infinity']
+    }
+
+    void 'empty MIME parameters are safe to parse'() {
+        expect:
+        new MimeType('text/html;').name == 'text/html'
+        new MimeType('text/html;profile=').parameters.profile == ''
+        new MimeType(';').name == ''
+    }
 }

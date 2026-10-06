@@ -280,10 +280,16 @@ Spring handler continues to match `produces` against the `Accept` header exactly
 Boot application, and still answers `406 Not Acceptable` for a media type it cannot produce. The
 `spring.mvc.contentnegotiation.*` properties therefore continue to work.
 
-The extensions declared in `grails.mime.types` are additionally registered with Spring as format
-aliases, so enabling `spring.mvc.contentnegotiation.favor-parameter` resolves them without any further
-configuration.
+The data-format extensions `json`, `xml`, `hal`, `atom`, `rss`, `csv` and `text` declared in
+`grails.mime.types` are additionally registered with Spring as format aliases. Browser formats such
+as `html` and `js` are not registered, preserving Spring's reflected-file-download protection.
+Application media types are preferred for aliases with multiple names, and Boot's
+`spring.mvc.contentnegotiation.media-types.*` overrides these defaults. Invalid names are skipped.
 
 An unknown `format` parameter selects the first configured Grails MIME type (normally `*/*`).
 This also applies to `withFormat` and `response.mimeTypes`; they no longer ignore an unknown parameter
 and fall back to the `Accept` header.
+
+A known but unhandled format (for example `?format=xml` with only `html` and `json` blocks) likewise
+does not fall back to the Accept header. After `withFormat` selects a format, `response.mimeTypes`
+reflects that selected format rather than the original Accept list.

@@ -46,6 +46,16 @@ final class SpringMediaTypeAdapter {
                 parameters.put(name.toString(), value.toString())
             }
         }
+        if (parameters.containsKey('q')) {
+            try {
+                double quality = Double.parseDouble(parameters.get('q'))
+                if (!Double.isFinite(quality) || quality < 0 || quality > 1) {
+                    parameters.remove('q')
+                }
+            } catch (NumberFormatException ignored) {
+                parameters.remove('q')
+            }
+        }
         return new MediaType(parsed.type, parsed.subtype, parameters)
     }
 
