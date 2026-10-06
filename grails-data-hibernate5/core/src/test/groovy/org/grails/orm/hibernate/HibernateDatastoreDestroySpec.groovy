@@ -85,17 +85,31 @@ class HibernateDatastoreDestroySpec extends Specification {
         List<SessionFactory> tenantSessionFactories = tenantIds.collect { String tenantId ->
             datastore.getDatastoreForConnection(tenantId).sessionFactory
         }
+        List<HibernateDatastore> startupTenantDatastores = ['destroyTenantA', 'destroyTenantB'].collect { String tenantId ->
+            datastore.getDatastoreForConnection(tenantId)
+        }
+        GormRegistry registry = GormRegistry.instance
 
         expect: 'every tenant has its own open session factory'
         tenantSessionFactories.unique(false) { System.identityHashCode(it) }.size() == tenantIds.size()
         !tenantSessionFactories.any { it.is(datastore.sessionFactory) }
         tenantSessionFactories.every { it.isOpen() }
 
+        and: 'the registry holds the datastores of the tenants resolved at startup'
+        startupTenantDatastores.every { HibernateDatastore tenant ->
+            registry.datastoresByQualifier.values().any { it.is(tenant) }
+        }
+
         when:
         datastore.destroy()
 
         then: 'the tenant session factories are closed'
         tenantSessionFactories.every { it.isClosed() }
+
+        and: 'the registry no longer holds the tenant datastores'
+        !startupTenantDatastores.any { HibernateDatastore tenant ->
+            registry.datastoresByQualifier.values().any { it.is(tenant) }
+        }
     }
 
     static class DestroySchemaTenantsResolver extends SystemPropertyTenantResolver implements AllTenantsResolver {

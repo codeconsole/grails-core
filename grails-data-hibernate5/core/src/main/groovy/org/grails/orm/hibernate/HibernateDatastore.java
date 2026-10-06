@@ -568,7 +568,7 @@ public class HibernateDatastore extends AbstractHibernateDatastore implements Me
             try {
                 tenantConnectionSource.close();
             } catch (IOException e) {
-                LOG.error("There was an error closing the connection source of schema tenant [" + tenantConnectionSource.getName() + "]: " + e.getMessage(), e);
+                LOG.error("There was an error closing the connection source of schema tenant [{}]: {}", tenantConnectionSource.getName(), e.getMessage(), e);
             }
         }
         schemaTenantConnectionSources.clear();
