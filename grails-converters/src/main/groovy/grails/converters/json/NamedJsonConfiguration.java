@@ -37,24 +37,38 @@ public final class NamedJsonConfiguration {
     private final Map<Object, Object> attributes = new LinkedHashMap<>();
     private Class<?> serializationView;
     private volatile ObjectWriter writer;
+    private boolean registered;
 
     NamedJsonConfiguration(String name) {
         this.module = new SimpleModule("grails-json-" + name);
     }
 
     public <T> NamedJsonConfiguration serializer(Class<T> type, ValueSerializer<? super T> serializer) {
+        assertMutable();
         module.addSerializer(type, serializer);
         return this;
     }
 
     public NamedJsonConfiguration view(Class<?> view) {
+        assertMutable();
         this.serializationView = view;
         return this;
     }
 
     public NamedJsonConfiguration attribute(Object name, Object value) {
+        assertMutable();
         attributes.put(name, value);
         return this;
+    }
+
+    void freeze() {
+        registered = true;
+    }
+
+    private void assertMutable() {
+        if (registered) {
+            throw new IllegalStateException("Named JSON configurations cannot be changed after registration; register a replacement.");
+        }
     }
 
     ObjectWriter createWriter(JsonMapper mapper) {

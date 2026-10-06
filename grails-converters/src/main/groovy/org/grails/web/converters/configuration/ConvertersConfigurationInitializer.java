@@ -121,7 +121,6 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
                 LOG.debug("Using Javascript JSON Date Marshaller.");
             }
             marshallers.add(new org.grails.web.converters.marshaller.json.JavascriptDateMarshaller());
-            ConvertersConfigurationHolder.markDefaultConfigurationCustomized(JSON.class);
         }
         else {
             if (LOG.isDebugEnabled()) {
@@ -156,7 +155,6 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
         ProxyHandler proxyHandler = getProxyHandler();
         if (grailsConfig.getProperty(SETTING_CONVERTERS_JSON_DEFAULT_DEEP, Boolean.class, false)) {
             LOG.debug("Using DeepDomainClassMarshaller as default.");
-            ConvertersConfigurationHolder.markDefaultConfigurationCustomized(JSON.class);
             marshallers.add(new org.grails.web.converters.marshaller.json.DeepDomainClassMarshaller(includeDomainVersion, includeDomainClassName, proxyHandler, grailsApplication));
         }
         else {
@@ -231,11 +229,6 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
             ObjectMarshallerRegisterer omr = (ObjectMarshallerRegisterer) o;
             if (omr.getConverterClass() == converterClass) {
                 cfg.registerObjectMarshaller(omr.getMarshaller(), omr.getPriority());
-                // The converters plugin registers its validation errors marshaller the same way
-                if (omr.getMarshaller() == null ||
-                        omr.getMarshaller().getClass() != org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller.class) {
-                    ConvertersConfigurationHolder.markDefaultConfigurationCustomized(converterClass);
-                }
             }
         }
     }

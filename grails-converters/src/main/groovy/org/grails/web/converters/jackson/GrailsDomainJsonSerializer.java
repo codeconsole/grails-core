@@ -59,6 +59,10 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
     @Override
     public void serialize(Object value, JsonGenerator generator, SerializationContext context) throws JacksonException {
         Object unwrapped = proxyHandler.unwrapIfProxy(value);
+        if (unwrapped != value && unwrapped.getClass() != entity.getJavaClass()) {
+            context.writeValue(generator, unwrapped);
+            return;
+        }
         BeanWrapper bean = new BeanWrapperImpl(unwrapped);
         List<String> includes = properties(context, GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, unwrapped.getClass());
         List<String> excludes = properties(context, GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, unwrapped.getClass());

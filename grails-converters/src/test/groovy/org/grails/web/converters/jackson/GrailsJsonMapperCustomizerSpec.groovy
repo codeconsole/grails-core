@@ -45,7 +45,7 @@ import spock.lang.Specification
 
 class GrailsJsonMapperCustomizerSpec extends Specification {
 
-    void 'Boot JsonMapper receives the Grails validation errors serializer'() {
+    void 'only the Grails mapper receives the validation errors serializer'() {
         given:
         def errors = new BeanPropertyBindingResult(new JsonCommand(), 'command')
         errors.rejectValue('name', 'blank', 'must not be blank')
@@ -55,7 +55,8 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         context.refresh()
 
         expect: "the same entry shape the RFC 9457 problem uses, so the two cannot drift apart"
-        def mapper = context.getBean(JsonMapper)
+        def bootMapper = context.getBean(JsonMapper)
+        def mapper = context.getBean(GrailsJsonMapperCustomizer).forGrails(bootMapper)
         def entry = mapper.readValue(mapper.writeValueAsString(errors), Map).errors.first()
         entry.object == 'command'
         entry.field == 'name'
@@ -64,6 +65,12 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
 
         and: "the submitted value is never exposed on this path"
         !entry.containsKey('rejectedValue')
+
+        when: 'the shared mapper uses ordinary bean serialization, including the cyclic model'
+        bootMapper.writeValueAsString(errors)
+
+        then: 'Grails has not installed its Errors serializer on the shared mapper'
+        thrown(tools.jackson.core.exc.StreamConstraintsException)
 
         cleanup:
         context.close()
@@ -261,6 +268,32 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         customizer.customize(builder)
         customizer.forGrails(builder.build())
     }
+
+    void 'a narrowed proxy renders the unwrapped subclass properties and class name'() {
+        given:
+        def target = new SpecialJacksonBook(title: 'Subclass', edition: 'second').tap { id = 5 }
+        def proxy = new JacksonBookProxy(target: target)
+        def mapping = new KeyValueMappingContext('polymorphic')
+        mapping.addPersistentEntities(JacksonBook, SpecialJacksonBook, JacksonAuthor)
+        def app = new DefaultGrailsApplication(JacksonBook, SpecialJacksonBook, JacksonAuthor)
+        app.mappingContext = mapping
+        app.config.setAt('grails.converters.domain.include.class', true)
+        def proxyHandler = Stub(ProxyHandler) {
+            unwrapIfProxy(_) >> { args -> args[0].is(proxy) ? target : args[0] }
+        }
+        def mapper = new GrailsJsonMapperCustomizer(app, proxyHandler).forGrails(JsonMapper.builder().build())
+
+        expect:
+        def result = mapper.readValue(mapper.writeValueAsString([pet: proxy]), Map).pet
+        result.class == SpecialJacksonBook.name
+        result.edition == 'second'
+        result.title == 'Subclass'
+    }
+}
+
+@Entity
+class SpecialJacksonBook extends JacksonBook {
+    String edition
 }
 
 class JsonCommand {

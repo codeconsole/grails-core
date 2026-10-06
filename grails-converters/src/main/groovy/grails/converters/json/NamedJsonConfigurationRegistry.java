@@ -30,6 +30,7 @@ import java.util.function.Supplier;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.json.JsonMapper;
 
+import org.grails.core.artefact.DomainClassArtefactHandler;
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer;
 
 /**
@@ -65,11 +66,12 @@ public final class NamedJsonConfigurationRegistry {
         Objects.requireNonNull(customizer, "customizer");
         NamedJsonConfiguration configuration = new NamedJsonConfiguration(name);
         customizer.accept(configuration);
+        configuration.freeze();
         configurations.put(name, configuration);
     }
 
     public boolean contains(String name) {
-        return configurations.containsKey(name);
+        return name == null || configurations.containsKey(name);
     }
 
     /** @param name the registered name, or null to use the default Grails writer */
@@ -108,7 +110,8 @@ public final class NamedJsonConfigurationRegistry {
 
     /**
      * Writes with a per-response include/exclude projection applied on top of the named
-     * configuration, so that selecting a configuration does not discard the projection.
+     * configuration. Projections require domain objects (or iterables of domain objects);
+     * non-domain values are rejected before writing instead of silently ignoring the projection.
      *
      * @param name the registered configuration
      * @param output the response writer
@@ -120,6 +123,9 @@ public final class NamedJsonConfigurationRegistry {
     public void writeValue(String name, Writer output, Object value,
             List<String> includes, List<String> excludes) throws IOException {
         ObjectWriter writer = writer(name);
+        if ((includes != null && !includes.isEmpty()) || (excludes != null && !excludes.isEmpty())) {
+            requireDomainProjection(value);
+        }
         if (includes != null && !includes.isEmpty()) {
             writer = writer.withAttribute(GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, includes);
         }
@@ -127,5 +133,14 @@ public final class NamedJsonConfigurationRegistry {
             writer = writer.withAttribute(GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, excludes);
         }
         writer.writeValue(output, value);
+    }
+
+    private void requireDomainProjection(Object value) {
+        if (value instanceof Iterable<?> values) {
+            values.forEach(this::requireDomainProjection);
+        } else if (value != null && !DomainClassArtefactHandler.isDomainClass(value.getClass(), true)) {
+            throw new IllegalArgumentException("JSON includes/excludes require domain objects on the Jackson path. " +
+                    "Use a DTO, Jackson view, or explicit serializer for non-domain values.");
+        }
     }
 }

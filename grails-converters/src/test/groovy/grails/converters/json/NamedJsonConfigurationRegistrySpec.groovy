@@ -31,6 +31,7 @@ import tools.jackson.databind.ValueSerializer
 import tools.jackson.databind.json.JsonMapper
 
 import grails.core.DefaultGrailsApplication
+import grails.persistence.Entity
 import grails.core.support.proxy.DefaultProxyHandler
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
@@ -124,6 +125,49 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         error.message == 'Named JSON configuration [missing] is not registered.'
     }
 
+    void 'null denotes the default configuration'() {
+        expect:
+        new NamedJsonConfigurationRegistry(JsonMapper.builder().build()).contains(null)
+    }
+
+    void 'registered configurations reject changes rather than silently retaining a cached writer'() {
+        given:
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        NamedJsonConfiguration captured
+        registry.register('fixed') { captured = it }
+        registry.writer('fixed')
+
+        when:
+        mutation.call(captured)
+
+        then:
+        thrown(IllegalStateException)
+
+        where:
+        mutation << [
+                { it.serializer(NamedJsonValue, new NamedJsonValueSerializer()) },
+                { it.view(String) },
+                { it.attribute('key', 'value') }
+        ]
+    }
+
+    void 'non domain projections fail before writing any sensitive fields'() {
+        given:
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        registry.register('safe') { }
+        def output = new StringWriter()
+
+        when:
+        registry.writeValue('safe', output, value, null, ['name'])
+
+        then:
+        thrown(IllegalArgumentException)
+        output.toString().empty
+
+        where:
+        value << [new NamedJsonValue(name: 'secret'), [name: 'secret'], [new NamedJsonValue(name: 'secret')]]
+    }
+
     void 'the writer for a configuration is derived once and reused'() {
         given:
         def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
@@ -184,6 +228,7 @@ class NamedJsonValueSerializer extends ValueSerializer<NamedJsonValue> {
     }
 }
 
+@Entity
 class NamedJsonBook {
     Long id
     String title

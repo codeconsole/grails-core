@@ -91,9 +91,6 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
     public void customize(JsonMapper.Builder builder) {
         SimpleModule module = new SimpleModule("grails-json");
         module.addSerializer(GString.class, ToStringSerializer.instance);
-        // Resolve messages at write time, after the application context is ready.
-        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
-                () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
         builder.addModule(module);
     }
 
@@ -128,6 +125,9 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
                 context.addSerializers(domainSerializers);
             }
         };
+        // Do not change Errors returned from plain Spring MVC controllers.
+        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
+                () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
         builder.addModule(module);
     }
 }

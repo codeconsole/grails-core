@@ -82,15 +82,22 @@ class JsonCompatibilitySpec extends Specification {
         JSON.parse(new JSON(new JsonCompatibilityBean(value: 'custom')).toString()) == [renamed: 'CUSTOM']
     }
 
-    void 'legacy object marshaller registration overloads are deprecated for removal'() {
+    void 'legacy default configuration changes still apply to converter output'() {
+        when:
+        JSON.withDefaultConfiguration { it.prettyPrint = true }
+
+        then:
+        new JSON([title: 'Grails']).toString().contains('\n')
+    }
+
+    void 'object marshaller registration overloads remain supported'() {
         when:
         def methods = JSON.declaredMethods.findAll { it.name == 'registerObjectMarshaller' }
 
         then:
         methods.size() == 4
         methods.every { method ->
-            Deprecated deprecated = method.getAnnotation(Deprecated)
-            deprecated?.since() == '9.0' && deprecated.forRemoval()
+            method.getAnnotation(Deprecated) == null
         }
     }
 
