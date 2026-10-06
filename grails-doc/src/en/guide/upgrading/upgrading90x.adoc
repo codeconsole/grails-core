@@ -51,7 +51,7 @@ The module preserves the established Grails XML APIs and compatibility marshalli
 payloads, collections, maps, validation errors, named converter configurations, and include/exclude
 projections.
 
-Ordinary bean responses can also be written by Spring Framework's `JacksonXmlHttpMessageConverter`,
+Set `grails.web.rendering.xml.spring: true` to write ordinary bean responses with Spring Framework's `JacksonXmlHttpMessageConverter`,
 backed by the Spring Boot-managed Jackson XML mapper. As in a plain Spring Boot application, that
 converter is registered only when Jackson's XML dataformat is on the classpath, so applications that
 want it add the dependency themselves:
@@ -64,7 +64,13 @@ dependencies {
 }
 ----
 
-Without it, `grails-xml` still renders XML through the Grails converter. Applications may also register
+Grails 9 defaults this setting to `false`: adding the Jackson XML dependency alone does not bypass
+registered XML marshallers. Enabling it explicitly selects Spring for ordinary beans, even when a
+legacy marshaller is registered. Domain objects, collections, maps, validation errors and projections
+continue to use the Grails XML converter; migrate these to DTOs or explicit application renderers
+before legacy XML conversion is removed in Grails 11.
+
+Without the Jackson XML dependency, `grails-xml` still renders XML through the Grails converter. Applications may also register
 their own Spring XML message converter or OXM/JAXB infrastructure through public Spring configuration
 APIs.
 
@@ -113,10 +119,15 @@ explicit serializer or return a DTO when that property model is required. Ordina
 retain Jackson's property rules. Application-provided converter subclasses and per-type mapper
 registrations keep their configured behavior and precedence.
 
+Association identifiers use their mapped identity property name (for example `uuid`), rather than
+the legacy marshaller's fixed `id` key. Cycles through embedded or plain bean properties are errors
+on the Jackson path: the legacy `_ref` representation and `circular.reference.behaviour` setting do
+not apply. Break such cycles with DTOs or application serializers before opting in.
+
 Boot's shared mapper is not given the Grails domain serializer, so plain Spring `@RestController`
 responses retain Jackson's normal domain property model. Both mappers serialize Groovy `GString`
-values as strings. Both also serialize Spring `Errors` as an `errors` array containing object, field,
-message, and codes, without rejected values; only Grails `respond errors` adapts that array into an
+values as strings. Only the Grails mapper serializes Spring `Errors` as an `errors` array containing
+object, field, message, and codes, without rejected values; Grails `respond errors` adapts that array into an
 RFC 9457 problem response.
 
 Grails retains the legacy converter path when a named converter configuration or per-response
@@ -127,8 +138,10 @@ precedence over the default renderer.
 Jackson conversion uses UTF-8 for intermediate bytes; the response writer applies
 `grails.converters.encoding`, so non-UTF response encodings do not corrupt the intermediate JSON.
 
-Controller unit tests use Boot's Jackson configuration and the same setting. A test's `doWithSpring`
-can supply a mapper or `JsonMapperBuilderCustomizer` just as an application can. Named JSON
+Controller unit tests use Boot's Jackson configuration and the same setting. Supply a mapper or
+`JsonMapperBuilderCustomizer` from a nested Spring `@Configuration` class, so Boot can see it before
+evaluating its conditional beans. A mapper registered by the deprecated `doWithSpring` callback is too
+late to make Boot back off. Named JSON
 configurations work through `render` and `respond` in `ControllerUnitTest`. The optional `grails-xml`
 beans are contributed by web test traits when present, without loading the XML plugin's dependency
 graph. Web traits automatically include `restResponder`, even when a test overrides
@@ -136,15 +149,17 @@ graph. Web traits automatically include `restResponder`, even when a test overri
 They do not automatically load the controllers, URL mappings or i18n plugins; link generation retains
 the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
 plugin graph simply because that module is on the classpath.
+The lightweight web unit-test slice does not load Spring MVC's full converter configuration; see
+<<unitTesting,Unit Testing>> for the converter limitations and when to use an integration test.
 
 ==== 3. JSON Converter Customization Moves to Jackson
 
-The `grails.converters.JSON.registerObjectMarshaller(...)` API, used by the `grails-converters` module for
-`render ... as JSON` and related converter-based rendering, is deprecated for removal. Existing
-registrations continue to work on the legacy converter path, and keep `respond()` on it, until a future
-major release removes them. For new code, customize
-Spring Boot's `JsonMapper` instead so the same serializer is used by `respond`, Spring MVC message
-conversion, and other Jackson-based integrations:
+The `grails.converters.JSON.registerObjectMarshaller(...)` API remains supported for
+`render ... as JSON` and converter-based rendering. Registering a marshaller does not change the
+`respond()` rendering setting. Marshaller registrations apply to its legacy converter path, not to
+Spring's message converters. To customize the Spring path, configure Spring Boot's `JsonMapper` so
+the same serializer is used by opted-in `respond`, Spring MVC message conversion, and other
+Jackson-based integrations:
 
 [source,groovy]
 ----
@@ -193,13 +208,20 @@ render json: book, jsonConfiguration: 'deep'
 render json: [ok: true]
 ----
 
-Both accept `includes` and `excludes`, which apply on top of the named configuration.
+Both accept `includes` and `excludes` for domain objects or iterables of domain objects. Projections
+on non-domain values (including DTOs and maps) throw `IllegalArgumentException` before writing;
+they are never silently ignored. Use a DTO, Jackson view or explicit serializer for those values.
+Without `jsonConfiguration`, `respond x, includes: [...]` still uses the legacy projection path.
+Registered configurations are immutable: configure them inside the registration callback, and
+register the name again to replace a configuration rather than mutating a retained reference.
 
 For direct serialization, inject the same registry and use
 `namedJsonConfigurationRegistry.writeValueAsString('deep', book)` or
 `namedJsonConfigurationRegistry.writeValue('deep', writer, book)`. These explicit operations replace the
 thread-local scope established by `JSON.use('deep')`. The legacy `JSON.createNamedConfig(...)` and `JSON.use(...)`
-APIs remain available for now, but are deprecated for removal in favor of the request-safe Jackson registry.
+APIs, along with `JSON.getNamedConfig(...)` and `JSON.withDefaultConfiguration(...)`, are deprecated
+and scheduled for removal in Grails 11 in favor of the request-safe Jackson registry. This timetable
+does not deprecate `JSON.registerObjectMarshaller(...)`.
 
 ==== 4. Rendering Single Values as JSON
 
@@ -214,20 +236,25 @@ support `value as JSON`; construct the converter explicitly for those values.
 Non-null scalar `respond` responses use the same rendering behavior. Rendering a scalar converter
 no longer throws a `ConverterException` merely because the root is a scalar.
 
-==== 5. JSON Request Binding Uses the Boot `JsonMapper`
+==== 5. Opt Into Jackson JSON Request Binding
 
-JSON request bodies used for Grails data binding are now parsed by Spring Boot's configured Jackson 3
-`JsonMapper`. Mapper features installed through `JsonMapperBuilderCustomizer` therefore apply consistently
+Grails 9 retains `JsonSlurper` request binding by default and logs a startup deprecation notice.
+Set `grails.databinding.json.jackson: true` to parse binding bodies with Boot's configured Jackson
+`JsonMapper`. Jackson becomes the default in Grails 10 and legacy parsing is removed in Grails 11.
+Mapper features installed through `JsonMapperBuilderCustomizer` then apply consistently
 to request parsing as well as response rendering. This includes registered Jackson modules and parser
 features such as support for an application-specific input format.
 
-Malformed request bodies continue to raise `InvalidRequestBodyException` through the public data-binding
-API. Code that directly replaced or configured the internal Groovy `JsonSlurper` should move that
-configuration to a `JsonMapperBuilderCustomizer`.
+Both parsers report malformed bodies as binding errors, but Jackson rejects additional inputs that
+the legacy parser accepted: trailing content after a document, trailing commas, leading-zero numbers,
+unescaped tabs inside strings, trailing comments, nesting beyond its configured depth limit, and
+integers beyond its configured number-length limit. Review clients before enabling the new parser;
+configure intentional exceptions through `JsonMapperBuilderCustomizer`.
 
-Untyped JSON numbers keep the types the previous parser produced. Values with a fractional part are read
+With Jackson enabled, ordinary untyped JSON numbers keep the types the previous parser produced. Values with a fractional part are read
 as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
-retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
+retains exactly the digits the request sent. Whole numbers bind as `Integer`, `Long`, or `BigInteger`
+when too large for a `Long`; the legacy parser could overflow those large integers.
 
 ==== 6. REST Validation Errors Use RFC 9457 Problems
 
@@ -262,6 +289,8 @@ Each message is resolved through the application's `MessageSource` for the curre
 responses as they do elsewhere.
 
 Applications can also inject the factory when they need to create or customize the problem explicitly.
+When `respond` receives a `ProblemDetail`, it sets the HTTP status from the problem, selects
+`application/problem+json`, and fills in an absent `instance` with the current resource path.
 Rejected field values are excluded by default because they can contain passwords, tokens, or other
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.

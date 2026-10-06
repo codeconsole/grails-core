@@ -275,6 +275,9 @@ generateConfigReference.configure { Task it ->
     it.dependsOn(
             project(':grails-core').tasks.named('jar'),
             project(':grails-web-core').tasks.named('jar'),
+            project(':grails-rest-transforms').tasks.named('jar'),
+            project(':grails-xml').tasks.named('jar'),
+            project(':grails-web-databinding').tasks.named('jar'),
             project(':grails-gsp').tasks.named('jar'),
             project(':grails-databinding').tasks.named('jar'),
             project(':grails-datamapping-core').tasks.named('jar'),
@@ -297,6 +300,9 @@ generateConfigReference.configure { Task it ->
     it.inputs.files(
             project(':grails-core').tasks.named('jar').flatMap { task -> task.archiveFile },
             project(':grails-web-core').tasks.named('jar').flatMap { task -> task.archiveFile },
+            project(':grails-rest-transforms').tasks.named('jar').flatMap { task -> task.archiveFile },
+            project(':grails-xml').tasks.named('jar').flatMap { task -> task.archiveFile },
+            project(':grails-web-databinding').tasks.named('jar').flatMap { task -> task.archiveFile },
             project(':grails-gsp').tasks.named('jar').flatMap { task -> task.archiveFile },
             project(':grails-databinding').tasks.named('jar').flatMap { task -> task.archiveFile },
             project(':grails-datamapping-core').tasks.named('jar').flatMap { task -> task.archiveFile },
@@ -319,6 +325,9 @@ generateConfigReference.configure { Task it ->
         List<File> jarFiles = [
                 project(':grails-core').tasks.named('jar').get().archiveFile.get().asFile,
                 project(':grails-web-core').tasks.named('jar').get().archiveFile.get().asFile,
+                project(':grails-rest-transforms').tasks.named('jar').get().archiveFile.get().asFile,
+                project(':grails-xml').tasks.named('jar').get().archiveFile.get().asFile,
+                project(':grails-web-databinding').tasks.named('jar').get().archiveFile.get().asFile,
                 project(':grails-gsp').tasks.named('jar').get().archiveFile.get().asFile,
                 project(':grails-databinding').tasks.named('jar').get().archiveFile.get().asFile,
                 project(':grails-datamapping-core').tasks.named('jar').get().archiveFile.get().asFile,
