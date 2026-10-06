@@ -2184,8 +2184,13 @@ public class GrailsDomainBinder implements MetadataContributor {
 
         PropertyConfig propertyConfig = getPropertyConfig(property);
         if (propertyConfig != null && !propertyConfig.getColumns().isEmpty()) {
-            bindIndex(columnName, column, propertyConfig.getColumns().get(0), t);
-            bindColumnConfigToColumn(property, column, propertyConfig.getColumns().get(0));
+            ColumnConfig cc = propertyConfig.getColumns().get(0);
+            column.setComment(cc.getComment());
+            column.setDefaultValue(cc.getDefaultValue());
+            column.setCustomRead(cc.getRead());
+            column.setCustomWrite(cc.getWrite());
+            bindIndex(columnName, column, cc, t);
+            bindColumnConfigToColumn(property, column, cc);
         }
     }
 
