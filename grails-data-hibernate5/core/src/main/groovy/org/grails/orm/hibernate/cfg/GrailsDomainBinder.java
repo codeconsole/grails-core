@@ -1152,17 +1152,29 @@ public class GrailsDomainBinder implements MetadataContributor {
         String owningTableSchema = ownerTable.getSchema();
         PropertyConfig config = getPropertyConfig(property);
         JoinTable jt = config != null ? config.getJoinTable() : null;
+        JoinTable owningSideJt = getOwningSideJoinTable(property, jt);
 
         NamingStrategy namingStrategy = getNamingStrategy(sessionFactoryBeanName);
-        String tableName = (jt != null && jt.getName() != null ? jt.getName() : namingStrategy.tableName(calculateTableForMany(property, sessionFactoryBeanName)));
+        String tableName;
+        if (jt != null && jt.getName() != null) {
+            tableName = jt.getName();
+        }
+        else if (owningSideJt != null) {
+            tableName = owningSideJt.getName();
+        }
+        else {
+            tableName = namingStrategy.tableName(calculateTableForMany(property, sessionFactoryBeanName));
+        }
         String schemaName = getSchemaName(mappings);
         String catalogName = getCatalogName(mappings);
-        if (jt != null) {
-            if (jt.getSchema() != null) {
-                schemaName = jt.getSchema();
-            }
-            if (jt.getCatalog() != null) {
-                catalogName = jt.getCatalog();
+        for (JoinTable source : new JoinTable[] { owningSideJt, jt }) {
+            if (source != null) {
+                if (source.getSchema() != null) {
+                    schemaName = source.getSchema();
+                }
+                if (source.getCatalog() != null) {
+                    catalogName = source.getCatalog();
+                }
             }
         }
 
@@ -1173,6 +1185,28 @@ public class GrailsDomainBinder implements MetadataContributor {
         collection.setCollectionTable(mappings.addTable(
                 schemaName, catalogName,
                 tableName, null, false));
+    }
+
+    /**
+     * A bidirectional many-to-many has a single join table, which the owning side writes. When the inverse side
+     * does not name a join table of its own, it uses the one named by the owning side.
+     *
+     * @return the owning side's join table configuration, or null if it does not apply
+     */
+    protected JoinTable getOwningSideJoinTable(ToMany property, JoinTable jt) {
+        if (!(property instanceof ManyToMany) || !property.isBidirectional() || property.isOwningSide()) {
+            return null;
+        }
+        if (jt != null && jt.getName() != null) {
+            return null;
+        }
+        Association otherSide = property.getInverseSide();
+        if (otherSide == null || !otherSide.isOwningSide()) {
+            return null;
+        }
+        PropertyConfig otherSideConfig = getPropertyConfig(otherSide);
+        JoinTable otherSideJt = otherSideConfig != null ? otherSideConfig.getJoinTable() : null;
+        return otherSideJt != null && otherSideJt.getName() != null ? otherSideJt : null;
     }
 
     /**
