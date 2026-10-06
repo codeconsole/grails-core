@@ -1105,6 +1105,7 @@ public class GrailsDomainBinder implements MetadataContributor {
 
             if (!property.isOwningSide()) {
                 collection.setInverse(true);
+                warnIfManyToManyHasNoOwningSide(property);
             }
         }
 
@@ -1125,6 +1126,29 @@ public class GrailsDomainBinder implements MetadataContributor {
         else { // Collection -> Bag
             mappings.addSecondPass(new GrailsCollectionSecondPass(property, mappings, collection, sessionFactoryBeanName));
         }
+    }
+
+    /**
+     * A bidirectional many-to-many is written by its owning side, which {@code belongsTo} designates. When neither
+     * side declares {@code belongsTo}, both sides are inverse and the relationship is never stored, so warn about it
+     * once per relationship.
+     */
+    protected void warnIfManyToManyHasNoOwningSide(ToMany property) {
+        if (!(property instanceof ManyToMany) || !property.isBidirectional() || property.isCircular()) {
+            return;
+        }
+        Association otherSide = property.getInverseSide();
+        if (otherSide == null || otherSide.isOwningSide()) {
+            return;
+        }
+        if (property.getOwner().getName().compareTo(otherSide.getOwner().getName()) > 0) {
+            return;
+        }
+        LOG.warn("Neither side of the many-to-many between [{}.{}] and [{}.{}] declares belongsTo, so the relationship " +
+                "is not stored. Declare belongsTo on the owned side, for example in {}: static belongsTo = {}",
+                property.getOwner().getName(), property.getName(),
+                otherSide.getOwner().getName(), otherSide.getName(),
+                otherSide.getOwner().getJavaClass().getSimpleName(), property.getOwner().getJavaClass().getSimpleName());
     }
 
     /*
