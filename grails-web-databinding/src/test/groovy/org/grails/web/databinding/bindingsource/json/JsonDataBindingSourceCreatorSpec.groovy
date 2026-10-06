@@ -30,6 +30,9 @@ import org.grails.web.databinding.bindingsource.InvalidRequestBodyException
 
 import tools.jackson.core.json.JsonReadFeature
 import tools.jackson.databind.json.JsonMapper
+import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
+import org.springframework.core.env.MapPropertySource
 
 class JsonDataBindingSourceCreatorSpec extends Specification {
 
@@ -123,7 +126,7 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
         def jsonMapper = JsonMapper.builder()
                 .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS)
                 .build()
-        def creator = new JsonDataBindingSourceCreator(jsonMapper: jsonMapper)
+        def creator = new JsonDataBindingSourceCreator(jsonMapper: jsonMapper, useJackson: true)
         def inputStream = new ByteArrayInputStream('{/* configured mapper */"name":"Grails"}'.bytes)
 
         when:
@@ -142,7 +145,7 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
   "child": {"name": "nested"},
   "children": [{"name": "zero"}, {"name": "one"}]
 }'''
-        def source = new JsonDataBindingSourceCreator().createDataBindingSource(
+        def source = new JsonDataBindingSourceCreator(useJackson: true).createDataBindingSource(
                 MimeType.JSON, JsonBindingTarget, new ByteArrayInputStream(json.bytes))
         def target = new JsonBindingTarget(
                 name: 'original', protectedValue: 'protected', missingValue: 'retained')
@@ -184,6 +187,41 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
         (sources.dataBindingSources[2].propertyNames as Set) == (['name'] as Set)
         sources.dataBindingSources[0]['name'] == 'first'
         sources.dataBindingSources[2]['name'] == 'third'
+    }
+
+    void 'Grails 9 accepts legacy syntax by default and Jackson is an explicit opt in'() {
+        expect:
+        new JsonDataBindingSourceCreator().createDataBindingSource(MimeType.JSON, Object, new StringReader(body))['a'] != null
+
+        when:
+        new JsonDataBindingSourceCreator(useJackson: true)
+                .createDataBindingSource(MimeType.JSON, Object, new StringReader(body))
+
+        then:
+        thrown(InvalidRequestBodyException)
+
+        where:
+        body << ['{"a":1} trailing', '{"a":1,}', '{"a":01}', '{"a":"\t"}', '{"a":1}//c']
+    }
+
+    void 'Jackson request parsing uses the conventional Boot mapper when two non primary mappers exist'() {
+        given:
+        def context = new AnnotationConfigApplicationContext()
+        context.environment.propertySources.addFirst(new MapPropertySource('test', ['grails.databinding.json.jackson': true]))
+        context.registerBean(PropertySourcesPlaceholderConfigurer)
+        context.registerBean('jacksonJsonMapper', JsonMapper) {
+            JsonMapper.builder().enable(JsonReadFeature.ALLOW_JAVA_COMMENTS).build()
+        }
+        context.registerBean('otherMapper', JsonMapper) { JsonMapper.builder().build() }
+        context.registerBean(JsonDataBindingSourceCreator)
+        context.refresh()
+
+        expect:
+        context.getBean(JsonDataBindingSourceCreator).createDataBindingSource(MimeType.JSON, Object,
+                new StringReader('{/* comment */"name":"Grails"}'))['name'] == 'Grails'
+
+        cleanup:
+        context.close()
     }
 }
 

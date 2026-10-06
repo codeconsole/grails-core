@@ -21,6 +21,11 @@ package org.grails.web.databinding.bindingsource
 import java.util.regex.Pattern
 
 import groovy.transform.CompileStatic
+import groovy.json.JsonException
+import groovy.json.JsonSlurper
+import groovy.util.logging.Slf4j
+
+import jakarta.annotation.PostConstruct
 
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.DeserializationFeature
@@ -29,6 +34,8 @@ import tools.jackson.databind.json.JsonMapper
 
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationContext
 
 import grails.databinding.CollectionDataBindingSource
 import grails.databinding.DataBindingSource
@@ -48,6 +55,7 @@ import org.grails.web.json.JSONObject
  * @see org.grails.databinding.bindingsource.DataBindingSourceCreator
  */
 @CompileStatic
+@Slf4j
 class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceCreator {
 
     private static final Pattern INDEX_PATTERN = ~/^(\S+)\[(\d+)\]$/
@@ -58,12 +66,30 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
     @Autowired(required = false)
     ObjectProvider<JsonMapper> jsonMapperProvider
 
+    @Autowired(required = false)
+    ApplicationContext applicationContext
+
+    @Value('${grails.databinding.json.jackson:false}')
+    boolean useJackson = false
+
+    @PostConstruct
+    void initialize() {
+        if (!useJackson) {
+            log.warn('Legacy JSON request parsing is deprecated for removal in Grails 11. ' +
+                    'Set grails.databinding.json.jackson=true to opt into Jackson; it becomes the default in Grails 10.')
+        }
+    }
+
     private volatile JsonMapper resolvedJsonMapper
 
     JsonMapper getJsonMapper() {
         JsonMapper mapper = this.resolvedJsonMapper
         if (mapper == null) {
-            mapper = jsonMapperProvider?.getIfAvailable() ?: JsonMapper.builder().build()
+            mapper = jsonMapperProvider?.getIfUnique()
+            if (mapper == null && applicationContext?.containsBean('jacksonJsonMapper')) {
+                mapper = applicationContext.getBean('jacksonJsonMapper', JsonMapper)
+            }
+            mapper = mapper ?: JsonMapper.builder().build()
             this.resolvedJsonMapper = mapper
         }
         return mapper
@@ -103,7 +129,7 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
     @Override
     protected CollectionDataBindingSource createCollectionBindingSource(Reader reader) {
 
-        Object jsonElement = untypedReader().readValue(reader)
+        Object jsonElement = parse(reader)
         def dataBindingSources = jsonElement.collect { element ->
             if (element instanceof Map) {
                 new SimpleMapDataBindingSource(createJsonMap(element))
@@ -121,7 +147,7 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
 
     @Override
     protected DataBindingSource createBindingSource(Reader reader) {
-        final Object jsonElement = untypedReader().readValue(reader)
+        final Object jsonElement = parse(reader)
 
         if (jsonElement instanceof Map) {
             return new SimpleMapDataBindingSource(createJsonMap(jsonElement))
@@ -136,9 +162,13 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
         (Map) jsonElement
     }
 
+    private Object parse(Reader reader) {
+        return useJackson ? untypedReader().readValue(reader) : new JsonSlurper().parse(reader)
+    }
+
     @Override
     protected DataBindingSourceCreationException createBindingSourceCreationException(Exception e) {
-        if (e instanceof JacksonException) {
+        if (e instanceof JacksonException || e instanceof JsonException) {
             return new InvalidRequestBodyException(e)
         }
         return super.createBindingSourceCreationException(e)
