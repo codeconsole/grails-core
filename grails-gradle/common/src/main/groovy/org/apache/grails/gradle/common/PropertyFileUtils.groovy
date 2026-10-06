@@ -17,8 +17,6 @@
 package org.apache.grails.gradle.common
 
 import java.nio.charset.StandardCharsets
-import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.regex.Pattern
 
 import groovy.transform.CompileStatic
@@ -69,10 +67,13 @@ final class PropertyFileUtils {
         }
     }
 
+    /**
+     * The value of {@code SOURCE_DATE_EPOCH}, or the epoch when it is not set, as the SBOMs use. A
+     * date that moved with the calendar would change, once a day, every jar holding one of these
+     * files, a plugin's precompiled views among them, and with it the classpath of every project
+     * downstream, so none of their tasks would come from the build cache.
+     */
     private static String determineSourceDateEpoch() {
-        System.getenv('SOURCE_DATE_EPOCH') ?:
-                LocalDate.now(ZoneOffset.UTC)
-                        .atStartOfDay(ZoneOffset.UTC)
-                        .toEpochSecond().toString()
+        System.getenv('SOURCE_DATE_EPOCH') ?: '0'
     }
 }

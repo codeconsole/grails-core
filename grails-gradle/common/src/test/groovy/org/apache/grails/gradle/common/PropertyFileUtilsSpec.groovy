@@ -20,8 +20,6 @@ import spock.lang.Specification
 import uk.org.webcompere.systemstubs.SystemStubs
 
 import java.nio.charset.StandardCharsets
-import java.time.LocalDate
-import java.time.ZoneOffset
 
 class PropertyFileUtilsSpec extends Specification {
 
@@ -40,11 +38,7 @@ class PropertyFileUtilsSpec extends Specification {
 
         then:
         List<String> lines = file.readLines(StandardCharsets.ISO_8859_1.name())
-        String expected = LocalDate.now(ZoneOffset.UTC)
-                .atStartOfDay(ZoneOffset.UTC)
-                .toEpochSecond()
-                .toString()
-        lines[1] == "# SOURCE_DATE_EPOCH = ${expected}"
+        lines[1] == '# SOURCE_DATE_EPOCH = 0'
         // later timestamp is untouched
         lines.contains('#Sat Mar 03 15:00:00 UTC 2001')
 
@@ -96,11 +90,7 @@ class PropertyFileUtilsSpec extends Specification {
         List<String> lines = output.readLines()
 
         then:
-        String expected = LocalDate.now(ZoneOffset.UTC)
-                .atStartOfDay(ZoneOffset.UTC)
-                .toEpochSecond()
-                .toString()
-        lines[1] == "# SOURCE_DATE_EPOCH = ${expected}"
+        lines[1] == '# SOURCE_DATE_EPOCH = 0'
         // later timestamp is untouched
         lines.contains('#Sat Mar 03 15:00:00 UTC 2001')
     }
