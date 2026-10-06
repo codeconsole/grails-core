@@ -34,6 +34,25 @@ import spock.lang.Specification
 
 class DefaultRendererRegistrySpec extends Specification {
 
+    void 'converters come from the final MVC adapter without a deprecated configurer callback'() {
+        given:
+        def context = new AnnotationConfigApplicationContext()
+        def converter = new org.springframework.http.converter.StringHttpMessageConverter()
+        context.registerBean('requestMappingHandlerAdapter', org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter) {
+            new org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter().tap {
+                messageConverters = [converter]
+            }
+        }
+        context.registerBean(SpringMessageConverters)
+        context.refresh()
+
+        expect:
+        context.getBean(SpringMessageConverters).converters == [converter]
+
+        cleanup:
+        context.close()
+    }
+
     void 'validation errors negotiate the problem JSON media type'() {
         given:
         def registry = new DefaultRendererRegistry()
@@ -84,7 +103,7 @@ class DefaultRendererRegistrySpec extends Specification {
         def first = Stub(HttpMessageConverter)
         def second = Stub(HttpMessageConverter)
         def holder = new SpringMessageConverters()
-        holder.extendMessageConverters([first, second])
+        holder.setConverters([first, second])
         def registry = new DefaultRendererRegistry(springMessageConverters: holder, useSpringJson: true)
         registry.initialize()
 
@@ -124,21 +143,21 @@ class DefaultRendererRegistrySpec extends Specification {
 
         when: "MVC finishes configuring the converters"
         def converter = Stub(HttpMessageConverter)
-        holder.extendMessageConverters([converter])
+        holder.setConverters([converter])
 
         then: "the already-built renderer sees them"
         renderer.springHttpMessageConvertersSupplier.get() == [converter]
     }
 
-    void 'a converter added by a later configurer is still seen'() {
-        given: "the list Spring will install, handed to this holder mid-way through configuration"
+    void 'a converter added to the lightweight test slice list is still seen'() {
+        given: 'the fallback list used by a slice without a handler adapter'
         def early = Stub(HttpMessageConverter)
         def late = Stub(HttpMessageConverter)
         def installed = [early]
         def holder = new SpringMessageConverters()
-        holder.extendMessageConverters(installed)
+        holder.setConverters(installed)
 
-        when: "a WebMvcConfigurer ordered after this one contributes another converter"
+        when: 'the slice adds another converter'
         installed << late
 
         then: "rendering sees the final list, not a snapshot taken too early"

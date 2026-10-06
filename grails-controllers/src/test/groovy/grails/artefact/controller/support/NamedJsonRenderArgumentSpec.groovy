@@ -28,6 +28,21 @@ class NamedJsonRenderArgumentSpec extends Specification {
 
     def webRequest = GrailsWebMockUtil.bindMockWebRequest()
 
+    void 'render json honors an encoding without an explicit content type'() {
+        given:
+        def renderer = Stub(NamedJsonRenderer) {
+            render(null, _, _, null, null) >> { args -> args[2].write('{"name":"café"}') }
+        }
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
+        when:
+        controller.render(json: [name: 'café'], encoding: 'ISO-8859-1')
+
+        then:
+        webRequest.response.characterEncoding == 'ISO-8859-1'
+        webRequest.response.contentAsString == '{"name":"café"}'
+    }
+
     void 'render json: selects a named configuration'() {
         given:
         def renderer = Mock(NamedJsonRenderer)

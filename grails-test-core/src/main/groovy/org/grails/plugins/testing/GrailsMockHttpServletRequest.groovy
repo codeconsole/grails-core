@@ -176,7 +176,7 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
 
     private static IllegalStateException missingXmlModule(Throwable cause) {
         return new IllegalStateException(
-                'Object-to-XML conversion requires org.apache.grails:grails-xml on the test classpath',
+                'XML parsing and object-to-XML conversion require org.apache.grails:grails-xml on the test classpath',
                 cause
         )
     }

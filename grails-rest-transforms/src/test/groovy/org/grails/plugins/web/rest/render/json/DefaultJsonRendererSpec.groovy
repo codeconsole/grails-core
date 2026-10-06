@@ -54,6 +54,73 @@ import static java.nio.charset.StandardCharsets.UTF_8
 
 class DefaultJsonRendererSpec extends Specification {
 
+    void 'an explicit ProblemDetail controls the status content type and instance'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        def context = new ServletRenderContext(webRequest)
+        context.resourcePath = '/books'
+
+        when:
+        renderer.render(ProblemDetail.forStatus(422), context)
+
+        then:
+        webRequest.response.status == 422
+        webRequest.response.contentType.startsWith('application/problem+json')
+        webRequest.response.contentAsString.contains('"instance":"/books"')
+    }
+
+    void 'text JSON uses Jackson and preserves source converter prefixes'() {
+        given:
+        def source = new JacksonJsonHttpMessageConverter()
+        source.setPrefixJson(true)
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        renderer.grailsJsonMapperCustomizer = new GrailsJsonMapperCustomizer()
+        renderer.springHttpMessageConverters = [source]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        def context = new ServletRenderContext(webRequest) {
+            @Override
+            grails.web.mime.MimeType getAcceptMimeType() { grails.web.mime.MimeType.TEXT_JSON }
+        }
+
+        when:
+        renderer.render([65, 66] as byte[], context)
+
+        then:
+        webRequest.response.contentAsString == ")]}'\u002c \"QUI=\""
+        webRequest.response.contentType.startsWith('text/json')
+        !renderer.legacyFallbackReported.get()
+    }
+
+    void 'Spring JSON without MVC converters falls back to the legacy converter'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([title: 'Grails'], new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString == '{"title":"Grails"}'
+        renderer.legacyFallbackReported.get()
+    }
+
+    void 'unknown named JSON configurations have the same error as render json'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([ok: true], new ServletRenderContext(webRequest, [jsonConfiguration: 'missing']))
+
+        then:
+        def error = thrown(IllegalArgumentException)
+        error.message == 'Named JSON configuration [missing] is not registered.'
+    }
+
     void setup() {
         new ConvertersConfigurationInitializer(grailsApplication: new DefaultGrailsApplication()).initialize()
     }

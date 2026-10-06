@@ -20,6 +20,7 @@
 plugins {
     id 'groovy'
     id 'java-library'
+    id 'java-test-fixtures'
     id 'project-report'
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
@@ -36,6 +37,7 @@ group = 'org.apache.grails'
 
 dependencies {
     implementation platform(project(':grails-bom'))
+    testFixturesImplementation platform(project(':grails-bom'))
 
     implementation 'io.micrometer:micrometer-observation'
     api project(':grails-web-common')
@@ -56,7 +58,6 @@ dependencies {
     testImplementation 'org.springframework:spring-context'
     testImplementation project(':grails-core')
     testImplementation project(':grails-web-common')
-    testImplementation project(':grails-xml')
     testImplementation testFixtures(project(':grails-web-common')) // DateTimeValues
 
     compileOnly 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation

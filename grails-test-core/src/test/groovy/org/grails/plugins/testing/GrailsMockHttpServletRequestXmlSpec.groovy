@@ -63,5 +63,6 @@ class GrailsMockHttpServletRequestXmlSpec extends Specification {
         then:
         IllegalStateException e = thrown()
         e.message.contains('org.apache.grails:grails-xml')
+        e.message.contains('XML parsing')
     }
 }

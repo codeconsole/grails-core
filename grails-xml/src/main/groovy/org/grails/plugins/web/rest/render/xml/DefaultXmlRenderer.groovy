@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render.xml
 
 import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
@@ -31,6 +32,8 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpOutputMessage
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.http.converter.AbstractJacksonHttpMessageConverter
+import org.grails.core.artefact.DomainClassArtefactHandler
 import org.springframework.validation.Errors
 
 import grails.converters.XML
@@ -51,6 +54,9 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  */
 @CompileStatic
 class DefaultXmlRenderer<T> implements Renderer<T> {
+
+    @Value('${grails.web.rendering.xml.spring:false}')
+    boolean useSpringXml = false
 
     final Class<T> targetType
     MimeType[] mimeTypes = [MimeType.XML, MimeType.TEXT_XML] as MimeType[]
@@ -156,11 +162,11 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
     }
 
     private HttpMessageConverter<Object> findSpringConverter(Object object, RenderContext context) {
-        if (!resolveSpringHttpMessageConverters() || namedConfiguration || context.includes || context.excludes) {
+        if (!useSpringXml || !resolveSpringHttpMessageConverters() || namedConfiguration || context.includes || context.excludes) {
             return null
         }
         if (object == null || object instanceof Errors || object instanceof Map || object instanceof Collection ||
-                object.getClass().isArray()) {
+                object.getClass().isArray() || DomainClassArtefactHandler.isDomainClass(object.getClass(), true)) {
             return null
         }
         MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
@@ -174,10 +180,9 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
 
     private void renderWithSpringConverter(
             HttpMessageConverter<Object> converter, Object object, RenderContext context) {
-        // Write in the configured encoding rather than the converter's default so the bytes it
-        // produces and the characters decoded back out agree, and stream them through instead of
-        // holding the whole response in memory.
-        Charset charset = Charset.forName(encoding)
+        // Jackson only writes UTF encodings; the servlet writer applies the response encoding.
+        Charset charset = converter instanceof AbstractJacksonHttpMessageConverter ?
+                StandardCharsets.UTF_8 : Charset.forName(encoding)
         MediaType contentType = new MediaType(
                 MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name), charset)
         WriterOutputStream.writeThrough(context.writer, charset) { OutputStream body ->

@@ -20,8 +20,6 @@ package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function.Supplier
 
@@ -34,10 +32,17 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpOutputMessage
 import org.springframework.http.MediaType
+import org.springframework.http.ProblemDetail
 import org.springframework.http.converter.AbstractJacksonHttpMessageConverter
 import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.validation.Errors
+
+import tools.jackson.core.JsonGenerator
+import tools.jackson.databind.JacksonSerializable
+import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.jsontype.TypeSerializer
 
 import grails.converters.JSON
 import grails.rest.render.RenderContext
@@ -64,8 +69,6 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
     static final MimeType PROBLEM_JSON = new MimeType('application/problem+json', 'json')
 
-    private final ConcurrentMap<JacksonJsonHttpMessageConverter, JacksonJsonHttpMessageConverter> grailsConverters = new ConcurrentHashMap<>()
-
     final Class<T> targetType
     MimeType[] mimeTypes = [MimeType.JSON, MimeType.TEXT_JSON] as MimeType[]
 
@@ -79,7 +82,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     RendererRegistry rendererRegistry
 
     String namedConfiguration
-    HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
+    HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_CONTENT
 
     /**
      * Whether responses are written by Spring's message converters rather than the legacy
@@ -93,6 +96,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
      * reported once rather than for every response.
      */
     AtomicBoolean legacyFallbackReported = new AtomicBoolean()
+    private final AtomicBoolean missingConvertersReported = new AtomicBoolean()
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
 
     /**
@@ -130,7 +134,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         context.setContentType(GrailsWebUtil.getContentType(mimeType.name, encoding))
         def viewName = context.viewName ?: context.actionName
         final view = groovyPageLocator?.findViewForFormat(context.controllerName, viewName, mimeType.extension)
-        if (view && !(object instanceof Errors)) {
+        if (view && !(object instanceof Errors) && !(object instanceof ProblemDetail)) {
             // if a view is provided, we use the HTML renderer to return an appropriate model to the view
             Renderer htmlRenderer = rendererRegistry?.findRenderer(MimeType.HTML, object)
             if (htmlRenderer == null) {
@@ -155,20 +159,30 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
      */
     protected void renderJson(T object, RenderContext context) {
         String selectedConfiguration = context.arguments?.get('jsonConfiguration')?.toString()
-        if (selectedConfiguration && namedJsonRenderer?.contains(selectedConfiguration)) {
+        if (selectedConfiguration) {
+            if (namedJsonRenderer == null || !namedJsonRenderer.contains(selectedConfiguration)) {
+                throw new IllegalArgumentException("Named JSON configuration [$selectedConfiguration] is not registered.")
+            }
             namedJsonRenderer.render(selectedConfiguration, object, context.writer,
                     context.includes, context.excludes)
             return
         }
-        if (!selectedConfiguration && canUseSpringConverter(context)) {
-            Object springValue = object instanceof Errors ?
-                    validationProblemDetailFactory.create((Errors) object, errorsHttpStatus) : object
-            MediaType mediaType = object instanceof Errors ?
+        if (object instanceof ProblemDetail || canUseSpringConverter(context)) {
+            Object springValue = object
+            if (object instanceof Errors) {
+                springValue = validationProblemDetailFactory.create((Errors) object, errorsHttpStatus)
+            }
+            MediaType mediaType = springValue instanceof ProblemDetail ?
                     MediaType.parseMediaType(PROBLEM_JSON.name) :
                     MediaType.parseMediaType(resolveMimeType(context).name)
             // Set the content type before writing: once the writer flushes, the response is
             // committed and a later content type change is silently discarded.
-            if (object instanceof Errors) {
+            if (springValue instanceof ProblemDetail) {
+                ProblemDetail problem = (ProblemDetail) springValue
+                context.setStatus(HttpStatus.valueOf(problem.status))
+                if (problem.instance == null && context.resourcePath) {
+                    problem.instance = URI.create(context.resourcePath)
+                }
                 context.setContentType(GrailsWebUtil.getContentType(PROBLEM_JSON.name, encoding))
             }
             if (renderWithSpringConverter(springValue, mediaType, context)) {
@@ -204,11 +218,18 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     }
 
     private boolean canUseSpringConverter(RenderContext context) {
+        if (useSpringJson == Boolean.TRUE && !resolveSpringHttpMessageConverters() &&
+                missingConvertersReported.compareAndSet(false, true)) {
+            log.warn('Spring JSON rendering is enabled but no MVC message converters are available; using legacy JSON.')
+        }
         return useSpringJson == Boolean.TRUE && resolveSpringHttpMessageConverters() && !namedConfiguration &&
                 !context.includes && !context.excludes
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
+        if (mediaType.type == 'text' && mediaType.subtype == 'json') {
+            mediaType = MediaType.APPLICATION_JSON
+        }
         Class<?> objectType = object?.getClass() ?: Object
         HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) resolveSpringHttpMessageConverters().find {
             HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType) &&
@@ -224,9 +245,10 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         // mappers retain their own serialization contract.
         if (grailsJsonMapperCustomizer != null && converter.getClass() == JacksonJsonHttpMessageConverter &&
                 !((JacksonJsonHttpMessageConverter) converter).getMappersForType(objectType)) {
-            converter = grailsConverters.computeIfAbsent((JacksonJsonHttpMessageConverter) converter) { source ->
-                new JacksonJsonHttpMessageConverter(grailsJsonMapperCustomizer.forGrails(source.mapper))
-            }
+            // Keep the source converter itself: its prefix, media types and charset are application
+            // configuration. Only the value's JSON representation uses the isolated Grails mapper.
+            object = new GrailsJsonValue(object, grailsJsonMapperCustomizer.forGrails(
+                    ((JacksonJsonHttpMessageConverter) converter).mapper))
         }
         // Jackson only writes UTF encodings. Use UTF-8 for the intermediate byte stream;
         // the servlet writer still applies the configured response encoding.
@@ -261,5 +283,25 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         converter.setExcludes(context.excludes)
         converter.setIncludes(context.includes)
         converter.render(context.getWriter())
+    }
+
+    private static final class GrailsJsonValue implements JacksonSerializable {
+        private final Object value
+        private final JsonMapper mapper
+
+        GrailsJsonValue(Object value, JsonMapper mapper) {
+            this.value = value
+            this.mapper = mapper
+        }
+
+        @Override
+        void serialize(JsonGenerator generator, SerializationContext context) {
+            mapper.writeValue(generator, value)
+        }
+
+        @Override
+        void serializeWithType(JsonGenerator generator, SerializationContext context, TypeSerializer typeSerializer) {
+            serialize(generator, context)
+        }
     }
 }

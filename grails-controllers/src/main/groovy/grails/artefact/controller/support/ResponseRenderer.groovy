@@ -291,7 +291,7 @@ trait ResponseRenderer extends WebAttributes {
             throw new IllegalArgumentException("Named JSON configuration [$configurationName] is not registered.")
         }
         if (!applyContentType(response, argMap, value, false)) {
-            setContentType(response, MimeType.JSON.name, DEFAULT_ENCODING)
+            setContentType(response, MimeType.JSON.name, argMap.get(ARGUMENT_ENCODING)?.toString() ?: DEFAULT_ENCODING)
         }
         try {
             namedJsonRenderer.render(configurationName, value, response.writer,

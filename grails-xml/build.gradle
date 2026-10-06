@@ -24,6 +24,7 @@ plugins {
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
     id 'org.apache.grails.buildsrc.compile'
+    id 'org.apache.grails.buildsrc.configuration-metadata'
     id 'org.apache.grails.buildsrc.publish'
     id 'org.apache.grails.buildsrc.sbom'
     id 'org.apache.grails.buildsrc.vulnerability-scan'
@@ -38,7 +39,7 @@ dependencies {
     implementation platform(project(':grails-bom'))
 
     api project(':grails-converters')
-    api project(':grails-databinding')
+    api project(':grails-web-databinding')
     api project(':grails-rest-transforms')
     api 'org.apache.groovy:groovy'
 
@@ -54,6 +55,10 @@ dependencies {
     // exercise that path in tests.
     testImplementation 'tools.jackson.dataformat:jackson-dataformat-xml'
     testImplementation project(':grails-core')
+    testImplementation project(':grails-test-suite-base')
+    testImplementation project(':grails-url-mappings')
+    testImplementation testFixtures(project(':grails-web-common'))
+    testImplementation testFixtures(project(':grails-converters'))
     testImplementation project(':grails-datastore-core')
     testImplementation 'org.springframework:spring-test'
     testImplementation 'org.apache.groovy:groovy-test-junit5'

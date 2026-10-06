@@ -130,6 +130,21 @@ class ControllerJsonSerializationSpec extends Specification implements Controlle
         !response.json.containsKey('properties')
     }
 
+    void 'respond of an explicit problem preserves its HTTP semantics'() {
+        given:
+        request.requestURI = '/books'
+        def problem = org.springframework.http.ProblemDetail.forStatus(422)
+
+        when:
+        controller.respond(problem)
+
+        then:
+        response.status == 422
+        response.contentType == 'application/problem+json;charset=UTF-8'
+        response.json.status == 422
+        response.json.instance == '/books'
+    }
+
     void 'render and respond share named configurations in ControllerUnitTest'() {
         given:
         def registry = applicationContext.getBean(NamedJsonConfigurationRegistry)
@@ -157,6 +172,33 @@ class ControllerJsonSerializationSpec extends Specification implements Controlle
         then:
         response.json == [message: 'Saved Grails']
         response.contentType.equalsIgnoreCase('application/json;charset=UTF-8')
+    }
+}
+
+class ControllerJsonMapperOverrideSpec extends Specification implements ControllerUnitTest<JsonResponseController> {
+
+    Closure doWithConfig() {
+        { config -> config['grails.web.rendering.json.spring'] = true }
+    }
+
+    @Configuration
+    static class MapperConfiguration {
+        @Bean
+        JsonMapper probeMapper() {
+            JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build()
+        }
+    }
+
+    void 'a mapper bean from nested configuration makes Boot back off'() {
+        given:
+        response.format = 'json'
+
+        when:
+        controller.respond(new JsonResponseBody(title: 'Grails', firstName: 'Ada'))
+
+        then:
+        applicationContext.getBeansOfType(JsonMapper).keySet() == ['probeMapper'] as Set
+        response.json == [title: 'Grails', first_name: 'Ada']
     }
 }
 

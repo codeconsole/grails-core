@@ -82,7 +82,7 @@ class XmlGrailsPluginSpec extends Specification {
         def first = Stub(HttpMessageConverter)
         def second = Stub(HttpMessageConverter)
         def holder = new SpringMessageConverters()
-        holder.extendMessageConverters([first, second])
+        holder.setConverters([first, second])
         def environment = new StandardEnvironment()
         environment.propertySources.addFirst(
                 new MapPropertySource('test', ['grails.converters.encoding': 'ISO-8859-1']))
@@ -109,6 +109,20 @@ class XmlGrailsPluginSpec extends Specification {
             encoding == 'ISO-8859-1'
             springHttpMessageConvertersSupplier.get() == [first, second]
         }
+    }
+
+    void 'an application interface renderer takes precedence over the default XML bean'() {
+        given:
+        def registry = new DefaultRendererRegistry()
+        registry.initialize()
+        def custom = Stub(Renderer) {
+            getTargetType() >> CharSequence
+            getMimeTypes() >> ([MimeType.XML] as MimeType[])
+        }
+        registry.setRenderers([custom, beanFactory.getBean('xmlRenderer', DefaultXmlRenderer)] as Renderer[])
+
+        expect:
+        registry.findRenderer(MimeType.XML, 'value').is(custom)
     }
 
     void 'a renderer discovers a GSP locator registered after its creation'() {

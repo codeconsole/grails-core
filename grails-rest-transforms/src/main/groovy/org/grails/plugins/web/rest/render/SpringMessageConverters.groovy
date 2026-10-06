@@ -20,33 +20,34 @@ package org.grails.plugins.web.rest.render
 
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.converter.HttpMessageConverter
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 /**
- * Captures the message converters Spring MVC ends up configured with.
+ * Resolves the message converters Spring MVC ends up configured with at response time.
  *
  * <p>Renderers need the same converter list, in the same order, that the handler adapter uses.
  * Injecting the adapter to read them forces the whole MVC infrastructure to be created from a
- * renderer bean, which risks circular dependencies and defeats lazy startup. Spring calls
- * {@link #extendMessageConverters} once with the final list instead, after every
- * {@code WebMvcConfigurer} has contributed, so the ordering applications configure is preserved.</p>
+ * renderer bean, which risks circular dependencies and defeats lazy startup. A provider delays
+ * that lookup until a response is written and works without deprecated MVC callbacks.</p>
  *
  * @since 9.0
  */
 @CompileStatic
-class SpringMessageConverters implements WebMvcConfigurer {
+class SpringMessageConverters {
+
+    @Autowired(required = false)
+    @Qualifier('requestMappingHandlerAdapter')
+    ObjectProvider<RequestMappingHandlerAdapter> handlerAdapter
 
     private volatile List<HttpMessageConverter<?>> converters = List.of()
 
-    @Override
-    void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
-        // Keeps the list itself rather than a copy. Spring invokes each WebMvcConfigurer in turn
-        // and installs this same instance on the handler adapter, so a configurer ordered after
-        // this one can still add, remove or reorder converters. Copying here would freeze a list
-        // that is not yet final, leaving Grails rendering with a different set from Spring MVC.
-        // Wrapped, not copied: the wrapper still sees whatever later configurers do to the
-        // underlying list, while stopping a caller mutating Spring MVC's converters through here.
+    void setConverters(List<HttpMessageConverter<?>> converters) {
+        // Lightweight web test slices have no MVC handler adapter. They supply their converters
+        // here; production always uses the handler adapter's final list when it is available.
         this.converters = Collections.unmodifiableList(converters)
     }
 
@@ -55,6 +56,7 @@ class SpringMessageConverters implements WebMvcConfigurer {
      * when a response is written so that every configurer's contribution is included
      */
     List<HttpMessageConverter<?>> getConverters() {
-        return converters
+        RequestMappingHandlerAdapter adapter = handlerAdapter?.getIfAvailable()
+        return adapter == null ? converters : Collections.unmodifiableList(adapter.messageConverters)
     }
 }

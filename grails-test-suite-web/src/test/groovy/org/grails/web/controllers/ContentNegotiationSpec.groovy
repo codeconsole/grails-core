@@ -25,7 +25,6 @@ import grails.converters.XML
 import grails.testing.web.controllers.ControllerUnitTest
 import org.grails.plugins.testing.GrailsMockHttpServletRequest
 import org.grails.plugins.testing.GrailsMockHttpServletResponse
-import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 
 import spock.lang.Issue
 import spock.lang.Specification
@@ -58,9 +57,6 @@ class ContentNegotiationSpec extends Specification implements ControllerUnitTest
         // This triggers doWithConfig() which registers the custom MIME types.
         assert config != null
 
-        // XML conversion moved to the optional grails-xml module, whose plugin registers this
-        // initializer. A unit test slice does not load that plugin, so configure it directly.
-        new XmlConvertersConfigurationInitializer(grailsApplication: grailsApplication).initialize()
     }
 
     void setupSpec() {

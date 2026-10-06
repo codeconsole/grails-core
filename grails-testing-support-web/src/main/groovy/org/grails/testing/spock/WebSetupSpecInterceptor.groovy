@@ -79,7 +79,7 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
         SpringMessageConverters converters = test.applicationContext.getBean(SpringMessageConverters)
         JsonMapper mapper = test.applicationContext.getBeanProvider(JsonMapper).getIfUnique() ?:
                 test.applicationContext.getBean('jacksonJsonMapper', JsonMapper)
-        converters.extendMessageConverters([
+        converters.setConverters([
                 new ByteArrayHttpMessageConverter(),
                 new StringHttpMessageConverter(),
                 new JacksonJsonHttpMessageConverter(mapper)

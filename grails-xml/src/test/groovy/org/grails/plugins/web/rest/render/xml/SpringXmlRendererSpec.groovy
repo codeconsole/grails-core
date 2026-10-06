@@ -30,6 +30,7 @@ import org.springframework.mock.web.MockServletContext
 
 import grails.web.mime.MimeType
 import grails.core.DefaultGrailsApplication
+import grails.persistence.Entity
 import org.grails.plugins.web.rest.render.ServletRenderContext
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
@@ -57,6 +58,7 @@ class SpringXmlRendererSpec extends Specification {
     void 'ordinary beans are written through the Spring XML message converter for #acceptedMimeType'() {
         given:
         def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
+        renderer.useSpringXml = true
         renderer.springHttpMessageConverters = [new JacksonXmlHttpMessageConverter()]
         def response = new MockHttpServletResponse()
         def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
@@ -81,6 +83,7 @@ class SpringXmlRendererSpec extends Specification {
         def first = Mock(HttpMessageConverter)
         def second = Mock(HttpMessageConverter)
         def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
+        renderer.useSpringXml = true
         renderer.springHttpMessageConverters = [first, second]
         def response = new MockHttpServletResponse()
         def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
@@ -100,6 +103,7 @@ class SpringXmlRendererSpec extends Specification {
     void 'a generic string converter does not strip the legacy XML string element'() {
         given:
         def renderer = new DefaultXmlRenderer<String>(String)
+        renderer.useSpringXml = true
         renderer.springHttpMessageConverters = [new StringHttpMessageConverter()]
         def response = new MockHttpServletResponse()
         def request = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
@@ -117,6 +121,7 @@ class SpringXmlRendererSpec extends Specification {
         given:
         def mvcConverter = Mock(HttpMessageConverter)
         def renderer = new DefaultXmlRenderer<Map>(Map)
+        renderer.useSpringXml = true
         renderer.springHttpMessageConverters = [mvcConverter]
         def response = new MockHttpServletResponse()
         def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
@@ -129,9 +134,65 @@ class SpringXmlRendererSpec extends Specification {
         0 * mvcConverter._
         new XmlSlurper().parseText(response.contentAsString).entry.text() == 'hello'
     }
+
+    void 'domain responses keep legacy marshalling even with Spring XML enabled'() {
+        given:
+        grails.converters.XML.registerObjectMarshaller(XmlDomainGreeting) { value -> [legacy: value.message] }
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultXmlRenderer<XmlDomainGreeting>(XmlDomainGreeting)
+        renderer.useSpringXml = true
+        renderer.springHttpMessageConverters = [converter]
+        def response = new MockHttpServletResponse()
+        def request = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+
+        when:
+        renderer.render(new XmlDomainGreeting(message: 'hello'), new FixedMimeServletRenderContext(request, MimeType.XML))
+
+        then:
+        0 * converter._
+        new XmlSlurper().parseText(response.contentAsString).entry.find { it.@key == 'legacy' }.text() == 'hello'
+    }
+
+    void 'Jackson XML bytes round trip through a non UTF response encoding'() {
+        given:
+        def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
+        renderer.useSpringXml = true
+        renderer.encoding = 'ISO-8859-1'
+        renderer.springHttpMessageConverters = [new JacksonXmlHttpMessageConverter()]
+        def response = new MockHttpServletResponse()
+        def request = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+
+        when:
+        renderer.render(new XmlGreeting(message: 'café'), new FixedMimeServletRenderContext(request, MimeType.XML))
+
+        then:
+        response.characterEncoding == 'ISO-8859-1'
+        new XmlSlurper().parseText(response.contentAsString).message.text() == 'café'
+    }
+
+    void 'adding Jackson XML does not bypass registered XML marshallers by default'() {
+        given:
+        grails.converters.XML.registerObjectMarshaller(XmlGreeting) { value -> [custom: value.message] }
+        def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
+        renderer.springHttpMessageConverters = [new JacksonXmlHttpMessageConverter()]
+        def response = new MockHttpServletResponse()
+        def request = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+
+        when:
+        renderer.render(new XmlGreeting(message: 'customized'), new FixedMimeServletRenderContext(request, MimeType.XML))
+
+        then:
+        response.contentAsString.contains('customized')
+        !response.contentAsString.contains('<XmlGreeting>')
+    }
 }
 
 class XmlGreeting {
+    String message
+}
+
+@Entity
+class XmlDomainGreeting {
     String message
 }
 

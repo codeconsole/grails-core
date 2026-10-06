@@ -156,6 +156,8 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         if (renderer instanceof ContainerRenderer) {
             ContainerRenderer cr = (ContainerRenderer) renderer
             addContainerRenderer(cr.componentType, cr)
+        } else if (renderer.targetType == Object) {
+            addDefaultRenderer((Renderer<Object>) renderer)
         } else {
             Class targetType = renderer.targetType
             addToRegisteredObjects(targetType, renderer)

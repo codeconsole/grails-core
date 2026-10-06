@@ -38,4 +38,3 @@ class ConvertersDomainTransformerSpec extends Specification {
 class ConvertMe {
     String name
 }
-
