@@ -2127,8 +2127,14 @@ public class GrailsDomainBinder implements MetadataContributor {
 
     protected void bindEnumType(PersistentProperty property, SimpleValue simpleValue,
                                 String path, String sessionFactoryBeanName) {
-        bindEnumType(property, property.getType(), simpleValue,
-                getColumnNameForPropertyAndPath(property, path, null, sessionFactoryBeanName));
+        String columnName = getColumnNameForPropertyAndPath(property, path, null, sessionFactoryBeanName);
+        bindEnumType(property, property.getType(), simpleValue, columnName);
+
+        PropertyConfig propertyConfig = getPropertyConfig(property);
+        if (propertyConfig != null && propertyConfig.isUnique() && propertyConfig.isUniqueWithinGroup()) {
+            createKeyForProps(property, path, simpleValue.getTable(), columnName,
+                    propertyConfig.getUniquenessGroup(), sessionFactoryBeanName);
+        }
     }
 
     protected void bindEnumType(PersistentProperty property, Class<?> propertyType, SimpleValue simpleValue, String columnName) {
@@ -3074,6 +3080,11 @@ public class GrailsDomainBinder implements MetadataContributor {
 
     protected void createKeyForProps(PersistentProperty grailsProp, String path, Table table,
                                      String columnName, List<?> propertyNames, String sessionFactoryBeanName) {
+        if (grailsProp instanceof ToMany) {
+            // The column of a collection lives in the collection table (or the child table), which does not
+            // hold the columns of the other properties of the group, so there is no unique key to create.
+            return;
+        }
         List<Column> keyList = new ArrayList<>();
         keyList.add(new Column(columnName));
         for (Iterator<?> i = propertyNames.iterator(); i.hasNext();) {
