@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.sql.DataSource;
 
@@ -71,6 +72,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.util.ReflectionUtils;
 
 import grails.gorm.multitenancy.Tenants;
+import org.grails.datastore.gorm.GormRegistry;
 import org.grails.datastore.gorm.events.AutoTimestampEventListener;
 import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher;
 import org.grails.datastore.gorm.events.ConfigurableApplicationEventPublisher;
@@ -214,6 +216,7 @@ public class HibernateDatastore extends AbstractDatastore
     protected final ConfigurableApplicationEventPublisher eventPublisher;
     protected final HibernateGormEnhancer gormEnhancer;
     protected final Map<String, HibernateDatastore> datastoresByConnectionSource = Collections.synchronizedMap(new LinkedHashMap<>());
+    private final List<ConnectionSource<SessionFactory, HibernateConnectionSourceSettings>> schemaTenantConnectionSources = new CopyOnWriteArrayList<>();
     protected final Metadata metadata;
     protected final org.grails.orm.hibernate.proxy.GrailsBytecodeProvider bytecodeProvider;
 
@@ -660,6 +663,7 @@ public class HibernateDatastore extends AbstractDatastore
                 }
                 super.destroy();
                 HibernateGormInstanceApi.resetInsertActive();
+                closeSchemaTenantConnectionSources();
                 try {
                     closeConnectionSources();
                 } catch (IOException e) {
@@ -669,6 +673,7 @@ public class HibernateDatastore extends AbstractDatastore
                 }
             } finally {
                 getMappingContext().getMappingCacheHolder().clear();
+                unregisterChildDatastores();
                 try {
                     closeGormEnhancer();
                 } catch (IOException e) {
@@ -727,6 +732,40 @@ public class HibernateDatastore extends AbstractDatastore
         }
     }
 
+    /**
+     * Closes the connection sources created for schema tenants. Each one owns a SessionFactory,
+     * but none of them is part of {@link #connectionSources}, so {@link #closeConnectionSources()}
+     * does not reach them.
+     */
+    private void closeSchemaTenantConnectionSources() {
+        for (ConnectionSource<SessionFactory, HibernateConnectionSourceSettings> tenantConnectionSource : schemaTenantConnectionSources) {
+            try {
+                tenantConnectionSource.close();
+            } catch (IOException e) {
+                if (LOG.isErrorEnabled()) {
+                    LOG.error("There was an error closing the connection source of schema tenant [{}]: {}",
+                            tenantConnectionSource.getName(), e.getMessage(), e);
+                }
+            }
+        }
+        schemaTenantConnectionSources.clear();
+    }
+
+    /**
+     * Removes the child datastores of this datastore's other connection sources, such as additional
+     * data sources and schema tenants, from the GORM registry. They share this datastore's mapping
+     * context, so they are not destroyed on their own, and while they stay registered they keep this
+     * datastore reachable after it is destroyed.
+     */
+    private void unregisterChildDatastores() {
+        GormRegistry registry = GormRegistry.getInstance();
+        for (HibernateDatastore childDatastore : datastoresByConnectionSource.values()) {
+            if (childDatastore != this) {
+                registry.removeDatastore(childDatastore);
+            }
+        }
+    }
+
     private void addTenantForSchemaInternal(final String schemaName) {
         if (multiTenantMode != MultiTenancySettings.MultiTenancyMode.SCHEMA) {
             throw new ConfigurationException(
@@ -769,6 +808,7 @@ public class HibernateDatastore extends AbstractDatastore
         try {
             ConnectionSource<SessionFactory, HibernateConnectionSourceSettings> connectionSource =
                     factory.create(schemaName, dataSourceConnectionSource, tenantSettings);
+            schemaTenantConnectionSources.add(connectionSource);
             HibernateDatastore childDatastore = getChildDatastore(connectionSource);
             datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
         } finally {
