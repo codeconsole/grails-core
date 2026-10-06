@@ -398,7 +398,7 @@ class DefaultJsonRendererSpec extends Specification {
         webRequest.response.status == 400
     }
 
-    void 'without a Spring JSON setting the Spring converters write the response'() {
+    void 'without a Spring JSON setting the legacy converter writes the response and warns'() {
         given:
         def renderer = new DefaultJsonRenderer<Object>(Object)
         renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
@@ -408,8 +408,8 @@ class DefaultJsonRendererSpec extends Specification {
         renderer.render([65, 66] as byte[], new ServletRenderContext(webRequest))
 
         then:
-        webRequest.response.contentAsString == '"QUI="'
-        !renderer.legacyFallbackReported.get()
+        webRequest.response.contentAsString == '[65,66]'
+        renderer.legacyFallbackReported.get()
     }
 
     void 'without a Spring JSON setting a registered JSON marshaller keeps the legacy converter'() {
@@ -445,7 +445,7 @@ class DefaultJsonRendererSpec extends Specification {
 
         then:
         webRequest.response.contentAsString.contains(expected)
-        !renderer.legacyFallbackReported.get()
+        renderer.legacyFallbackReported.get() == !setting
 
         where:
         setting | expected

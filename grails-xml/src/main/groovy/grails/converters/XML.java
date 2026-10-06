@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Stack;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import groovy.lang.Closure;
 import groovy.util.BuilderSupport;
@@ -70,6 +71,7 @@ import static org.grails.io.support.SpringIOUtils.createXmlSlurper;
 public class XML extends AbstractConverter<XMLStreamWriter> implements IncludeExcludeConverter<XMLStreamWriter> {
 
     public static final Log log = LogFactory.getLog(XML.class);
+    private static final AtomicBoolean LEGACY_RENDER_REPORTED = new AtomicBoolean();
 
     private static final String CACHED_XML = "org.codehaus.groovy.grails.CACHED_XML_REQUEST_CONTENT";
 
@@ -122,6 +124,10 @@ public class XML extends AbstractConverter<XMLStreamWriter> implements IncludeEx
     }
 
     public void render(Writer out) throws ConverterException {
+        if (LEGACY_RENDER_REPORTED.compareAndSet(false, true)) {
+            log.warn("Legacy XML conversion is deprecated for removal in Grails 11. " +
+                    "XML leaves the default web starter in Grails 10; migrate to JSON or an explicit Spring XML converter.");
+        }
         stream = new StreamingMarkupWriter(out, encoding);
         writer = config.isPrettyPrint() ? new PrettyPrintXMLStreamWriter(stream) : new XMLStreamWriter(stream);
 

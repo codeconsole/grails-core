@@ -49,7 +49,6 @@ import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
-import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
@@ -84,10 +83,10 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
     /**
      * Whether responses are written by Spring's message converters rather than the legacy
-     * {@link JSON} converter. When {@code null}, Spring's converters are used unless the application
-     * customized the legacy converter, for example by registering an object marshaller.
+     * {@link JSON} converter. Grails 9 defaults to the legacy path; Grails 10 opts into Spring
+     * by default and Grails 11 removes the legacy response path.
      */
-    Boolean useSpringJson
+    Boolean useSpringJson = false
 
     /**
      * Shared by the renderers of one registry, so that falling back to the legacy converter is
@@ -182,6 +181,11 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
             }
         }
 
+        if (legacyFallbackReported.compareAndSet(false, true)) {
+            log.warn('Legacy respond() JSON rendering is deprecated and will be removed in Grails 11. ' +
+                    'Migrate to Jackson serializers and set grails.web.rendering.json.spring=true. ' +
+                    'Spring JSON becomes the default in Grails 10.')
+        }
         JSON converter
         String legacyConfiguration = selectedConfiguration ?: namedConfiguration
         if (legacyConfiguration) {
@@ -200,25 +204,8 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     }
 
     private boolean canUseSpringConverter(RenderContext context) {
-        return resolveSpringHttpMessageConverters() && !namedConfiguration &&
-                !context.includes && !context.excludes && springJsonEnabled()
-    }
-
-    private boolean springJsonEnabled() {
-        if (useSpringJson != null) {
-            return useSpringJson
-        }
-        if (!ConvertersConfigurationHolder.isDefaultConfigurationCustomized(JSON)) {
-            return true
-        }
-        if (legacyFallbackReported.compareAndSet(false, true)) {
-            log.warn('respond() renders JSON with the legacy grails.converters.JSON converter because the ' +
-                    'application customizes it, for example with JSON.registerObjectMarshaller or an ' +
-                    'ObjectMarshallerRegisterer bean. Legacy marshaller registration is deprecated for removal: ' +
-                    'replace it with Jackson serializers and set grails.web.rendering.json.spring to true, or set it ' +
-                    'to false to keep the legacy converter.')
-        }
-        return false
+        return useSpringJson == Boolean.TRUE && resolveSpringHttpMessageConverters() && !namedConfiguration &&
+                !context.includes && !context.excludes
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {

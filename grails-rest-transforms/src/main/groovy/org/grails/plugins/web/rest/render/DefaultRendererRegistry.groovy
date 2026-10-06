@@ -93,11 +93,11 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     ValidationProblemDetailFactory validationProblemDetailFactory
 
     /**
-     * Whether JSON responses are written by Spring's message converters. When unset, they are unless
-     * the application customized the legacy {@code grails.converters.JSON} converter.
+     * Opts into Spring JSON in Grails 9. The default changes in Grails 10;
+     * the legacy response path is scheduled for removal in Grails 11.
      */
-    @Value('${grails.web.rendering.json.spring:#{null}}')
-    Boolean useSpringJson
+    @Value('${grails.web.rendering.json.spring:false}')
+    Boolean useSpringJson = false
 
     private final AtomicBoolean legacyJsonFallbackReported = new AtomicBoolean()
 

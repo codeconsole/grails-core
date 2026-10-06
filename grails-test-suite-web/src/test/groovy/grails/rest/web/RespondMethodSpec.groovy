@@ -54,7 +54,7 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
                                     multipartForm: 'multipart/form-data']
     }}
 
-    void 'respond writes JSON with the Spring converters by default'() {
+    void 'respond preserves legacy JSON by default during the Grails 9 migration'() {
         given:
         response.format = 'json'
 
@@ -62,7 +62,7 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
         controller.respond([65, 66] as byte[])
 
         then:
-        response.text == '"QUI="'
+        response.text == '[65,66]'
     }
 
     void "Test that the respond method produces the correct model for a domain instance and no specific content type"() {

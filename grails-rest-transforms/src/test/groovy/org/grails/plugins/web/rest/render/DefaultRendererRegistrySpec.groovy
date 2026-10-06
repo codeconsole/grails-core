@@ -162,7 +162,7 @@ class DefaultRendererRegistrySpec extends Specification {
 
         where:
         setting                                       | enabled
-        [:]                                           | null
+        [:]                                           | false
         ['grails.web.rendering.json.spring': 'false']  | false
         ['grails.web.rendering.json.spring': 'true']   | true
     }
