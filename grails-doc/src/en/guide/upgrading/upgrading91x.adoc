@@ -57,7 +57,7 @@ class BootStrap {
 graphql-java's parser separately rejects a query nested more than about 165 levels deep, so a `maxDepth` above that has no effect.
 
 * *Schemas built in code are validated like schemas built from SDL.*
-A non-null argument or input field can no longer be deprecated.
+A required argument or input field (non-null with no default value) can no longer be deprecated.
 The schema the plugin generates never deprecates an argument or an input field, but arguments and input types an application adds through a `GraphQLSchemaInterceptor` must follow the rule.
 
 * *Additional schema types must be named types.*
