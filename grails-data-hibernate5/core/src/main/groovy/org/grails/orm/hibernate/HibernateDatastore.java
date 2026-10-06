@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -581,11 +582,23 @@ public class HibernateDatastore extends AbstractHibernateDatastore implements Me
      */
     private void unregisterChildDatastores() {
         GormRegistry registry = GormRegistry.getInstance();
-        for (HibernateDatastore childDatastore : datastoresByConnectionSource.values()) {
-            if (childDatastore != this) {
-                registry.removeDatastore(childDatastore);
+        for (HibernateDatastore childDatastore : childDatastores()) {
+            registry.removeDatastore(childDatastore);
+        }
+    }
+
+    /**
+     * Returns a snapshot of the datastores of this datastore's other connection sources, so that
+     * destroying them does not iterate {@link #datastoresByConnectionSource} while a tenant may be added.
+     */
+    private List<HibernateDatastore> childDatastores() {
+        List<HibernateDatastore> childDatastores = new ArrayList<>();
+        for (HibernateDatastore datastore : datastoresByConnectionSource.values()) {
+            if (datastore != this) {
+                childDatastores.add(datastore);
             }
         }
+        return childDatastores;
     }
 
     @Override

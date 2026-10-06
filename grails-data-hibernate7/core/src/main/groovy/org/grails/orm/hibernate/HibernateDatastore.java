@@ -656,14 +656,14 @@ public class HibernateDatastore extends AbstractDatastore
     public void destroy() {
         if (!this.destroyed) {
             try {
-                for (HibernateDatastore childDatastore : datastoresByConnectionSource.values()) {
-                    if (childDatastore != this && childDatastore.getMappingContext() != getMappingContext()) {
+                closeSchemaTenantConnectionSources();
+                for (HibernateDatastore childDatastore : childDatastores()) {
+                    if (childDatastore.getMappingContext() != getMappingContext()) {
                         childDatastore.destroy();
                     }
                 }
                 super.destroy();
                 HibernateGormInstanceApi.resetInsertActive();
-                closeSchemaTenantConnectionSources();
                 try {
                     closeConnectionSources();
                 } catch (IOException e) {
@@ -759,11 +759,25 @@ public class HibernateDatastore extends AbstractDatastore
      */
     private void unregisterChildDatastores() {
         GormRegistry registry = GormRegistry.getInstance();
-        for (HibernateDatastore childDatastore : datastoresByConnectionSource.values()) {
-            if (childDatastore != this) {
-                registry.removeDatastore(childDatastore);
+        for (HibernateDatastore childDatastore : childDatastores()) {
+            registry.removeDatastore(childDatastore);
+        }
+    }
+
+    /**
+     * Returns a snapshot of the datastores of this datastore's other connection sources, so that
+     * destroying them does not iterate {@link #datastoresByConnectionSource} while a tenant may be added.
+     */
+    private List<HibernateDatastore> childDatastores() {
+        List<HibernateDatastore> childDatastores = new ArrayList<>();
+        synchronized (datastoresByConnectionSource) {
+            for (HibernateDatastore datastore : datastoresByConnectionSource.values()) {
+                if (datastore != this) {
+                    childDatastores.add(datastore);
+                }
             }
         }
+        return childDatastores;
     }
 
     private void addTenantForSchemaInternal(final String schemaName) {
