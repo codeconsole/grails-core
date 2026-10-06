@@ -867,8 +867,17 @@ A GORM datastore implementation outside the Grails repository whose transaction 
 * **`bindData` can clear omitted included fields.**
 `bindData(target, source, [include: [...], clearMissing: true])` now clears included properties that are absent from the binding source. The behavior is opt-in, requires an `include` list, and does not apply globally. Existing `bindData` calls without `clearMissing: true` keep omitted fields unchanged.
 
+* **GORM for MongoDB builds its indexes when the datastore starts, not when it is created.**
+Creating a `MongoDatastore` no longer connects to MongoDB or builds the declared indexes, whichever constructor creates it, including one given an application's own `MongoClient`. In an application Spring starts the datastore before `BootStrap` runs, so nothing changes there; code that creates a `MongoDatastore` itself and expects its indexes once the constructor returns has to call `start()`, although the first GORM query or save on a datastore nothing has started also starts it. See link:{mongodb5Guide}index.html#upgradeNotes[Upgrade Notes] in the GORM for MongoDB guide.
+
 * **GORM for MongoDB rejects Map criterion values that contain `$` keys.**
 `findWhere`, `findAllWhere`, criteria queries, the `where` DSL and dynamic finders now throw `InvalidDataAccessResourceUsageException` when a `Map` passed as a criterion value contains a key starting with `$` at any level, on any property type including enums. MongoDB interprets such a value document as an operator expression rather than as a value. Maps without such keys are still sent as literal subdocument comparisons, so exact matches on `Map` properties, dotted paths and array elements are unchanged, and geospatial criteria are exempt. Code that deliberately passed an operator document through a criteria value should use the native `find(Bson)` API instead.
+
+* **GORM for MongoDB no longer ends the index build on a `unique` index over duplicate values.**
+A declared `unique` index that could not be built because documents already shared a value ended the index build with a `DuplicateKeyException`: the indexes declared after it were not built, and with the default synchronous build the application did not start. It is now counted as a failed declaration like any other index the server refuses, logged at `ERROR`, and the build goes on; the application starts without that index. Remove the duplicates and build the index again to create it. See link:{mongodb5Guide}index.html#upgradeNotes[Upgrade Notes] in the GORM for MongoDB guide.
+
+* **GORM for MongoDB builds only the indexes of the domain classes mapped to each connection.**
+The index build of a named connection also created the indexes of classes mapped only to another connection, in its own database. Each connection now builds the indexes of the classes mapped to it, including those mapped to `ConnectionSource.ALL`. Indexes already created elsewhere are left in place. See link:{mongodb5Guide}index.html#upgradeNotes[Upgrade Notes] in the GORM for MongoDB guide.
 
 ==== 21. Tag Library Test Cleanup Changes
 
@@ -1462,6 +1471,9 @@ where Grails 7 produced `NOT NULL` columns. Review existing schemas and declare
 schema migration or diff tools.
 
 Command objects are unaffected: Validateable command-object properties remain non-nullable by default, except for collections and maps, which remain nullable by default.
+
+The exception is a property that a command object imports with `importFrom` from a domain class that declares no `nullable` constraint for it.
+It gets the domain class's nullable default, so it is nullable unless you restore the required-by-default behaviour (below).
 
 To restore the legacy required-by-default behaviour for an entire application, set the new `grails.gorm.default.nullable` property to `false`:
 
@@ -4689,3 +4701,20 @@ CountFinder.countBy(datastoreResolver, mappingContext)                // countBy
 Each factory also accepts a `Datastore`, or only a `MappingContext` for a finder that parses method names without executing queries. `ListOrderByFinder` keeps its constructors but no longer extends `AbstractFinder`, and the list of finders a `DetachedCriteria` consults is now typed as `List<FinderMethod>`.
 
 Applications are unaffected: dynamic finders such as `Book.findByTitle('The Stand')` behave as before. A GORM datastore implementation or plugin outside the Grails repository that extends one of the removed classes, or that calls `new FindByFinder(...)` and its siblings when building its finder list, must switch to the factory methods above. Code that only holds finders as `FinderMethod` compiles unchanged.
+
+==== 84. Interceptors Can Read the Model of a Template Render
+
+The `model` property of an interceptor now returns the map that an action passed to
+`render(template: ..., model: ...)`. Before, it returned `null` for a template render, because a template render
+produces no `ModelAndView`. Responses rendered from a view are not affected.
+
+The template has already been rendered when `after()` runs, so the model can be inspected but not changed. Review
+interceptors that check `model != null`, or use `model?.`, before changing the model, since that code now also runs
+for template renders:
+
+* Changes to the map have no effect on the response, and they change the map that the action passed.
+* If the action passed an immutable map, such as one created with `Map.of(...)`, changing it throws an
+`UnsupportedOperationException`. Before, `model?.foo = 'bar'` did nothing.
+
+Objects passed with `bean` or `collection` are not part of `model`. See
+link:theWebLayer.html#definingInterceptors[Defining Interceptors].
