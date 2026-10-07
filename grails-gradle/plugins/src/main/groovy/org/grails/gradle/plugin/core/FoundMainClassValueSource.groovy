@@ -27,10 +27,14 @@ import org.gradle.api.provider.ValueSourceParameters
 /**
  * The main class the {@code findMainClass} task wrote to its cache file, or no value before the task has run.
  *
- * <p>Unlike a {@code project.provider}, which the configuration cache evaluates once when it stores an entry,
- * Gradle obtains this value again whenever it is read from a reused entry, so a task reading it sees the class the
- * current build found. Reading it while the build is configured is allowed too, and gives no value on a clean
- * build.</p>
+ * <p>Each source instance memoizes its first read. A configuration-time read fixes that instance's value:
+ * no value on a clean build, or the class left by an earlier build. Reading the same instance after
+ * {@code findMainClass} runs does not refresh it, with or without the configuration cache.</p>
+ *
+ * <p>The public main-class providers therefore create a fresh source in a {@code flatMap} query of the
+ * {@code findMainClass} output. An early query does not fix the value of a later query, and an unread source
+ * is stored in the configuration cache for execution-time reads. A source obtained during configuration is
+ * also a configuration-cache input, checked when Gradle considers reusing the entry.</p>
  *
  * @since 8.0
  */

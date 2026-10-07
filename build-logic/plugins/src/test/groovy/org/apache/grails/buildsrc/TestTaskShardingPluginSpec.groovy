@@ -96,8 +96,12 @@ class TestTaskShardingPluginSpec extends Specification {
         assignmentsAreDisjointAndExhaustive(twoWayAssignments, baseline)
         assignmentsAreDisjointAndExhaustive(threeWayAssignments, baseline)
 
-        and: "repeated invocations select the same paths"
-        shardPaths(run('testShard', '-PtestShardCount=3', '-PtestShardIndex=1')) == threeWayAssignments[1]
+        when: "the last shard runs again with the same configuration"
+        BuildResult reused = run('testShard', '-PtestShardCount=3', '-PtestShardIndex=2')
+
+        then: "the cached invocation still emits the same selection"
+        reused.output.contains('Configuration cache entry reused')
+        shardPaths(reused) == threeWayAssignments[2]
     }
 
     def "preserves existing false onlyIf predicates and filters full builds to the current shard"() {
@@ -119,6 +123,7 @@ class TestTaskShardingPluginSpec extends Specification {
 
         then:
         reused.output.contains('Configuration cache entry reused')
+        shardPaths(reused) == selected
         [':alpha:test', ':beta:test', ':gamma:test', ':disabled:test'].each { String path ->
             assert reused.task(path).outcome == result.task(path).outcome
         }
@@ -233,6 +238,8 @@ class TestTaskShardingPluginSpec extends Specification {
 
         then:
         reused.output.contains('Configuration cache entry reused')
+        shardPaths(reused) == shardPaths(stored)
+        reused.output.readLines().count { it.startsWith('TEST_SHARD_MANIFEST ') } == 1
         reused.tasks.collectEntries { [(it.path): it.outcome] } == stored.tasks.collectEntries { [(it.path): it.outcome] }
 
         where:

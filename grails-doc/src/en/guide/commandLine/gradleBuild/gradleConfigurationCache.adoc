@@ -67,6 +67,11 @@ tasks.register('printVersion') {
 Use the services Gradle injects instead of the methods of `project` to copy, delete or execute while a task runs, for example `FileSystemOperations` and `ExecOperations`.
 Gradle reports anything that cannot be stored, together with the line of the build script that caused it, and fails the build; see the https://docs.gradle.org/{gradleVersion}/userguide/configuration_cache_requirements.html[configuration cache requirements] for the complete list.
 
+Grails discovers the application's main class in the `findMainClass` task, after compilation.
+A configuration-time read of the `springBoot.mainClass` or `mainClassName` provider may return no value on a clean build, or the class found by an earlier build.
+A custom task that needs the discovered class must depend on `findMainClass` and read the provider during execution, when it returns the class found by the current build.
+Capture the provider while configuring the task rather than its current value.
+
 ==== Plugins Without Configuration Cache Support
 
 A third-party Gradle plugin that does not support the configuration cache makes the build fail as soon as one of its tasks is part of it.

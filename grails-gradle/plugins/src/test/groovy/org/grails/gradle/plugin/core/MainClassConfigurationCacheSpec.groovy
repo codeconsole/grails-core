@@ -84,21 +84,58 @@ class MainClassConfigurationCacheSpec extends GradleSpecification {
             reused.output.contains('mainClassName=example.Application')
     }
 
-    def "a build script may read springBoot.mainClass while the build is configured"() {
+    def "public main class providers refresh after a configuration-time read with #cacheOption"() {
         given: 'a script reading the value before findMainClass has run'
             GradleRunner runner = setupTestResourceProject('main-class-configuration-cache')
             new File(runner.projectDir, 'build.gradle') << '''
                 afterEvaluate {
-                    println "configured with ${springBoot.mainClass.getOrNull()}"
+                    println "configured springBoot.mainClass=${springBoot.mainClass.getOrNull()}"
+                    println "configured mainClassName=${project.findProperty('mainClassName').getOrNull()}"
+                }
+                tasks.register('printMainClass') {
+                    dependsOn('bootJar')
+                    def springBootMainClass = springBoot.mainClass
+                    def mainClassName = project.findProperty('mainClassName')
+                    doLast {
+                        println "executed springBoot.mainClass=${springBootMainClass.getOrNull()}"
+                        println "executed mainClassName=${mainClassName.getOrNull()}"
+                    }
                 }
             '''.stripIndent()
 
-        when:
-            BuildResult result = executeTask('clean', ['bootJar'])
+        when: 'a clean build reads the value before and after finding the main class'
+            BuildResult result = executeTask('printMainClass', [cacheOption])
 
-        then: 'it gets no value instead of failing, and the archive still starts the class found'
-            result.output.contains('configured with null')
+        then: 'both extension properties see the class found during execution, as the archive does'
+            result.output.contains('configured springBoot.mainClass=null')
+            result.output.contains('configured mainClassName=null')
+            result.output.contains('executed springBoot.mainClass=example.Application')
+            result.output.contains('executed mainClassName=example.Application')
             startClass(new File(runner.projectDir, 'build/libs/main-class-configuration-cache.jar')) == 'example.Application'
+
+        when: 'an incremental build reads the previous class during configuration and finds a renamed application'
+            File application = new File(runner.projectDir, 'src/main/groovy/example/Application.groovy')
+            application.text = application.text.replace('class Application', 'class RenamedApplication')
+            BuildResult renamed = executeTask('printMainClass', [cacheOption])
+
+        then: 'the extension properties and the archive use the newly found class'
+            renamed.output.contains('configured springBoot.mainClass=example.Application')
+            renamed.output.contains('configured mainClassName=example.Application')
+            renamed.output.contains('executed springBoot.mainClass=example.RenamedApplication')
+            renamed.output.contains('executed mainClassName=example.RenamedApplication')
+            startClass(new File(runner.projectDir, 'build/libs/main-class-configuration-cache.jar')) == 'example.RenamedApplication'
+
+        when: 'the configuration-time input has settled on the renamed application'
+            executeTask('printMainClass', [cacheOption])
+            BuildResult reused = executeTask('printMainClass', [cacheOption])
+
+        then:
+            reused.output.contains('executed springBoot.mainClass=example.RenamedApplication')
+            reused.output.contains('executed mainClassName=example.RenamedApplication')
+            (cacheOption == '--configuration-cache') == reused.output.contains('Configuration cache entry reused')
+
+        where:
+            cacheOption << ['--configuration-cache', '--no-configuration-cache']
     }
 
     private static String startClass(File jar) {

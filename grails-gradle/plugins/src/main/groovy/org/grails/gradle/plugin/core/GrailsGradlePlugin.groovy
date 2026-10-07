@@ -56,6 +56,7 @@ import org.gradle.api.plugins.ExtraPropertiesExtension
 import org.gradle.api.plugins.GroovyPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.ProviderFactory
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.GroovySourceDirectorySet
 import org.gradle.api.tasks.JavaExec
@@ -1341,12 +1342,17 @@ ${importStatements}
                 def extraProperties = project.extensions.getByType(ExtraPropertiesExtension)
                 def overriddenMainClass = propertyMainClassName ?: springBootMainClassName
                 if (!overriddenMainClass) {
-                    // the findMainClass task finds the value. A task-output provider would fail anything reading it
-                    // while the build is configured, and a project.provider would keep the value the file held
-                    // when the configuration cache entry was stored, so both read it through a value source
-                    Provider<String> foundMainClass = project.providers.of(FoundMainClassValueSource) {
-                        it.parameters.mainClassCacheFile.set(mainClassFileContainer)
-                    }
+                    // A mapped task output rejects configuration-time reads. Each flatMap query instead creates
+                    // a fresh value source: an early read cannot memoize null (or an earlier build's class) for
+                    // execution, and the configuration cache stores an unread source for the task to query later.
+                    ProviderFactory providers = project.providers
+                    Provider<String> foundMainClass = findMainClassTask
+                            .flatMap { FindMainClassTask task -> task.mainClassCacheFile }
+                            .flatMap { RegularFile cacheFile ->
+                                providers.of(FoundMainClassValueSource) {
+                                    it.parameters.mainClassCacheFile.set(cacheFile)
+                                }
+                            }
                     extraProperties.set('mainClassName', foundMainClass)
                     springBootExtension.mainClass.set(foundMainClass)
                 } else {
