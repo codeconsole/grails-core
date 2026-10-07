@@ -30,7 +30,10 @@ import io.micronaut.http.client.annotation.Client
 import io.micronaut.test.extensions.spock.annotation.MicronautTest
 import jakarta.inject.Inject
 import jakarta.inject.Singleton
+import org.grails.forge.util.VersionInfo
 import spock.lang.Specification
+
+import java.time.LocalDate
 
 @MicronautTest
 @Property(name = 'grails.forge.redirect-url', value = 'https://example.com/forge/')
@@ -55,13 +58,13 @@ class ApplicationControllerSpec extends Specification {
         response.versions["grails.version"]
     }
 
-    void "test snapshot versions do not report end of support"() {
+    void "test snapshot versions report end of support"() {
         given:
         def response = client.toBlocking().retrieve(HttpRequest.GET('/versions'), Map)
 
         expect:
         response.versions["grails.version"].endsWith('-SNAPSHOT')
-        !response.containsKey("endOfSupport")
+        LocalDate.parse(response.endOfSupport) == VersionInfo.getEndOfSupport().get()
         !response.versions.containsKey("grails.endOfSupport")
     }
 

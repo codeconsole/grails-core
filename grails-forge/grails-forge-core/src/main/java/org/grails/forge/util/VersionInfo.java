@@ -99,13 +99,13 @@ public class VersionInfo {
     }
 
     /**
-     * Retrieves the last day the Grails release line is supported. Snapshot builds never report one.
+     * Retrieves the last day the Grails release line is supported.
      *
-     * @return The end of support date, or empty for snapshot builds or when none is configured
+     * @return The end of support date, or empty when none is configured
      */
     public static Optional<LocalDate> getEndOfSupport() {
         Object endOfSupport = VERSIONS.get(END_OF_SUPPORT);
-        if (endOfSupport == null || isGrailsSnapshot()) {
+        if (endOfSupport == null) {
             return Optional.empty();
         }
         try {

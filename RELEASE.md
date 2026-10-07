@@ -327,7 +327,7 @@ GitHub registers `workflow_dispatch` inputs from the **default branch**. The new
 
 Do not deploy a release slot from its maintenance branch. After the release, that branch has moved on to the next `-SNAPSHOT` version.
 
-Forge reports the last supported day of its release line as `endOfSupport` (an ISO `yyyy-MM-dd` date) from `/versions`, and Forge UI uses it to flag deprecated or unsupported Grails versions. The date comes from `grailsEndOfSupport` in the root `gradle.properties` and is checked in per release branch, so keep each branch's own value when merging up. Snapshot builds never report it. Release builds report it only when the property is set. A value that is not a valid date fails the Forge build.
+Forge reports the last supported day of its release line as `endOfSupport` (an ISO `yyyy-MM-dd` date) from `/versions`, and Forge UI uses it to flag deprecated or unsupported Grails versions. The date comes from `grailsEndOfSupport` in the root `gradle.properties` and is checked in per release branch, so keep each branch's own value when merging up. Both release and snapshot builds report it when the property is set. A value that is not a valid date fails the Forge build.
 
 Tags created before the AWS workflow was added (for example `v7.0.16`, `v7.1.6`, `v7.2.3`, and `v8.0.0-M6` or earlier) do not contain the workflow file, so they cannot be selected. Package these locally, then upload to Elastic Beanstalk. From a checkout of that tag, copy `grails-forge/grails-forge-web-netty/aws/` from the matching maintenance branch, then from `grails-forge` run:
 

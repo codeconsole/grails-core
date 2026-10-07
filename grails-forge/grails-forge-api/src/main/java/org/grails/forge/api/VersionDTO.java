@@ -44,10 +44,10 @@ public class VersionDTO extends Linkable {
     }
 
     /**
-     * @return The last day this Grails release line is supported (ISO-8601 date), or null for snapshot builds
+     * @return The last day this Grails release line is supported (ISO-8601 date), or null when none is configured
      */
     @Nullable
-    @Schema(description = "The last day this Grails release line is supported. Not present for snapshot builds.", format = "date")
+    @Schema(description = "The last day this Grails release line is supported. Not present when none is configured.", format = "date")
     public String getEndOfSupport() {
         return VersionInfo.getEndOfSupport().map(LocalDate::toString).orElse(null);
     }

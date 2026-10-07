@@ -41,14 +41,18 @@ class VersionInfoSpec extends Specification {
         version.value
     }
 
-    void "test release build reports end of support"() {
+    @Unroll
+    void "test version #version reports end of support"() {
         given:
-        Class<?> versionInfo = loadVersionInfo('7.0.17', '2026-10-31')
+        Class<?> versionInfo = loadVersionInfo(version, '2026-10-31')
 
         expect:
         versionInfo.getMethod('getEndOfSupport').invoke(null) == Optional.of(LocalDate.of(2026, 10, 31))
         !versionInfo.getMethod('getDependencyVersions').invoke(null).containsKey('grails.endOfSupport')
-        versionInfo.getMethod('getDependencyVersions').invoke(null)['grails.version'] == '7.0.17'
+        versionInfo.getMethod('getDependencyVersions').invoke(null)['grails.version'] == version
+
+        where:
+        version << ['7.0.17', '7.0.18-SNAPSHOT']
     }
 
     @Unroll
@@ -61,16 +65,15 @@ class VersionInfoSpec extends Specification {
         !versionInfo.getMethod('getDependencyVersions').invoke(null).containsKey('grails.endOfSupport')
 
         where:
-        version           | endOfSupport
-        '7.0.18-SNAPSHOT' | '2026-10-31'
-        '7.0.17'          | null
-        '7.0.17'          | '20207-07-31'
+        version  | endOfSupport
+        '7.0.17' | null
+        '7.0.17' | '20207-07-31'
     }
 
-    void "test the current snapshot build does not report end of support"() {
+    void "test the current snapshot build reports end of support"() {
         expect:
         VersionInfo.isGrailsSnapshot()
-        !VersionInfo.getEndOfSupport().present
+        VersionInfo.getEndOfSupport().present
         !VersionInfo.getDependencyVersions().containsKey('grails.endOfSupport')
     }
 
