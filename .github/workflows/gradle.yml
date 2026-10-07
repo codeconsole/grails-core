@@ -108,6 +108,30 @@ jobs:
           ./gradlew validateBomProperties
           --continue
           --stacktrace
+  validateGithubBranch:
+    name: 'Validate githubBranch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v7.0.1
+      - name: "🔍 Verify githubBranch names the maintenance branch"
+        # The documentation links every page to its source on githubBranch, and a release fails unless githubBranch names
+        # the branch it targets, so a maintenance branch must set it to itself from the moment it is created. A pull
+        # request is checked against the branch it merges into. GitHub expressions have no regular expressions, so the
+        # step skips any branch that is not named X.Y.x.
+        env:
+          BRANCH: ${{ github.base_ref || github.ref_name }}
+        run: |
+          if [[ ! "${BRANCH}" =~ ^[0-9]+\.[0-9]+\.x$ ]]; then
+            echo "Skipping, ${BRANCH} is not a maintenance branch"
+            exit 0
+          fi
+          githubBranch=$(sed -n 's/^githubBranch=//p' gradle.properties)
+          if [[ "${githubBranch}" != "${BRANCH}" ]]; then
+            echo "❌ githubBranch in gradle.properties is '${githubBranch}', not ${BRANCH}." >&2
+            exit 1
+          fi
+          echo "✅ gradle.properties sets githubBranch=${BRANCH}"
   buildGradle:
     name: 'Build Gradle Plugins'
     strategy:
