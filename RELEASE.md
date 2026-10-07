@@ -515,9 +515,10 @@ Some common gotchas with Java build reproducibility problems:
    are reproducible. Grails sets this based on the last Git Commit and it's release process preserves the date chosen.
 2. The date set by `SOURCE_DATE_EPOCH` will need to be passed to various Gradle configuration to ensure the same date is
    used. Grails performs this configuration in it's root `build.gradle` file.
-3. Properties files are not reproducible because they write out the current time. Grails publishes a utility to mutate
-   property files so they're reproducible. As part of our build process, we mutate any property file we generate and do
-   not ship property files with dynamic timestamps.
+3. Java's `Properties.store` writes the current time in a comment. Grails removes this automatic timestamp comment
+   from generated build metadata properties files, preserving their descriptive comments and property values. These
+   files do not include a replacement `SOURCE_DATE_EPOCH` comment, so timestamp metadata cannot change their contents
+   between builds.
 4. Gradle builds are not reproducible by default because Gradle does not guarantee file ordering. Grails configures all
    tasks that create archive files to ensure file ordering is reproducible. This configuration can be found in
    the `CompilePlugin` in the `build-logic` project.
