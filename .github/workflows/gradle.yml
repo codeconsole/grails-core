@@ -243,8 +243,9 @@ jobs:
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project"
+        # build-logic is an included build, so the specs of its vulnerability-scan plugin are run through the root build.
         run: >
-          ./gradlew ${{ matrix.gradle_task }}
+          ./gradlew ${{ matrix.gradle_task }} :build-logic-root:vulnerability-scan:check
           --continue
           --stacktrace
           -PonlyCoreTests
@@ -323,7 +324,7 @@ jobs:
         uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project"
         run: >
-          ./gradlew ${{ matrix.gradle_task }}
+          ./gradlew ${{ matrix.gradle_task }} :build-logic-root:vulnerability-scan:check
           --continue
           --rerun-tasks
           --stacktrace
