@@ -57,8 +57,10 @@ class TestTaskShardingPlugin implements Plugin<Project> {
         project.allprojects { Project candidateProject ->
             candidateProject.tasks.withType(Test).configureEach { Test task ->
                 candidateTasks.add(task)
+                // Shard membership is fixed during configuration; only the boolean belongs in the cached predicate.
+                boolean selected = isSelectedForShard(task, configuration)
                 task.onlyIf {
-                    isSelectedForShard(task, configuration)
+                    selected
                 }
             }
         }

@@ -113,6 +113,15 @@ class TestTaskShardingPluginSpec extends Specification {
         [':alpha:test', ':beta:test', ':gamma:test'].each { String path ->
             assert result.task(path).outcome == (selected.contains(path) ? TaskOutcome.NO_SOURCE : TaskOutcome.SKIPPED)
         }
+
+        when:
+        BuildResult reused = run('build', '-PtestShardCount=2', '-PtestShardIndex=0')
+
+        then:
+        reused.output.contains('Configuration cache entry reused')
+        [':alpha:test', ':beta:test', ':gamma:test', ':disabled:test'].each { String path ->
+            assert reused.task(path).outcome == result.task(path).outcome
+        }
     }
 
     def "testShard depends only on selected Test task candidates and emits a manifest"() {
@@ -203,6 +212,37 @@ class TestTaskShardingPluginSpec extends Specification {
         error.message == 'Duplicate normalized Gradle Test task path: :alpha:test'
     }
 
+    def "#taskName preserves shard #shardIndex selection and execution-time predicates when reusing the configuration cache"() {
+        given:
+        writeLifecycleFixture()
+        List<String> arguments = [taskName, '-PtestShardCount=2', "-PtestShardIndex=${shardIndex}"]
+
+        when:
+        BuildResult stored = run(*arguments)
+
+        then:
+        stored.output.contains('Configuration cache entry stored')
+        shardPaths(stored).contains(':grails-test-report:test') == (shardIndex == 0)
+        stored.tasks.findAll { it.path.endsWith('Test') || it.path.endsWith(':test') }.each {
+            assert it.outcome == (shardPaths(stored).contains(it.path) ? TaskOutcome.NO_SOURCE : TaskOutcome.SKIPPED)
+        }
+
+        when: 'a prerequisite must recreate the file checked by an existing onlyIf predicate'
+        testProjectDir.resolve('dynamic-enabled').toFile().delete()
+        BuildResult reused = run(*arguments)
+
+        then:
+        reused.output.contains('Configuration cache entry reused')
+        reused.tasks.collectEntries { [(it.path): it.outcome] } == stored.tasks.collectEntries { [(it.path): it.outcome] }
+
+        where:
+        taskName    | shardIndex
+        'build'     | 0
+        'build'     | 1
+        'testShard' | 0
+        'testShard' | 1
+    }
+
     private Map<Integer, Set<String>> assignmentsFor(int shardCount) {
         (0..<shardCount).collectEntries { int shardIndex ->
             BuildResult result = run('testShard', "-PtestShardCount=${shardCount}", "-PtestShardIndex=${shardIndex}")
@@ -225,7 +265,7 @@ class TestTaskShardingPluginSpec extends Specification {
     private BuildResult run(String... arguments) {
         GradleRunner.create()
                 .withProjectDir(testProjectDir.toFile())
-                .withArguments(arguments + ['--stacktrace'])
+                .withArguments(arguments + ['--stacktrace', '--configuration-cache', '--configuration-cache-problems=fail'])
                 .withPluginClasspath()
                 .build()
     }
@@ -233,7 +273,7 @@ class TestTaskShardingPluginSpec extends Specification {
     private BuildResult runFail(String... arguments) {
         GradleRunner.create()
                 .withProjectDir(testProjectDir.toFile())
-                .withArguments(arguments + ['--stacktrace'])
+                .withArguments(arguments + ['--stacktrace', '--configuration-cache', '--configuration-cache-problems=fail'])
                 .withPluginClasspath()
                 .buildAndFail()
     }
@@ -294,8 +334,8 @@ class TestTaskShardingPluginSpec extends Specification {
             }
 
             tasks.register('buildMarker') {
-                doLast {
-                    logger.lifecycle('BUILD_MARKER')
+                doLast { task ->
+                    task.logger.lifecycle('BUILD_MARKER')
                 }
             }
             tasks.named('build') {
@@ -315,15 +355,16 @@ class TestTaskShardingPluginSpec extends Specification {
         new File(dynamicDir, 'build.gradle').text = """
             import org.gradle.api.tasks.testing.Test
 
+            File marker = rootProject.file('dynamic-enabled')
             tasks.register('enableDynamic') {
                 doLast {
-                    rootProject.file('dynamic-enabled').text = 'enabled'
+                    marker.text = 'enabled'
                 }
             }
             tasks.register('dynamicTest', Test) {
                 dependsOn('enableDynamic')
                 onlyIf {
-                    rootProject.file('dynamic-enabled').exists()
+                    marker.exists()
                 }
                 testClassesDirs = files(layout.buildDirectory.dir('dynamic-test-classes'))
                 classpath = files()
@@ -356,15 +397,16 @@ class TestTaskShardingPluginSpec extends Specification {
         new File(dynamicDir, 'build.gradle').text = """
             import org.gradle.api.tasks.testing.Test
 
+            File marker = rootProject.file('dynamic-enabled')
             tasks.register('enableDynamic') {
                 doLast {
-                    rootProject.file('dynamic-enabled').text = 'enabled'
+                    marker.text = 'enabled'
                 }
             }
             tasks.register('dynamicTest', Test) {
                 dependsOn('enableDynamic')
                 onlyIf {
-                    rootProject.file('dynamic-enabled').exists()
+                    marker.exists()
                 }
                 testClassesDirs = files(layout.buildDirectory.dir('dynamic-test-classes'))
                 classpath = files()

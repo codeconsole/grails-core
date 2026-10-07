@@ -228,16 +228,14 @@ class GrailsGradlePlugin implements Plugin<Project> {
         }
     }
 
+    /**
+     * The main class the {@code findMainClass} task found. The value is read from the task's output when it is
+     * queried, so the configuration cache keeps it lazy instead of storing whatever the file held before the task ran.
+     */
     protected static Provider<String> getMainClassProvider(Project project) {
-        Provider<FindMainClassTask> findMainClassTask = project.tasks.named('findMainClass', FindMainClassTask)
-        project.provider {
-            File cacheFile = findMainClassTask.get().mainClassCacheFile.orNull?.asFile
-            if (!cacheFile?.exists()) {
-                return null
-            }
-
-            cacheFile?.text
-        }
+        project.tasks.named('findMainClass', FindMainClassTask)
+                .flatMap { FindMainClassTask task -> task.mainClassCacheFile }
+                .map { RegularFile cacheFile -> cacheFile.asFile.exists() ? cacheFile.asFile.text : null }
     }
 
     private void configureGroovyCompiler(Project project) {
@@ -1343,24 +1341,14 @@ ${importStatements}
                 def extraProperties = project.extensions.getByType(ExtraPropertiesExtension)
                 def overriddenMainClass = propertyMainClassName ?: springBootMainClassName
                 if (!overriddenMainClass) {
-                    // the findMainClass task needs to set these values
-                    extraProperties.set('mainClassName', project.provider {
-                        File cacheFile = findMainClassTask.get().mainClassCacheFile.orNull?.asFile
-                        if (!cacheFile?.exists()) {
-                            return null
-                        }
-
-                        cacheFile?.text
-                    })
-
-                    springBootExtension.mainClass.set(project.provider {
-                        File cacheFile = findMainClassTask.get().mainClassCacheFile.orNull?.asFile
-                        if (!cacheFile?.exists()) {
-                            return null
-                        }
-
-                        cacheFile?.text
-                    })
+                    // the findMainClass task finds the value. A task-output provider would fail anything reading it
+                    // while the build is configured, and a project.provider would keep the value the file held
+                    // when the configuration cache entry was stored, so both read it through a value source
+                    Provider<String> foundMainClass = project.providers.of(FoundMainClassValueSource) {
+                        it.parameters.mainClassCacheFile.set(mainClassFileContainer)
+                    }
+                    extraProperties.set('mainClassName', foundMainClass)
+                    springBootExtension.mainClass.set(foundMainClass)
                 } else {
                     // we need to set the overridden value on both
                     extraProperties.set('mainClass', overriddenMainClass)
@@ -1717,10 +1705,8 @@ ${importStatements}
             it.inputs.dir(src)
             it.outputs.dir(dest)
 
-            def antBuilder = it.ant
-
-            it.doLast {
-                antBuilder.native2ascii(src: src, dest: dest,
+            it.doLast { Task task ->
+                task.ant.native2ascii(src: src, dest: dest,
                         includes: '**/*.properties', encoding: 'UTF-8')
             }
         }
