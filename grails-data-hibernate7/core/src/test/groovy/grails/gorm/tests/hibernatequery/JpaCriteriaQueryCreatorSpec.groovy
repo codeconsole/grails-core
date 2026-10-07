@@ -29,6 +29,8 @@ import org.grails.datastore.mapping.query.Query
 import org.hibernate.query.criteria.JpaCriteriaQuery
 import org.grails.orm.hibernate.query.JpaCriteriaQueryCreator
 import org.grails.orm.hibernate.query.JpaQueryContext
+import org.grails.orm.hibernate.query.SqlGroupProjection
+import org.grails.orm.hibernate.query.SqlProjection
 import org.springframework.core.convert.support.DefaultConversionService
 import grails.gorm.annotation.Entity
 import org.grails.datastore.gorm.GormEntity
@@ -142,6 +144,31 @@ class JpaCriteriaQueryCreatorSpec extends HibernateGormDatastoreSpec {
         then:
         query != null
         query.resultType == String
+    }
+
+    def "test createQuery orders and groups by the column alias of a SQL projection"() {
+        given:
+        var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)
+        var detachedCriteria = new DetachedCriteria(JpaCriteriaQueryCreatorSpecPerson)
+        detachedCriteria.order(Query.Order.desc("total"))
+        detachedCriteria.eq("lastName", "Smith")
+        var projections = new Query.ProjectionList()
+        projections.add(new SqlGroupProjection("NAME"))
+        projections.add(new SqlProjection("upper(last_name)", "name", String))
+        projections.add(new SqlProjection("count(*)", "total", Long))
+        var creator = new JpaCriteriaQueryCreator(projections, criteriaBuilder, entity, detachedCriteria, new DefaultConversionService())
+
+        when:
+        JpaCriteriaQuery<?> query = creator.createQuery()
+        var selections = query.selection.compoundSelectionItems
+
+        then:
+        query.resultType == jakarta.persistence.Tuple
+        selections*.alias == ["name", "total"]
+        query.groupList.size() == 1
+        query.groupList[0].arguments[0].literalValue == "upper(last_name)"
+        query.orderList.size() == 1
+        query.orderList[0].expression.is(selections[1])
     }
 
     def "test populateSubquery"() {
