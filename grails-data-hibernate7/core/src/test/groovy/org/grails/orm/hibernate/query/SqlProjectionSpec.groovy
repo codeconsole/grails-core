@@ -38,8 +38,14 @@ class SqlProjectionSpec extends Specification {
         'concat(a, concat(b, c)), d'                    | ['concat(a, concat(b, c))', 'd']
         '"odd,name", other'                             | ['"odd,name"', 'other']
         '[odd,name], ARRAY[a, b]'                       | ['[odd,name]', 'ARRAY[a, b]']
+        'sum(height) as [total (cm)], c'                | ['sum(height) as [total (cm)]', 'c']
+        'sum(height) as [a]]b], c'                      | ['sum(height) as [a]]b]', 'c']
+        'arr[f(a, b)], ARRAY[ARRAY[1, 2]], c'           | ['arr[f(a, b)]', 'ARRAY[ARRAY[1, 2]]', 'c']
         'a /* b, c */, d'                               | ['a /* b, c */', 'd']
         'a -- b, c\n, d'                                | ['a -- b, c', 'd']
+        '$$a,b$$, c'                                    | ['$$a,b$$', 'c']
+        '$tag$a,$$,b$tag$, c'                           | ['$tag$a,$$,b$tag$', 'c']
+        'a$b, $1'                                       | ['a$b', '$1']
     }
 
     @Unroll
@@ -56,6 +62,8 @@ class SqlProjectionSpec extends Specification {
         'sum(height) as [total]'        | 'total'     | 'sum(height)'
         'cast(width as integer) as w'   | 'w'         | 'cast(width as integer)'
         'cast(width as integer)'        | 'integer'   | 'cast(width as integer)'
+        'sum(height) as total /* c */'  | 'total'     | 'sum(height)'
+        'sum(height) as total -- c'     | 'total'     | 'sum(height)'
         'sum(height) as total'          | 'other'     | 'sum(height) as total'
         'sum(height) as "total]'        | 'total'     | 'sum(height) as "total]'
         'width'                         | 'width'     | 'width'

@@ -199,6 +199,20 @@ class HibernateCriteriaBuilderSqlProjectionSpec extends Specification {
     }
 
     @Rollback
+    void 'a comma inside a dollar-quoted string does not separate columns'() {
+        given:
+        saveBoxes()
+
+        expect:
+        SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlProjection '$$a,b$$ as tag, height as height', ['tag', 'height'], [STRING, INTEGER]
+            }
+            order('height')
+        }*.toList() == [['a,b', 7], ['a,b', 8], ['a,b', 9], ['a,b', 9]]
+    }
+
+    @Rollback
     void 'the type may be a StandardBasicTypes constant or a Java class'() {
         given:
         saveBoxes()
@@ -337,6 +351,37 @@ class HibernateCriteriaBuilderSqlProjectionSpec extends Specification {
         sql =~ /(?i)group by width \* 10\b/
         !sql.contains('"')
         !sql.contains('[')
+    }
+
+    @Rollback
+    void 'a comment after a column alias is removed with the alias'() {
+        given:
+        saveBoxes()
+
+        expect:
+        SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlGroupProjection 'width as boxWidth /* a comment */, sum(height) as total -- another comment\n', 'boxWidth',
+                        ['boxWidth', 'total'], [INTEGER, INTEGER]
+            }
+            order('boxWidth')
+        }*.toList() == [[2, 24], [4, 9]]
+    }
+
+    @Rollback
+    void 'quoted column aliases that differ only in case are grouped by apart'() {
+        given:
+        saveBoxes()
+
+        expect:
+        SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlGroupProjection 'width as "key", height as "KEY", count(*) as total', '"key", "KEY"',
+                        ['key', 'KEY', 'total'], [INTEGER, INTEGER, LONG]
+            }
+            order('key')
+            order('KEY')
+        }*.toList() == [[2, 7, 1L], [2, 8, 1L], [2, 9, 1L], [4, 9, 1L]]
     }
 
     @Rollback

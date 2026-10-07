@@ -225,8 +225,11 @@ public class JpaCriteriaQueryCreator<T> {
                         return context.getFullyQualifiedExpression(groupPropertyProjection.getPropertyName());
                     } else if (projection instanceof SqlGroupProjection sqlGroupProjection) {
                         // the column alias of a SQL projection does not reach the SQL, so a group by clause that
-                        // names one, quoted or not, groups by the SQL it stands for
-                        SqlProjection aliased = findSqlProjection(SqlProjection.unquote(sqlGroupProjection.getSql().trim()), true);
+                        // names one, quoted or not, groups by the SQL it stands for; as in SQL, a quoted name is
+                        // case sensitive
+                        String groupBy = sqlGroupProjection.getSql().trim();
+                        String name = SqlProjection.unquote(groupBy);
+                        SqlProjection aliased = findSqlProjection(name, name.equals(groupBy));
                         return translator.translateSql(aliased != null ? aliased.getSql() : sqlGroupProjection.getSql(), null);
                     }
                     return null;
