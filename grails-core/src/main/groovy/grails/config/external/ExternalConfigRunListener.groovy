@@ -29,6 +29,8 @@ import groovy.util.logging.Slf4j
 import org.springframework.boot.bootstrap.ConfigurableBootstrapContext
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.SpringApplicationRunListener
+import org.springframework.boot.context.properties.bind.Bindable
+import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.env.PropertiesPropertySourceLoader
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.env.MapPropertySource
@@ -92,10 +94,11 @@ class ExternalConfigRunListener implements SpringApplicationRunListener {
 
     // Resolve final locations, taking into account user home prefix and file wildcards
     private List<Object> getLocations(ConfigurableEnvironment environment) {
-        List<Object> locations = environment.getProperty('grails.config.locations', List, []) as List<Object>
+        Binder binder = Binder.get(environment)
+        List<Object> locations = binder.bind('grails.config.locations', Bindable.listOf(Object)).orElse([])
         // See if grails.config.locations is defined in an environments block like 'development' or 'test'
         String environmentString = "environments.${Environment.current.name}.grails.config.locations"
-        locations = environment.getProperty(environmentString, List, locations)
+        locations = binder.bind(environmentString, Bindable.listOf(Object)).orElse(locations)
         locations.collectMany { Object location ->
             if (location instanceof CharSequence) {
                 location = replaceUserHomePrefix(location as String)

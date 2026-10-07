@@ -301,7 +301,7 @@ class ExternalConfigSpec extends Specification implements GrailsUnitTest {
 
     def "getting configuration from yml with multiple documents"() {
         given:
-        addToEnvironment('environments.test.grails.config.locations': ["classpath:/externalConfigMultipleDocs.yml"])
+        addToEnvironment('environments.test.grails.config.locations': ['${EXAMPLE_CONFIG_LOCATION:classpath:/externalConfigMultipleDocs.yml}'])
 
         when:
         listener.environmentPrepared(null, environment)

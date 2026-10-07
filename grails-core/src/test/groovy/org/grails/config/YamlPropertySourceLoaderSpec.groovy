@@ -20,10 +20,15 @@ package org.grails.config
 
 import grails.util.Environment
 import org.grails.config.yaml.YamlPropertySourceLoader
+import org.springframework.boot.context.properties.ConfigurationProperties
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources
+import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.env.SystemEnvironmentPropertySource
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
@@ -144,8 +149,10 @@ class YamlPropertySourceLoaderSpec extends Specification {
         environment.getProperty('app.items') == null
         !environment.containsProperty('app.items')
 
-        and: "a list of plain values is presented as it is"
-        environment.getProperty('app.names', List) == ['p', 'q']
+        and: "a list of plain values is also presented element by element"
+        environment.getProperty('app.names[0]') == 'p'
+        environment.getProperty('app.names[1]') == 'q'
+        !environment.containsProperty('app.names')
     }
 
     def "the Grails config still reads a list of objects as a list"() {
@@ -155,6 +162,53 @@ class YamlPropertySourceLoaderSpec extends Specification {
         then:
         config.getProperty('app.items', List)*.name == ['one', 'two']
         config.getProperty('app.names', List) == ['p', 'q']
+    }
+
+    def "resolves placeholders in YAML scalar lists bound to configuration properties with environment #variables"() {
+        given:
+        def source = load('''\
+            app:
+              allowedOrigins:
+                - https://static.example.com
+                - "${EXAMPLE_ALLOWED_ORIGIN:https://default.example.com}"
+              ports: [8080, "${EXAMPLE_PORT:9090}"]
+              flags: [true, "${EXAMPLE_FLAG:false}"]
+              groups: [["${EXAMPLE_GROUP:primary}"], [secondary]]
+              empty: []
+              blanks: [first, null, "", last]
+            '''.stripIndent())
+        def runner = new ApplicationContextRunner()
+                .withUserConfiguration(ScalarListConfiguration)
+                .withInitializer { context ->
+                    context.environment.propertySources.addFirst(source)
+                    context.environment.propertySources.addFirst(new SystemEnvironmentPropertySource('testEnvironment', variables))
+                }
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            def bound = context.getBean(ScalarListProperties)
+            assert bound.allowedOrigins == ['https://static.example.com', origin]
+            assert bound.ports == [8080, port]
+            assert bound.flags == [true, flag]
+            assert bound.groups == [[group], ['secondary']]
+            assert bound.empty == []
+            assert bound.blanks == ['first', '', '', 'last']
+        }
+
+        where:
+        variables                                                                                                               | origin                        | port | flag  | group
+        [:]                                                                                                                     | 'https://default.example.com' | 9090 | false | 'primary'
+        [EXAMPLE_ALLOWED_ORIGIN: 'https://custom.example.com', EXAMPLE_PORT: '7070', EXAMPLE_FLAG: 'true', EXAMPLE_GROUP: 'custom'] | 'https://custom.example.com'  | 7070 | true  | 'custom'
+    }
+
+    def "a higher priority scalar list replaces a lower priority list when binding"() {
+        given:
+        def environment = environment('app.names: [first, second]')
+        environment.propertySources.addFirst(load('app.names: ["${EXAMPLE_NAME:replacement}"]', 'override'))
+
+        expect:
+        Binder.get(environment).bind('app.names', Bindable.listOf(String)).get() == ['replacement']
     }
 
     private static final String ITEMS_YAML = '''\
@@ -167,8 +221,8 @@ class YamlPropertySourceLoaderSpec extends Specification {
           names: [p, q]
         '''.stripIndent()
 
-    private static NavigableMapPropertySource load(String yaml) {
-        (NavigableMapPropertySource) new YamlPropertySourceLoader().load('test', new ByteArrayResource(yaml.bytes)).first()
+    private static NavigableMapPropertySource load(String yaml, String name = 'test') {
+        (NavigableMapPropertySource) new YamlPropertySourceLoader().load(name, new ByteArrayResource(yaml.bytes)).first()
     }
 
     private static StandardEnvironment environment(String yaml) {
@@ -187,5 +241,20 @@ class YamlPropertySourceLoaderSpec extends Specification {
         String name
         String paths
         List<String> tags
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(ScalarListProperties)
+    static class ScalarListConfiguration {
+    }
+
+    @ConfigurationProperties('app')
+    static class ScalarListProperties {
+        List<String> allowedOrigins
+        List<Integer> ports
+        List<Boolean> flags
+        List<List<String>> groups
+        List<String> empty = ['default']
+        List<String> blanks
     }
 }
