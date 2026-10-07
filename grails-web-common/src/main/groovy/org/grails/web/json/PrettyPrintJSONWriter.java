@@ -26,9 +26,9 @@ import java.io.Writer;
  * @author Siegfried Puchbauer
  * @since 1.1
  * @deprecated use {@link JSONWriter#JSONWriter(Writer, JsonMapperSupport, boolean)}, which indents with the mapper's
- *     default pretty printer; to be removed in Grails 10
+ *     default pretty printer; {@code grails.converters.json.legacy} uses it to indent JSON as Grails 8 did
  */
-@Deprecated(since = "9.0", forRemoval = true)
+@Deprecated(since = "9.0")
 public class PrettyPrintJSONWriter extends JSONWriter {
 
     public static final String DEFAULT_INDENT_STR = "  ";

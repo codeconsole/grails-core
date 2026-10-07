@@ -69,20 +69,19 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
     public static final String SETTING_CONVERTERS_JSON_DEFAULT_DEEP = "grails.converters.json.default.deep";
     /**
      * Whether domain classes are registered with the application's {@code JsonMapper}, so that it renders them as the
-     * JSON converter does. Defaults to {@code true}.
+     * JSON converter does, including when a Spring MVC controller returns one. Defaults to {@code false}, so that the
+     * application's {@code JsonMapper} renders domain classes as Jackson beans, as it did in Grails 8. The JSON converter
+     * renders domain classes with its own serializer either way.
      *
      * @since 9.0
      */
     public static final String SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED = "grails.converters.json.domain.jackson.enabled";
     /**
      * Whether the JSON converter renders values as Grails 8 did, with the marshallers of Grails 8 rather than the
-     * application's {@code JsonMapper}, and the application's {@code JsonMapper} renders domain classes as Jackson beans.
-     * Defaults to {@code false}.
+     * application's {@code JsonMapper}. Defaults to {@code false}.
      *
      * @since 9.0
-     * @deprecated a transition to the rendering of Grails 9, to be removed in Grails 10
      */
-    @Deprecated(since = "9.0", forRemoval = true)
     public static final String SETTING_CONVERTERS_JSON_LEGACY = "grails.converters.json.legacy";
     public static final String SETTING_CONVERTERS_ENCODING = "grails.converters.encoding";
     public static final String SETTING_CONVERTERS_CIRCULAR_REFERENCE_BEHAVIOUR = "grails.converters.default.circular.reference.behaviour";
@@ -138,7 +137,9 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
         boolean legacy = grailsConfig.getProperty(SETTING_CONVERTERS_JSON_LEGACY, Boolean.class, false);
         ConvertersConfigurationHolder.setLegacyJson(legacy);
         if (legacy) {
-            LOG.warn(SETTING_CONVERTERS_JSON_LEGACY + " renders JSON as Grails 8 did. It is deprecated, and will be removed in Grails 10.");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Using the JSON marshallers of Grails 8 (" + SETTING_CONVERTERS_JSON_LEGACY + ").");
+            }
             addLegacyJsonMarshallers(marshallers, grailsConfig, proxyHandler);
         }
         else {
@@ -189,7 +190,7 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
     /**
      * The marshallers of Grails 8, which render values as Grails 8 did.
      */
-    @SuppressWarnings("removal")
+    @SuppressWarnings("deprecation")
     private void addLegacyJsonMarshallers(List<ObjectMarshaller<JSON>> marshallers, Config grailsConfig, ProxyHandler proxyHandler) {
         marshallers.add(new org.grails.web.converters.marshaller.json.ArrayMarshaller());
         marshallers.add(new org.grails.web.converters.marshaller.json.ByteArrayMarshaller());

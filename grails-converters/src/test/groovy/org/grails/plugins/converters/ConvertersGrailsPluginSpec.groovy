@@ -39,7 +39,6 @@ import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
-import org.grails.web.converters.jackson.DomainClassJacksonModule
 import org.grails.web.converters.jackson.Shelf
 import org.grails.web.converters.jackson.Volume
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
@@ -79,37 +78,51 @@ class ConvertersGrailsPluginSpec extends Specification {
         jsonRegisterer.converterClass == JSON
     }
 
-    void "beanRegistrar registers a Jackson module for domain classes"() {
+    void "the Jackson module for domain classes is not registered by default"() {
         expect:
-        beanFactory.getBean('domainClassJacksonModule') instanceof DomainClassJacksonModule
+        !beanFactory.containsBeanDefinition('domainClassJacksonModule')
     }
 
-    void "the domain class Jackson module is not registered when #setting is #value"() {
+    void "the Jackson module for domain classes is registered when #settings"() {
         given:
-        def environment = new StandardEnvironment()
-        environment.propertySources.addFirst(new MapPropertySource('test', [(setting): value]))
         def factory = new DefaultListableBeanFactory()
         def registrar = new ConvertersGrailsPlugin().beanRegistrar()
-        new BeanRegistryAdapter(factory, environment, registrar.getClass()).register(registrar)
+        new BeanRegistryAdapter(factory, environment(settings), registrar.getClass()).register(registrar)
 
         expect:
-        !factory.containsBeanDefinition('domainClassJacksonModule')
+        factory.containsBeanDefinition('domainClassJacksonModule') == registered
 
         where:
-        setting                                                                       | value
-        ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED | 'false'
-        ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_LEGACY                 | 'true'
+        settings                                                                               || registered
+        [(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED): 'true'] || true
+        [(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED): 'false'] || false
+        [(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED): 'true',
+         (ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_LEGACY): 'true']                 || true
     }
 
-    void "Spring Boot's JsonMapper renders domain classes as the JSON converter does"() {
+    void "by default, Spring Boot's JsonMapper renders domain classes as Jackson beans, as in Grails 8"() {
         given:
-        def context = new AnnotationConfigApplicationContext()
-        context.registerBean('grailsApplication', GrailsApplication, { domainApplication() })
-        context.registerBean(ProxyHandler, { new DefaultProxyHandler() })
-        def registrar = new ConvertersGrailsPlugin().beanRegistrar()
-        new BeanRegistryAdapter(context.defaultListableBeanFactory, context.environment, registrar.getClass()).register(registrar)
-        context.register(JacksonAutoConfiguration)
-        context.refresh()
+        def context = bootContext([:])
+        def shelf = new Shelf(name: 'top')
+        shelf.id = 3
+        def volume = new Volume(title: 'Grails', shelf: shelf)
+        volume.id = 1
+
+        when:
+        def json = context.getBean(JsonMapper).writeValueAsString(volume)
+
+        then: 'the shelf in full'
+        json.contains('"shelf":{')
+        json.contains('"name":"top"')
+
+        cleanup:
+        context.close()
+        ConvertersConfigurationHolder.clear()
+    }
+
+    void "with the module enabled, Spring Boot's JsonMapper renders domain classes as the JSON converter does"() {
+        given:
+        def context = bootContext([(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED): 'true'])
         def shelf = new Shelf(name: 'top')
         shelf.id = 3
         def volume = new Volume(title: 'Grails', shelf: shelf)
@@ -122,6 +135,24 @@ class ConvertersGrailsPluginSpec extends Specification {
         cleanup:
         context.close()
         ConvertersConfigurationHolder.clear()
+    }
+
+    private AnnotationConfigApplicationContext bootContext(Map<String, Object> settings) {
+        def context = new AnnotationConfigApplicationContext()
+        context.environment.propertySources.addFirst(new MapPropertySource('test', settings))
+        context.registerBean('grailsApplication', GrailsApplication, { domainApplication() })
+        context.registerBean(ProxyHandler, { new DefaultProxyHandler() })
+        def registrar = new ConvertersGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(context.defaultListableBeanFactory, context.environment, registrar.getClass()).register(registrar)
+        context.register(JacksonAutoConfiguration)
+        context.refresh()
+        context
+    }
+
+    private static StandardEnvironment environment(Map<String, Object> settings) {
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(new MapPropertySource('test', settings))
+        environment
     }
 
     private GrailsApplication domainApplication() {

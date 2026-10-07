@@ -110,7 +110,7 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         this.prettyPrint = prettyPrint;
     }
 
-    @SuppressWarnings("removal")
+    @SuppressWarnings("deprecation")
     private void prepareRender(Writer out) {
         jsonMapper = ConvertersConfigurationHolder.getJsonMapper();
         jsonWriter = prettyPrint && ConvertersConfigurationHolder.isLegacyJson() ?

@@ -26,9 +26,9 @@ import org.grails.web.converters.marshaller.ObjectMarshaller;
  * @author Siegfried Puchbauer
  * @since 1.1
  * @deprecated no longer registered, as the converter writes {@code byte[]} values with the application's {@code JsonMapper};
- *     registered with {@code grails.converters.json.legacy}, to render JSON as Grails 8 did. To be removed in Grails 10.
+ *     registered with {@code grails.converters.json.legacy}, to render JSON as Grails 8 did.
  */
-@Deprecated(since = "9.0", forRemoval = true)
+@Deprecated(since = "9.0")
 public class ByteArrayMarshaller implements ObjectMarshaller<JSON> {
 
     public boolean supports(Object object) {

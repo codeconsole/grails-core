@@ -79,9 +79,8 @@ class ConvertersGrailsPlugin extends Plugin {
                 }
             }
 
-            // Spring Boot registers every JacksonModule bean with the application's JsonMapper
-            if (environment.getProperty(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED, Boolean, true) &&
-                    !environment.getProperty(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_LEGACY, Boolean, false)) {
+            // Spring Boot registers every JacksonModule bean with the application's JsonMapper, so the module is opt-in
+            if (environment.getProperty(ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_DOMAIN_JACKSON_ENABLED, Boolean, false)) {
                 registry.registerBean('domainClassJacksonModule', DomainClassJacksonModule) {
                     it.supplier {
                         ObjectProvider<GrailsApplication> grailsApplication = it.beanProvider(GrailsApplication)
