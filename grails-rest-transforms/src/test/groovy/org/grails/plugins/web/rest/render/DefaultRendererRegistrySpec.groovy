@@ -20,6 +20,7 @@ package org.grails.plugins.web.rest.render
 
 import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
+import grails.rest.render.Renderer
 import grails.rest.render.hal.HalJsonCollectionRenderer
 import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.web.mime.MimeType
@@ -51,6 +52,42 @@ class DefaultRendererRegistrySpec extends Specification {
 
         cleanup:
         context.close()
+    }
+
+    void 'an application renderer for Object keeps precedence over the default JSON renderer'() {
+        given:
+        def custom = Stub(Renderer) {
+            getTargetType() >> Object
+            getMimeTypes() >> ([MimeType.JSON] as MimeType[])
+        }
+        def registry = new DefaultRendererRegistry()
+
+        when: 'Spring injects the renderer beans before the registry initializes'
+        registry.setRenderers([custom] as Renderer[])
+        registry.initialize()
+
+        then:
+        registry.findRenderer(MimeType.JSON, 'value').is(custom)
+        registry.findRenderer(MimeType.TEXT_JSON, 'value') instanceof DefaultJsonRenderer
+    }
+
+    void 'a fallback renderer bean is consulted after the renderers for the class and its interfaces'() {
+        given:
+        def fallback = Stub(FallbackRenderer) {
+            getTargetType() >> Object
+            getMimeTypes() >> ([MimeType.XML] as MimeType[])
+        }
+        def forInterface = Stub(Renderer) {
+            getTargetType() >> CharSequence
+            getMimeTypes() >> ([MimeType.XML] as MimeType[])
+        }
+        def registry = new DefaultRendererRegistry()
+        registry.setRenderers([fallback, forInterface] as Renderer[])
+        registry.initialize()
+
+        expect:
+        registry.findRenderer(MimeType.XML, 'value').is(forInterface)
+        registry.findRenderer(MimeType.XML, 42).is(fallback)
     }
 
     void 'validation errors negotiate the problem JSON media type'() {

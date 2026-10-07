@@ -61,7 +61,7 @@ class XmlGrailsPluginSpec extends Specification {
             getBeanDefinition('xmlDataBindingSourceCreator').beanClassName == XmlDataBindingSourceCreator.name
             getBeanDefinition('halXmlDataBindingSourceCreator').beanClassName ==
                     HalXmlDataBindingSourceCreator.name
-            getBeanDefinition('xmlRenderer').beanClassName == DefaultXmlRenderer.name
+            getBeanDefinition('xmlRenderer').beanClassName == XmlFallbackRenderer.name
             getBeanDefinition('xmlErrorsRenderer').beanClassName == XmlErrorsRenderer.name
             containsBeanDefinition('errorsXmlMarshallerRegisterer')
             !containsBeanDefinition('grailsJacksonXmlHttpMessageConverter')
@@ -125,6 +125,29 @@ class XmlGrailsPluginSpec extends Specification {
         registry.findRenderer(MimeType.XML, 'value').is(custom)
     }
 
+    void 'an application renderer for Object takes precedence over the default XML bean, whichever is collected first'() {
+        given:
+        def custom = Stub(Renderer) {
+            getTargetType() >> Object
+            getMimeTypes() >> ([MimeType.XML] as MimeType[])
+        }
+        def fallback = beanFactory.getBean('xmlRenderer', XmlFallbackRenderer)
+        def registry = new DefaultRendererRegistry()
+
+        when: 'Spring injects the renderer beans before the registry initializes'
+        registry.setRenderers((customFirst ? [custom, fallback] : [fallback, custom]) as Renderer[])
+        registry.initialize()
+
+        then:
+        registry.findRenderer(MimeType.XML, 'value').is(custom)
+
+        and: 'the default XML bean still answers the media types the application renderer does not'
+        registry.findRenderer(MimeType.TEXT_XML, 'value').is(fallback)
+
+        where:
+        customFirst << [true, false]
+    }
+
     void 'a renderer discovers a GSP locator registered after its creation'() {
         given:
         def renderer = beanFactory.getBean('xmlRenderer', DefaultXmlRenderer)
@@ -166,7 +189,7 @@ class XmlGrailsPluginSpec extends Specification {
         rendererRegistry.initialize()
 
         when: "the plugin's renderer beans are registered"
-        rendererRegistry.setRenderers([new DefaultXmlRenderer<Object>(Object)] as Renderer[])
+        rendererRegistry.setRenderers([new XmlFallbackRenderer()] as Renderer[])
 
         then: "no Atom renderer comes with them"
         rendererRegistry.findRenderer(MimeType.ATOM_XML, new URL('https://grails.apache.org')) == null

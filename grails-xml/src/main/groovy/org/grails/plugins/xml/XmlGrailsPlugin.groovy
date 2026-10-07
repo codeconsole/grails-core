@@ -69,9 +69,9 @@ class XmlGrailsPlugin extends Plugin {
             // Contributed as Renderer beans, which DefaultRendererRegistry autowires: registering
             // them from a bean that holds a registry reference can write into an instance nothing
             // reads, because the harness rebuilds that singleton.
-            registry.registerBean('xmlRenderer', DefaultXmlRenderer) {
+            registry.registerBean('xmlRenderer', XmlFallbackRenderer) {
                 it.supplier {
-                    DefaultXmlRenderer<Object> renderer = new DefaultXmlRenderer<>(Object)
+                    XmlFallbackRenderer renderer = new XmlFallbackRenderer()
                     renderer.groovyPageLocatorProvider = it.beanProvider(GrailsConventionGroovyPageLocator)
                     configure(renderer, environment, it.beanProvider(SpringMessageConverters).getIfAvailable())
                 }
