@@ -62,6 +62,20 @@ class SqlProjectionSpec extends Specification {
         'sum(height) as total'          | null        | 'sum(height) as total'
     }
 
+    @Unroll
+    void 'the quoted alias #alias, which may hold any character, is removed from #column'() {
+        expect:
+        SqlProjection.of(column, [alias], [null])*.sql == [expected]
+
+        where:
+        column                          | alias          | expected
+        'sum(height) as "total height"' | 'total height' | 'sum(height)'
+        'sum(height) as `total height`' | 'total height' | 'sum(height)'
+        'sum(height) as [total-height]' | 'total-height' | 'sum(height)'
+        'sum(height) as "say ""hi"""'   | 'say "hi"'     | 'sum(height)'
+        'sum(height) as "total height"' | 'total'        | 'sum(height) as "total height"'
+    }
+
     void 'each column becomes a projection with its alias and type'() {
         when:
         List<SqlProjection> projections = SqlProjection.of('width, sum(height) as total', ['width', 'total'],

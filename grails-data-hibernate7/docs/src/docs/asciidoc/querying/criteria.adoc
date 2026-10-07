@@ -228,6 +228,7 @@ The `projections` node also accepts native SQL, for a value that only SQL comput
 class Box {
     int width
     int height
+    Date packedAt
 }
 ----
 
@@ -268,7 +269,7 @@ def results = Box.createCriteria().list {
 
 The query above returns the combined heights of the boxes of each width: `[[2, 24], [4, 9]]`. A SQL projection combines with the other projections, such as `rowCount()`, and the results can be ordered by its column alias with `order`. The group by clause may also name a column alias, which stands for the SQL that it names. A restriction such as `gt('height', 5)` always restricts the property, even if a column alias has the same name.
 
-As in a SQL restriction, `{alias}` in the SQL stands for the table alias of the queried class, so a column a joined table also has is not ambiguous:
+As in a SQL restriction, `{alias}` in the SQL stands for the table alias of the queried class, so a column that a joined table also has is not ambiguous:
 
 [source,java]
 ----

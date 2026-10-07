@@ -22,6 +22,7 @@ import java.sql.Time
 import java.time.LocalDateTime
 
 import org.hibernate.resource.jdbc.spi.StatementInspector
+import org.hibernate.type.BasicTypeRegistry
 import org.hibernate.type.StandardBasicTypes
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -216,6 +217,26 @@ class HibernateCriteriaBuilderSqlProjectionSpec extends Specification {
     }
 
     @Rollback
+    void 'the type may be a Hibernate type, which tells how the value is read'() {
+        given:
+        saveBoxes()
+        BasicTypeRegistry types = hibernateDatastore.sessionFactory.typeConfiguration.basicTypeRegistry
+
+        when:
+        List rows = SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlProjection "cast({alias}.packed_at as date) as packedOn, case when {alias}.height > 8 then 'Y' else 'N' end as tall",
+                        ['packedOn', 'tall'], [types.resolve(StandardBasicTypes.DATE), types.resolve(StandardBasicTypes.YES_NO)]
+            }
+            order('height')
+        }
+
+        then:
+        rows.every { it[0] instanceof java.sql.Date }
+        rows*.getAt(1) == [false, false, true, true]
+    }
+
+    @Rollback
     void 'a SQL projection applies to the rows the criteria select'() {
         given:
         saveBoxes()
@@ -294,6 +315,28 @@ class HibernateCriteriaBuilderSqlProjectionSpec extends Specification {
             }
             order('total', 'desc')
         }*.toList() == [[2, 24], [4, 9]]
+    }
+
+    @Rollback
+    void 'a quoted column alias may hold any character'() {
+        given:
+        saveBoxes()
+
+        when:
+        List rows = SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlGroupProjection 'width * 10 as "scaled width", sum(height) as [total height], max(height) as "tallest ""box"""',
+                        '"scaled width"', ['scaled width', 'total height', 'tallest "box"'], [INTEGER, INTEGER, INTEGER]
+            }
+            order('total height')
+        }
+        String sql = sqlCapture.statements.last()
+
+        then:
+        rows*.toList() == [[40, 9, 9], [20, 24, 9]]
+        sql =~ /(?i)group by width \* 10\b/
+        !sql.contains('"')
+        !sql.contains('[')
     }
 
     @Rollback

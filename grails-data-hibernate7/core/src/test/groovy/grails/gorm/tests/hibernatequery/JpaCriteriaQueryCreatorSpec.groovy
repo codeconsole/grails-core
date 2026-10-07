@@ -171,6 +171,47 @@ class JpaCriteriaQueryCreatorSpec extends HibernateGormDatastoreSpec {
         query.orderList[0].expression.is(selections[1])
     }
 
+    def "test createQuery groups by the SQL a quoted column alias names"() {
+        given:
+        var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)
+        var detachedCriteria = new DetachedCriteria(JpaCriteriaQueryCreatorSpecPerson)
+        detachedCriteria.order(Query.Order.desc("total count"))
+        var projections = new Query.ProjectionList()
+        projections.add(new SqlGroupProjection('"full name"'))
+        SqlProjection.of('upper(last_name) as "full name", count(*) as [total count]', ["full name", "total count"],
+                [String, Long]).each { projections.add(it) }
+        var creator = new JpaCriteriaQueryCreator(projections, criteriaBuilder, entity, detachedCriteria, new DefaultConversionService())
+
+        when:
+        JpaCriteriaQuery<?> query = creator.createQuery()
+        var selections = query.selection.compoundSelectionItems
+
+        then:
+        selections*.alias == ["full name", "total count"]
+        query.groupList.size() == 1
+        query.groupList[0].arguments[0].literalValue == "upper(last_name)"
+        query.orderList.size() == 1
+        query.orderList[0].expression.is(selections[1])
+    }
+
+    def "test createQuery keeps a quoted group by name that is no column alias"() {
+        given:
+        var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)
+        var detachedCriteria = new DetachedCriteria(JpaCriteriaQueryCreatorSpecPerson)
+        var projections = new Query.ProjectionList()
+        projections.add(new SqlGroupProjection('"last_name"'))
+        projections.add(new SqlProjection("upper(last_name)", "name", String))
+        projections.add(new SqlProjection("count(*)", "total", Long))
+        var creator = new JpaCriteriaQueryCreator(projections, criteriaBuilder, entity, detachedCriteria, new DefaultConversionService())
+
+        when:
+        JpaCriteriaQuery<?> query = creator.createQuery()
+
+        then:
+        query.groupList.size() == 1
+        query.groupList[0].arguments[0].literalValue == '"last_name"'
+    }
+
     def "test populateSubquery"() {
         given:
         var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)

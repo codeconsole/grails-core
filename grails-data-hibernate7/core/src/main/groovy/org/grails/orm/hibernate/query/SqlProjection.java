@@ -41,8 +41,10 @@ import org.grails.datastore.mapping.query.Query;
  */
 public class SqlProjection extends Query.Projection {
 
+    private static final String QUOTED_IDENTIFIER = "\"(?:[^\"]|\"\")+\"|`(?:[^`]|``)+`|\\[(?:[^\\]]|]])+]";
+    private static final Pattern QUOTED = Pattern.compile("(?s)" + QUOTED_IDENTIFIER);
     private static final Pattern TRAILING_ALIAS = Pattern.compile(
-            "(?is)^(.*?)\\s+as\\s+(?:\"([\\w$]+)\"|`([\\w$]+)`|\\[([\\w$]+)]|([\\w$]+))\\s*$");
+            "(?is)^(.*?)\\s+as\\s+(" + QUOTED_IDENTIFIER + "|[\\w$]+)\\s*$");
 
     private final String sql;
     private final String columnAlias;
@@ -185,25 +187,28 @@ public class SqlProjection extends Query.Projection {
     /**
      * Removes a trailing {@code as alias} naming the given column alias, which the selection carries instead, so the
      * expression can also be grouped and ordered by. The alias may be quoted with double quotes, backquotes or
-     * square brackets.
+     * square brackets, and then hold any character.
      */
     static String withoutAlias(String column, String alias) {
         if (alias == null) {
             return column;
         }
         Matcher matcher = TRAILING_ALIAS.matcher(column);
-        if (matcher.matches() && alias.equalsIgnoreCase(trailingAlias(matcher))) {
+        if (matcher.matches() && alias.equalsIgnoreCase(unquote(matcher.group(2)))) {
             return matcher.group(1).trim();
         }
         return column;
     }
 
-    private static String trailingAlias(Matcher matcher) {
-        for (int group = 2; group <= matcher.groupCount(); group++) {
-            if (matcher.group(group) != null) {
-                return matcher.group(group);
-            }
+    /**
+     * Returns an identifier quoted with double quotes, backquotes or square brackets without its quotes, reading a
+     * doubled closing quote inside it as a single one, or any other SQL as it is.
+     */
+    static String unquote(String identifier) {
+        if (!QUOTED.matcher(identifier).matches()) {
+            return identifier;
         }
-        return null;
+        String closingQuote = identifier.substring(identifier.length() - 1);
+        return identifier.substring(1, identifier.length() - 1).replace(closingQuote + closingQuote, closingQuote);
     }
 }
