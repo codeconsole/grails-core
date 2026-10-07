@@ -120,9 +120,11 @@ retain Jackson's property rules. Application-provided converter subclasses and p
 registrations keep their configured behavior and precedence.
 
 Association identifiers use their mapped identity property name (for example `uuid`), rather than
-the legacy marshaller's fixed `id` key. Cycles through embedded or plain bean properties are errors
-on the Jackson path: the legacy `_ref` representation and `circular.reference.behaviour` setting do
-not apply. Break such cycles with DTOs or application serializers before opting in.
+the legacy marshaller's fixed `id` key. A value that leads back to a domain object still being
+written, such as an embedded value that points at its owner, is written as the legacy converter
+writes it: `{"_ref": "..", "class": "..."}` by default, or as
+`grails.converters.json.circular.reference.behaviour` selects. A cycle made only of non-domain beans
+follows Jackson's rules, as it does in a plain Spring MVC controller, and fails the response.
 
 Boot's shared mapper is not given the Grails domain serializer, so plain Spring `@RestController`
 responses retain Jackson's normal domain property model. Both mappers serialize Groovy `GString`

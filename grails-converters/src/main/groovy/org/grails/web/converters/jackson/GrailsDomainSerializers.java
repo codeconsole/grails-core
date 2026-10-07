@@ -34,6 +34,7 @@ import grails.core.support.proxy.ProxyHandler;
 import org.grails.core.exceptions.GrailsConfigurationException;
 import org.grails.datastore.mapping.model.MappingContext;
 import org.grails.datastore.mapping.model.PersistentEntity;
+import org.grails.web.converters.Converter.CircularReferenceBehaviour;
 
 /**
  * Supplies a serializer for a mapped domain type, resolved the first time that type is written.
@@ -52,15 +53,18 @@ final class GrailsDomainSerializers implements Serializers {
     private final ProxyHandler proxyHandler;
     private final Supplier<Boolean> includeVersion;
     private final Supplier<Boolean> includeClass;
+    private final Supplier<CircularReferenceBehaviour> circularReferenceBehaviour;
     private final Map<Class<?>, ValueSerializer<?>> resolved = new ConcurrentHashMap<>();
 
     GrailsDomainSerializers(Supplier<MappingContext> mappingContext, Predicate<Class<?>> domainArtefact,
-            ProxyHandler proxyHandler, Supplier<Boolean> includeVersion, Supplier<Boolean> includeClass) {
+            ProxyHandler proxyHandler, Supplier<Boolean> includeVersion, Supplier<Boolean> includeClass,
+            Supplier<CircularReferenceBehaviour> circularReferenceBehaviour) {
         this.mappingContext = mappingContext;
         this.domainArtefact = domainArtefact;
         this.proxyHandler = proxyHandler;
         this.includeVersion = includeVersion;
         this.includeClass = includeClass;
+        this.circularReferenceBehaviour = circularReferenceBehaviour;
     }
 
     @Override
@@ -112,7 +116,8 @@ final class GrailsDomainSerializers implements Serializers {
             return null;
         }
         return new GrailsDomainJsonSerializer(entity, this.proxyHandler,
-                Boolean.TRUE.equals(this.includeVersion.get()), Boolean.TRUE.equals(this.includeClass.get()));
+                Boolean.TRUE.equals(this.includeVersion.get()), Boolean.TRUE.equals(this.includeClass.get()),
+                this.circularReferenceBehaviour.get());
     }
 
     /**

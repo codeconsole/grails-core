@@ -31,11 +31,14 @@ import tools.jackson.databind.ser.std.ToStringSerializer;
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.validation.Errors;
 
+import grails.config.Config;
 import grails.core.GrailsApplication;
 import grails.core.support.proxy.DefaultProxyHandler;
 import grails.core.support.proxy.ProxyHandler;
 import org.grails.core.artefact.DomainClassArtefactHandler;
 import org.grails.datastore.mapping.model.MappingContext;
+import org.grails.web.converters.Converter.CircularReferenceBehaviour;
+import org.grails.web.converters.configuration.ConvertersConfigurationInitializer;
 
 /**
  * Adds Grails-specific serializers to Spring Boot's configured JSON mapper.
@@ -87,6 +90,18 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
         return this.grailsApplication.getConfig().getProperty(key, Boolean.class, fallback);
     }
 
+    private CircularReferenceBehaviour circularReferenceBehaviour() {
+        if (this.grailsApplication == null) {
+            return CircularReferenceBehaviour.DEFAULT;
+        }
+        Config config = this.grailsApplication.getConfig();
+        String fallback = config.getProperty(
+                ConvertersConfigurationInitializer.SETTING_CONVERTERS_CIRCULAR_REFERENCE_BEHAVIOUR, "DEFAULT");
+        return CircularReferenceBehaviour.valueOf(config.getProperty(
+                ConvertersConfigurationInitializer.SETTING_CONVERTERS_JSON_CIRCULAR_REFERENCE_BEHAVIOUR, String.class,
+                fallback, CircularReferenceBehaviour.allowedValues()));
+    }
+
     @Override
     public void customize(JsonMapper.Builder builder) {
         SimpleModule module = new SimpleModule("grails-json");
@@ -117,7 +132,8 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
                 () -> booleanProperty("grails.converters.json.domain.include.version",
                         "grails.converters.domain.include.version"),
                 () -> booleanProperty("grails.converters.json.domain.include.class",
-                        "grails.converters.domain.include.class"));
+                        "grails.converters.domain.include.class"),
+                this::circularReferenceBehaviour);
         SimpleModule module = new SimpleModule("grails-domain-json") {
             @Override
             public void setupModule(SetupContext context) {

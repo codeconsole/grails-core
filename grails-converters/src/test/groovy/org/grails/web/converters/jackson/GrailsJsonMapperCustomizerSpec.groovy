@@ -269,6 +269,58 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         customizer.forGrails(builder.build())
     }
 
+    void 'a cycle back to a domain object being written follows circular reference behaviour #behaviour'() {
+        given: 'an embedded value whose nested bean points back at its owner'
+        def person = new JacksonPerson(name: 'Ada').tap { id = 1 }
+        person.address = new JacksonAddress(street: 'Main', geo: new JacksonGeo(owner: person))
+
+        expect:
+        def mapper = cycleMapper(behaviour)
+        def written = mapper.readValue(mapper.writeValueAsString(root ? [person] : person), Object)
+        (root ? written[0] : written).address.geo.owner == owner
+
+        where:
+        behaviour     | root  || owner
+        'DEFAULT'     | false || [_ref: '../..', class: JacksonPerson.name]
+        'DEFAULT'     | true  || [_ref: '../..', class: JacksonPerson.name]
+        'PATH'        | false || [ref: 'root', class: JacksonPerson.name]
+        'PATH'        | true  || [ref: 'root[0]', class: JacksonPerson.name]
+        'INSERT_NULL' | false || null
+        'IGNORE'      | false || null
+    }
+
+    void 'a cycle back to a domain object fails when the behaviour is EXCEPTION'() {
+        given:
+        def person = new JacksonPerson(name: 'Ada').tap { id = 1 }
+        person.address = new JacksonAddress(street: 'Main', geo: new JacksonGeo(owner: person))
+
+        when:
+        cycleMapper('EXCEPTION').writeValueAsString(person)
+
+        then:
+        def e = thrown(tools.jackson.databind.DatabindException)
+        e.message.contains("Circular Reference detected: class ${JacksonPerson.name}")
+    }
+
+    void 'a domain object repeated outside its own value is written in full each time'() {
+        given:
+        def person = new JacksonPerson(name: 'Ada').tap { id = 1 }
+
+        expect:
+        def mapper = cycleMapper('DEFAULT')
+        mapper.readValue(mapper.writeValueAsString([person, person]), List) ==
+                [[id: 1, name: 'Ada', address: null], [id: 1, name: 'Ada', address: null]]
+    }
+
+    private static JsonMapper cycleMapper(String behaviour) {
+        def mappingContext = new KeyValueMappingContext('jackson')
+        mappingContext.addPersistentEntities(JacksonPerson)
+        def application = new DefaultGrailsApplication(JacksonPerson)
+        application.mappingContext = mappingContext
+        application.config.setAt('grails.converters.json.circular.reference.behaviour', behaviour)
+        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).forGrails(JsonMapper.builder().build())
+    }
+
     void 'a narrowed proxy renders the unwrapped subclass properties and class name'() {
         given:
         def target = new SpecialJacksonBook(title: 'Subclass', edition: 'second').tap { id = 5 }
@@ -309,6 +361,25 @@ class JacksonBook {
     String title
     List<JacksonAuthor> authors
     Map<String, JacksonAuthor> authorsByName
+}
+
+@Entity
+class JacksonPerson {
+    static embedded = ['address']
+
+    Long id
+    Long version
+    String name
+    JacksonAddress address
+}
+
+class JacksonAddress {
+    String street
+    JacksonGeo geo
+}
+
+class JacksonGeo {
+    JacksonPerson owner
 }
 
 @Entity

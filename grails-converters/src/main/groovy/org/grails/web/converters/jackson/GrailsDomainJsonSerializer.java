@@ -17,11 +17,15 @@
 package org.grails.web.converters.jackson;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.TokenStreamContext;
+import tools.jackson.databind.DatabindException;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
 
@@ -36,6 +40,7 @@ import org.grails.datastore.mapping.model.PersistentProperty;
 import org.grails.datastore.mapping.model.types.Association;
 import org.grails.datastore.mapping.model.types.ManyToOne;
 import org.grails.datastore.mapping.model.types.OneToOne;
+import org.grails.web.converters.Converter.CircularReferenceBehaviour;
 
 /** Serializes a mapped Grails domain type using its persistent metadata. */
 final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
@@ -43,17 +48,29 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
     // Stateless, and consulted once per property of every serialized object.
     private static final IncludeExcludeSupport<String> INCLUDE_EXCLUDE_SUPPORT = new IncludeExcludeSupport<>();
 
+    /** Per-write attribute holding the domain objects being written, outermost first. */
+    private static final Object IN_PROGRESS = GrailsDomainJsonSerializer.class.getName() + ".inProgress";
+
     private final PersistentEntity entity;
     private final ProxyHandler proxyHandler;
     private final boolean includeVersion;
     private final boolean includeClass;
+    private final CircularReferenceBehaviour circularReferenceBehaviour;
 
     GrailsDomainJsonSerializer(PersistentEntity entity, ProxyHandler proxyHandler,
-            boolean includeVersion, boolean includeClass) {
+            boolean includeVersion, boolean includeClass, CircularReferenceBehaviour circularReferenceBehaviour) {
         this.entity = entity;
         this.proxyHandler = proxyHandler;
         this.includeVersion = includeVersion;
         this.includeClass = includeClass;
+        this.circularReferenceBehaviour = circularReferenceBehaviour;
+    }
+
+    /**
+     * Where an object being written started: the nesting depth of its JSON object, and its path
+     * from the root in the form the legacy {@code PATH} behaviour writes.
+     */
+    private record Frame(int depth, String path) {
     }
 
     @Override
@@ -63,11 +80,32 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
             context.writeValue(generator, unwrapped);
             return;
         }
+        Map<Object, Frame> inProgress = inProgress(context);
+        Frame enclosing = inProgress.get(unwrapped);
+        if (enclosing != null) {
+            // Reached again through a value written inside it, such as an embedded value that
+            // points back at its owner. Associations are written as references and never get here.
+            writeCircularReference(unwrapped, enclosing, generator);
+            return;
+        }
         BeanWrapper bean = new BeanWrapperImpl(unwrapped);
         List<String> includes = properties(context, GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, unwrapped.getClass());
         List<String> excludes = properties(context, GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, unwrapped.getClass());
 
         generator.writeStartObject();
+        inProgress.put(unwrapped, new Frame(generator.streamWriteContext().getNestingDepth(),
+                path(generator.streamWriteContext())));
+        try {
+            writeProperties(unwrapped, bean, generator, context, includes, excludes);
+        }
+        finally {
+            inProgress.remove(unwrapped);
+        }
+        generator.writeEndObject();
+    }
+
+    private void writeProperties(Object unwrapped, BeanWrapper bean, JsonGenerator generator,
+            SerializationContext context, List<String> includes, List<String> excludes) throws JacksonException {
         if (includeClass && shouldInclude(includes, excludes, "class")) {
             generator.writeStringProperty("class", entity.getName());
         }
@@ -81,7 +119,55 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
                 writeProperty(property, bean, generator, context, includes, excludes);
             }
         }
-        generator.writeEndObject();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<Object, Frame> inProgress(SerializationContext context) {
+        Map<Object, Frame> inProgress = (Map<Object, Frame>) context.getAttribute(IN_PROGRESS);
+        if (inProgress == null) {
+            inProgress = new IdentityHashMap<>();
+            context.setAttribute(IN_PROGRESS, inProgress);
+        }
+        return inProgress;
+    }
+
+    /** Writes what the legacy converter writes for the configured circular reference behaviour. */
+    private void writeCircularReference(Object value, Frame enclosing, JsonGenerator generator) throws JacksonException {
+        String type = value.getClass().getName();
+        switch (circularReferenceBehaviour) {
+            case EXCEPTION -> throw DatabindException.from(generator, "Circular Reference detected: class " + type);
+            case INSERT_NULL -> generator.writeNull();
+            case IGNORE -> {
+                // An array element can be left out; a property name has already been written.
+                if (!generator.streamWriteContext().inArray()) {
+                    generator.writeNull();
+                }
+            }
+            case PATH -> {
+                generator.writeStartObject();
+                generator.writeStringProperty("class", type);
+                generator.writeStringProperty("ref", "root" + enclosing.path());
+                generator.writeEndObject();
+            }
+            default -> {
+                // One step up for each object or array between this value and the one it repeats
+                int levels = Math.max(1, generator.streamWriteContext().getNestingDepth() - enclosing.depth());
+                generator.writeStartObject();
+                generator.writeStringProperty("_ref", String.join("/", Collections.nCopies(levels, "..")));
+                generator.writeStringProperty("class", type);
+                generator.writeEndObject();
+            }
+        }
+    }
+
+    /** The path from the root to the object or array a context belongs to, as {@code .name[0]}. */
+    private static String path(TokenStreamContext context) {
+        StringBuilder path = new StringBuilder();
+        for (TokenStreamContext parent = context.getParent(); parent != null && !parent.inRoot();
+                parent = parent.getParent()) {
+            path.insert(0, parent.inArray() ? "[" + parent.getCurrentIndex() + "]" : "." + parent.currentName());
+        }
+        return path.toString();
     }
 
     private void writePropertyIfSet(PersistentProperty property, BeanWrapper bean, JsonGenerator generator,
