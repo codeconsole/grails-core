@@ -55,6 +55,16 @@ class ApplicationControllerSpec extends Specification {
         response.versions["grails.version"]
     }
 
+    void "test snapshot versions do not report end of support"() {
+        given:
+        def response = client.toBlocking().retrieve(HttpRequest.GET('/versions'), Map)
+
+        expect:
+        response.versions["grails.version"].endsWith('-SNAPSHOT')
+        !response.containsKey("endOfSupport")
+        !response.versions.containsKey("grails.endOfSupport")
+    }
+
     void "test redirect URL configuration"() {
         expect:
         configuration.redirectUri.get().toString() == 'https://example.com/forge/'
