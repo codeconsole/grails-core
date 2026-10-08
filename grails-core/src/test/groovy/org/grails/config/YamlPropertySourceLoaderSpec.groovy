@@ -27,6 +27,7 @@ import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.ResolvableType
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.core.env.SystemEnvironmentPropertySource
 import org.springframework.core.io.ByteArrayResource
@@ -200,6 +201,41 @@ class YamlPropertySourceLoaderSpec extends Specification {
         variables                                                                                                               | origin                        | port | flag  | group
         [:]                                                                                                                     | 'https://default.example.com' | 9090 | false | 'primary'
         [EXAMPLE_ALLOWED_ORIGIN: 'https://custom.example.com', EXAMPLE_PORT: '7070', EXAMPLE_FLAG: 'true', EXAMPLE_GROUP: 'custom'] | 'https://custom.example.com'  | 7070 | true  | 'custom'
+    }
+
+    def "presents lists nested in lists under consecutive indexes"() {
+        given:
+        def yaml = '''\
+            app:
+              groups: [[a, b], [c]]
+              deep: [[[x]]]
+              nested: [[{name: n}]]
+            '''.stripIndent()
+        def source = load(yaml)
+        def environment = environment(yaml)
+        def binder = Binder.get(environment)
+        def listOfLists = { Class type ->
+            Bindable.of(ResolvableType.forClassWithGenerics(List, ResolvableType.forClassWithGenerics(List, type)))
+        }
+
+        expect: "each element is named with one index per level"
+        source.getPropertyNames().findAll { String name -> name.startsWith('app.') } as Set == [
+                'app.groups[0][0]', 'app.groups[0][1]', 'app.groups[1][0]',
+                'app.deep[0][0][0]',
+                'app.nested[0][0].name',
+        ] as Set
+        environment.getProperty('app.groups[0][1]') == 'b'
+        environment.getProperty('app.deep[0][0][0]') == 'x'
+        environment.getProperty('app.nested[0][0].name') == 'n'
+
+        and: "Spring Boot binds the nested lists"
+        binder.bind('app.groups', listOfLists(String)).get() == [['a', 'b'], ['c']]
+        binder.bind('app.nested', listOfLists(Item)).get()*.getAt(0)*.name == ['n']
+
+        and: "the Grails config reads the nested lists as lists"
+        def config = new PropertySourcesConfig(source)
+        config.getProperty('app.groups', List) == [['a', 'b'], ['c']]
+        config.getProperty('app.deep', List) == [[['x']]]
     }
 
     def "a higher priority scalar list replaces a lower priority list when binding"() {

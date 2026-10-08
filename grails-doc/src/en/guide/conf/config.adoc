@@ -132,7 +132,7 @@ is not set. Each element is resolved independently; the list does not need to be
 
 To read a whole list, use `grailsApplication.config.getProperty('grails.cors.allowedOrigins', List)` or bind it with
 `@ConfigurationProperties`. Spring's `Environment` exposes non-empty YAML lists through indexed properties such as
-`grails.cors.allowedOrigins[0]`.
+`grails.cors.allowedOrigins[0]`. A list nested in a list uses one index per level, such as `app.groups[0][1]`.
 
 === Configuration Metadata
 

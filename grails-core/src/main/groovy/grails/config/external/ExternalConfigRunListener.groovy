@@ -31,6 +31,7 @@ import org.springframework.boot.SpringApplication
 import org.springframework.boot.SpringApplicationRunListener
 import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.boot.context.properties.source.ConfigurationPropertyName
 import org.springframework.boot.env.PropertiesPropertySourceLoader
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.env.MapPropertySource
@@ -96,9 +97,11 @@ class ExternalConfigRunListener implements SpringApplicationRunListener {
     private List<Object> getLocations(ConfigurableEnvironment environment) {
         Binder binder = Binder.get(environment)
         List<Object> locations = binder.bind('grails.config.locations', Bindable.listOf(Object)).orElse([])
-        // See if grails.config.locations is defined in an environments block like 'development' or 'test'
+        // See if grails.config.locations is defined in an environments block like 'development' or 'test'.
+        // Adapt the name so custom environments such as 'UAT' or 'my_env' are not rejected as non-canonical.
         String environmentString = "environments.${Environment.current.name}.grails.config.locations"
-        locations = binder.bind(environmentString, Bindable.listOf(Object)).orElse(locations)
+        ConfigurationPropertyName environmentName = ConfigurationPropertyName.adapt(environmentString, '.' as char)
+        locations = binder.bind(environmentName, Bindable.listOf(Object)).orElse(locations)
         locations.collectMany { Object location ->
             if (location instanceof CharSequence) {
                 location = replaceUserHomePrefix(location as String)
