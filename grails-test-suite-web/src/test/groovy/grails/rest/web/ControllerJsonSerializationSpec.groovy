@@ -218,6 +218,25 @@ class ControllerJsonMapperOverrideSpec extends Specification implements Controll
     }
 }
 
+class ControllerTextJsonSpec extends Specification implements ControllerUnitTest<JsonResponseController> {
+
+    Closure doWithConfig() {
+        { config -> config['grails.web.rendering.json.spring'] = true }
+    }
+
+    void 'respond writes an Accept of text/json through Jackson'() {
+        given:
+        request.addHeader('Accept', 'text/json')
+
+        when: 'a value the legacy converter would write as a number array'
+        controller.respond([65, 66] as byte[])
+
+        then:
+        response.contentType.startsWith('text/json')
+        response.contentAsString == '"QUI="'
+    }
+}
+
 @Artefact('Controller')
 class JsonResponseController { }
 
