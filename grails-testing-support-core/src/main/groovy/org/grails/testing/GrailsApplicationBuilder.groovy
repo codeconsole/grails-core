@@ -216,6 +216,12 @@ class GrailsApplicationBuilder {
         if (isWebTest()) {
             ((AnnotationConfigRegistry) context).register(ClassUtils.forName(
                     'org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration', classLoader))
+            // Boot's message converter customizers, which the web test traits apply as Spring MVC does
+            String httpMessageConverters =
+                    'org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration'
+            if (ClassUtils.isPresent(httpMessageConverters, classLoader)) {
+                ((AnnotationConfigRegistry) context).register(ClassUtils.forName(httpMessageConverters, classLoader))
+            }
         }
         prepareContext(context, beanFactory)
         if (isWebTest()) {

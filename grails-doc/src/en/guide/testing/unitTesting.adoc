@@ -27,10 +27,10 @@ beans and Boot's Jackson configuration, and contribute XML beans when `grails-xm
 This does not automatically load the controllers, URL mappings or i18n plugins. Non-web traits such
 as `ServiceUnitTest` retain their own plugin selection.
 
-The lightweight web slice installs byte-array, string and Jackson JSON message converters. It does
-not load Spring MVC or apply application `WebMvcConfigurer` converter customizations. In particular,
-adding `jackson-dataformat-xml` does not install a Jackson XML converter in this slice: XML rendering
-uses the Grails converter when `grails-xml` is present. Use an integration or functional test for the
-production converter list, XML wire format, and MVC customizations. For JSON mapper customizations,
-declare `@Bean` methods on a nested Spring `@Configuration` class; the deprecated `doWithSpring`
-callback runs too late for a mapper bean to make Boot's auto-configuration back off.
+Web unit tests do not start Spring MVC, but they build its message converters the same way: Spring's
+defaults for the libraries on the test classpath, with JSON written by Boot's configured mapper, then
+Boot's converter customizers and the test's `WebMvcConfigurer` beans. Adding
+`jackson-dataformat-xml`, for example, installs the Jackson XML converter in unit tests as it does at
+runtime. Declare converter customizations and mapper beans as `@Bean` methods on a nested Spring
+`@Configuration` class; the deprecated `doWithSpring` callback runs too late for a mapper bean to make
+Boot's auto-configuration back off.

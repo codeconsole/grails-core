@@ -56,6 +56,7 @@ dependencies {
     testImplementation 'tools.jackson.dataformat:jackson-dataformat-xml'
     testImplementation project(':grails-core')
     testImplementation project(':grails-test-suite-base')
+    testImplementation project(':grails-testing-support-web')
     testImplementation project(':grails-url-mappings')
     testImplementation testFixtures(project(':grails-web-common'))
     testImplementation testFixtures(project(':grails-converters'))

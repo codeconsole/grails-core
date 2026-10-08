@@ -26,11 +26,12 @@ import org.spockframework.runtime.extension.IMethodInterceptor
 import org.spockframework.runtime.extension.IMethodInvocation
 import tools.jackson.databind.json.JsonMapper
 
-import org.springframework.http.converter.ByteArrayHttpMessageConverter
-import org.springframework.http.converter.StringHttpMessageConverter
+import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.http.converter.HttpMessageConverters
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.util.ClassUtils
 import org.springframework.web.multipart.support.StandardServletMultipartResolver
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 import org.springframework.web.servlet.i18n.SessionLocaleResolver
 
 import grails.config.Settings
@@ -63,11 +64,42 @@ import org.grails.web.util.GrailsApplicationAttributes
 @CompileStatic
 class WebSetupSpecInterceptor implements IMethodInterceptor {
 
+    private static final String SERVER_CONVERTERS_CUSTOMIZER =
+            'org.springframework.boot.http.converter.autoconfigure.ServerHttpMessageConvertersCustomizer'
+
     @Override
     void intercept(IMethodInvocation invocation) throws Throwable {
         GrailsWebUnitTest test = (GrailsWebUnitTest) invocation.instance
         setup(test)
         invocation.proceed()
+    }
+
+    /**
+     * Builds the message converters as Spring MVC does, since the slice does not start it: Spring's
+     * server defaults for the classpath with JSON on Boot's mapper, Boot's converter customizers,
+     * then the application's {@link WebMvcConfigurer} beans.
+     */
+    @CompileStatic(TypeCheckingMode.SKIP)
+    protected List<HttpMessageConverter<?>> messageConverters(GrailsWebUnitTest test) {
+        def context = test.applicationContext
+        JsonMapper mapper = context.getBeanProvider(JsonMapper).getIfUnique() ?:
+                context.getBean('jacksonJsonMapper', JsonMapper)
+        List<WebMvcConfigurer> configurers = context.getBeanProvider(WebMvcConfigurer).orderedStream().toList()
+        List<HttpMessageConverter<?>> converters = []
+        configurers.each { WebMvcConfigurer configurer -> configurer.configureMessageConverters(converters) }
+        if (converters.isEmpty()) {
+            HttpMessageConverters.ServerBuilder builder = HttpMessageConverters.forServer().registerDefaults()
+                    .withJsonConverter(new JacksonJsonHttpMessageConverter(mapper))
+            ClassLoader classLoader = ControllerUnitTest.getClassLoader()
+            if (ClassUtils.isPresent(SERVER_CONVERTERS_CUSTOMIZER, classLoader)) {
+                context.getBeanProvider(ClassUtils.forName(SERVER_CONVERTERS_CUSTOMIZER, classLoader))
+                        .orderedStream().forEach { customizer -> customizer.customize(builder) }
+            }
+            configurers.each { WebMvcConfigurer configurer -> configurer.configureMessageConverters(builder) }
+            builder.build().each { HttpMessageConverter<?> converter -> converters.add(converter) }
+        }
+        configurers.each { WebMvcConfigurer configurer -> configurer.extendMessageConverters(converters) }
+        return converters
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)
@@ -76,14 +108,7 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
         GrailsApplication grailsApplication = test.grailsApplication
         Map<String, String> groovyPages = test.views
 
-        SpringMessageConverters converters = test.applicationContext.getBean(SpringMessageConverters)
-        JsonMapper mapper = test.applicationContext.getBeanProvider(JsonMapper).getIfUnique() ?:
-                test.applicationContext.getBean('jacksonJsonMapper', JsonMapper)
-        converters.setConverters([
-                new ByteArrayHttpMessageConverter(),
-                new StringHttpMessageConverter(),
-                new JacksonJsonHttpMessageConverter(mapper)
-        ])
+        test.applicationContext.getBean(SpringMessageConverters).setConverters(messageConverters(test))
 
         def config = grailsApplication.config
         test.defineBeans {

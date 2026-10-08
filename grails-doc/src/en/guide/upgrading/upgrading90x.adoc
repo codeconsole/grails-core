@@ -152,8 +152,8 @@ graph. Web traits automatically include `restResponder`, even when a test overri
 They do not automatically load the controllers, URL mappings or i18n plugins; link generation retains
 the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
 plugin graph simply because that module is on the classpath.
-The lightweight web unit-test slice does not load Spring MVC's full converter configuration; see
-<<unitTesting,Unit Testing>> for the converter limitations and when to use an integration test.
+Web unit tests build Spring MVC's message converters from the test classpath and configuration; see
+<<unitTesting,Unit Testing>>.
 
 ==== 3. JSON Converter Customization Moves to Jackson
 
