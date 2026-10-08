@@ -24,6 +24,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
+import groovy.json.JsonSlurper
+
+import com.fasterxml.jackson.annotation.JsonProperty
 import tools.jackson.core.JacksonException
 import tools.jackson.core.JsonGenerator
 import tools.jackson.databind.SerializationContext
@@ -151,21 +154,55 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         ]
     }
 
-    void 'non domain projections fail before writing any sensitive fields'() {
+    void 'a projection applies to the properties of #description'() {
+        given: 'a registry over a plain mapper, which adds projection support itself'
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        registry.register('safe') { }
+        def output = new StringWriter()
+
+        when:
+        registry.writeValue('safe', output, value, includes, excludes)
+
+        then:
+        new JsonSlurper().parseText(output.toString()) == expected
+
+        where:
+        description                | value                                                           | includes   | excludes       || expected
+        'a bean'                   | new NamedJsonCredentials(user: 'a', password: 'b')              | null       | ['password']   || [user: 'a']
+        'each bean of a list'      | [new NamedJsonCredentials(user: 'a', password: 'b')]            | null       | ['password']   || [[user: 'a']]
+        'each bean of an array'    | [new NamedJsonCredentials(user: 'a', password: 'b')] as Object[] | ['user']  | null           || [[user: 'a']]
+        'a bean by its bean name'  | new NamedJsonRenamed(displayName: 'Ada', secret: 's')           | null       | ['displayName'] || [secret: 's']
+        'a bean by its JSON name'  | new NamedJsonRenamed(displayName: 'Ada', secret: 's')           | null       | ['display']    || [secret: 's']
+    }
+
+    void 'a projection applies to the type written, not to other beans it contains'() {
+        given:
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        def output = new StringWriter()
+        def account = new NamedJsonAccount(name: 'main', credentials: new NamedJsonCredentials(user: 'a', password: 'b'))
+
+        when: 'as with the legacy converter, the projection names properties of the written type'
+        registry.writeValue(null, output, account, ['name', 'credentials'], ['password'])
+
+        then:
+        new JsonSlurper().parseText(output.toString()) == [name: 'main', credentials: [user: 'a', password: 'b']]
+    }
+
+    void 'a projection of a value without properties fails before anything is written'() {
         given:
         def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
         registry.register('safe') { }
         def output = new StringWriter()
 
         when:
-        registry.writeValue('safe', output, value, null, ['name'])
+        registry.writeValue('safe', output, value, null, ['password'])
 
         then:
         thrown(IllegalArgumentException)
         output.toString().empty
 
         where:
-        value << [new NamedJsonValue(name: 'secret'), [name: 'secret'], [new NamedJsonValue(name: 'secret')]]
+        value << [[password: 'secret'], 'secret', [[password: 'secret']], [['secret']]]
     }
 
     void 'the writer for a configuration is derived once and reused'() {
@@ -216,6 +253,22 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
 
 class NamedJsonValue {
     String name
+}
+
+class NamedJsonCredentials {
+    String user
+    String password
+}
+
+class NamedJsonAccount {
+    String name
+    NamedJsonCredentials credentials
+}
+
+class NamedJsonRenamed {
+    @JsonProperty('display')
+    String displayName
+    String secret
 }
 
 class NamedJsonValueSerializer extends ValueSerializer<NamedJsonValue> {

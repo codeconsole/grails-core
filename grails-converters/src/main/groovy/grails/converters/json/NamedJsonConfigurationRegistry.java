@@ -30,8 +30,7 @@ import java.util.function.Supplier;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.json.JsonMapper;
 
-import org.grails.core.artefact.DomainClassArtefactHandler;
-import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer;
+import org.grails.web.converters.jackson.JsonProjection;
 
 /**
  * Registry for request-safe named Jackson response configurations.
@@ -94,6 +93,7 @@ public final class NamedJsonConfigurationRegistry {
         if (mapper == null) {
             mapper = jsonMapper.get();
             if (mapper != null) {
+                mapper = JsonProjection.supporting(mapper);
                 resolvedMapper = mapper;
             }
         }
@@ -110,8 +110,10 @@ public final class NamedJsonConfigurationRegistry {
 
     /**
      * Writes with a per-response include/exclude projection applied on top of the named
-     * configuration. Projections require domain objects (or iterables of domain objects);
-     * non-domain values are rejected before writing instead of silently ignoring the projection.
+     * configuration. As with the legacy converter, the projection applies to objects of the value's
+     * type, or of its elements' types when the value is a collection or array: domain objects and
+     * beans Jackson writes property by property. A value with no properties to project, such as a
+     * map or a string, is rejected before anything is written.
      *
      * @param name the registered configuration
      * @param output the response writer
@@ -119,28 +121,17 @@ public final class NamedJsonConfigurationRegistry {
      * @param includes property names to include, or null for all
      * @param excludes property names to exclude, or null for none
      * @throws IOException if writing fails
+     * @throws IllegalArgumentException if a projection is requested for a value it cannot apply to
      */
     public void writeValue(String name, Writer output, Object value,
             List<String> includes, List<String> excludes) throws IOException {
         ObjectWriter writer = writer(name);
-        if ((includes != null && !includes.isEmpty()) || (excludes != null && !excludes.isEmpty())) {
-            requireDomainProjection(value);
+        JsonProjection projection = JsonProjection.of(value, includes, excludes);
+        if (projection == null) {
+            writer.writeValue(output, value);
+            return;
         }
-        if (includes != null && !includes.isEmpty()) {
-            writer = writer.withAttribute(GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, includes);
-        }
-        if (excludes != null && !excludes.isEmpty()) {
-            writer = writer.withAttribute(GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, excludes);
-        }
-        writer.writeValue(output, value);
-    }
-
-    private void requireDomainProjection(Object value) {
-        if (value instanceof Iterable<?> values) {
-            values.forEach(this::requireDomainProjection);
-        } else if (value != null && !DomainClassArtefactHandler.isDomainClass(value.getClass(), true)) {
-            throw new IllegalArgumentException("JSON includes/excludes require domain objects on the Jackson path. " +
-                    "Use a DTO, Jackson view, or explicit serializer for non-domain values.");
-        }
+        writer.withAttribute(JsonProjection.ATTRIBUTE, projection).writeValue(output, value);
+        projection.reportUnapplied();
     }
 }

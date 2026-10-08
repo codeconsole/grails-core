@@ -40,6 +40,7 @@ import org.springframework.validation.Errors
 
 import tools.jackson.core.JsonGenerator
 import tools.jackson.databind.JacksonSerializable
+import tools.jackson.databind.ObjectWriter
 import tools.jackson.databind.SerializationContext
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.jsontype.TypeSerializer
@@ -55,6 +56,7 @@ import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
+import org.grails.web.converters.jackson.JsonProjection
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
 /**
@@ -222,8 +224,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
                 missingConvertersReported.compareAndSet(false, true)) {
             log.warn('Spring JSON rendering is enabled but no MVC message converters are available; using legacy JSON.')
         }
-        return useSpringJson == Boolean.TRUE && resolveSpringHttpMessageConverters() && !namedConfiguration &&
-                !context.includes && !context.excludes
+        return useSpringJson == Boolean.TRUE && resolveSpringHttpMessageConverters() && !namedConfiguration
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
@@ -243,12 +244,20 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
         // Only adapt the standard converter. Application converter subclasses and per-type
         // mappers retain their own serialization contract.
-        if (grailsJsonMapperCustomizer != null && converter.getClass() == JacksonJsonHttpMessageConverter &&
-                !((JacksonJsonHttpMessageConverter) converter).getMappersForType(objectType)) {
+        boolean grailsMapper = grailsJsonMapperCustomizer != null &&
+                converter.getClass() == JacksonJsonHttpMessageConverter &&
+                !((JacksonJsonHttpMessageConverter) converter).getMappersForType(objectType)
+        if ((context.includes || context.excludes) && !grailsMapper) {
+            // Only the Grails mapper applies a projection; the legacy converter applies it otherwise.
+            return false
+        }
+        JsonProjection projection = null
+        if (grailsMapper) {
+            projection = JsonProjection.of(object, context.includes, context.excludes)
             // Keep the source converter itself: its prefix, media types and charset are application
             // configuration. Only the value's JSON representation uses the isolated Grails mapper.
             object = new GrailsJsonValue(object, grailsJsonMapperCustomizer.forGrails(
-                    ((JacksonJsonHttpMessageConverter) converter).mapper))
+                    ((JacksonJsonHttpMessageConverter) converter).mapper), projection)
         }
         // Jackson only writes UTF encodings. Use UTF-8 for the intermediate byte stream;
         // the servlet writer still applies the configured response encoding.
@@ -271,6 +280,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
             }
             converter.write(object, contentType, message)
         }
+        projection?.reportUnapplied()
         return true
     }
 
@@ -288,15 +298,21 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     private static final class GrailsJsonValue implements JacksonSerializable {
         private final Object value
         private final JsonMapper mapper
+        private final JsonProjection projection
 
-        GrailsJsonValue(Object value, JsonMapper mapper) {
+        GrailsJsonValue(Object value, JsonMapper mapper, JsonProjection projection) {
             this.value = value
             this.mapper = mapper
+            this.projection = projection
         }
 
         @Override
         void serialize(JsonGenerator generator, SerializationContext context) {
-            mapper.writeValue(generator, value)
+            ObjectWriter writer = mapper.writer()
+            if (projection != null) {
+                writer = writer.withAttribute(JsonProjection.ATTRIBUTE, projection)
+            }
+            writer.writeValue(generator, value)
         }
 
         @Override

@@ -27,6 +27,9 @@ import tools.jackson.databind.PropertyNamingStrategies
 import tools.jackson.databind.module.SimpleModule
 import tools.jackson.databind.ser.std.ToStringSerializer
 
+import groovy.json.JsonSlurper
+
+import grails.converters.json.NamedJsonConfigurationRegistry
 import grails.core.DefaultGrailsApplication
 import grails.core.support.proxy.DefaultProxyHandler
 import grails.core.support.proxy.ProxyHandler
@@ -121,22 +124,42 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         ]
     }
 
-    void 'writer attributes apply includes and excludes to one domain write'() {
+    void 'a projection applies to one domain write'() {
         given:
-        def mapper = domainMapper(false, false)
+        def registry = new NamedJsonConfigurationRegistry(domainMapper(false, false))
         def book = new JacksonBook(title: 'Filtered').tap {
             id = 1
             version = 3
         }
+        def output = new StringWriter()
 
-        expect:
-        mapper.writer()
-                .withAttribute(GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, [(JacksonBook): ['id', 'title']])
-                .withAttribute(GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, [(JacksonBook): ['title']])
-                .writeValueAsString(book) == '{"id":1}'
-        mapper.readValue(mapper.writeValueAsString(book), Map) == [
+        when:
+        registry.writeValue(null, output, book, ['id', 'title'], ['title'])
+
+        then:
+        output.toString() == '{"id":1}'
+
+        and: 'the next write is not projected'
+        new JsonSlurper().parseText(registry.writeValueAsString(null, book)) == [
                 id: 1, title: 'Filtered', authors: null, authorsByName: null,
         ]
+    }
+
+    void 'a projection of a proxied domain object applies to its target'() {
+        given:
+        def target = new JacksonBook(title: 'Unwrapped').tap { id = 1 }
+        def proxy = new JacksonBookProxy(target: target)
+        def proxyHandler = Stub(ProxyHandler) {
+            unwrapIfProxy(_ as Object) >> { arguments -> arguments[0].is(proxy) ? target : arguments[0] }
+        }
+        def registry = new NamedJsonConfigurationRegistry(domainMapper(false, false, proxyHandler))
+        def output = new StringWriter()
+
+        when:
+        registry.writeValue(null, output, proxy, ['title'], null)
+
+        then:
+        output.toString() == '{"title":"Unwrapped"}'
     }
 
     void 'the mapper builds before GORM is initialized and picks up entities afterwards'() {

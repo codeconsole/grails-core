@@ -19,7 +19,6 @@ package org.grails.web.converters.jackson;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Map;
 
 import tools.jackson.core.JacksonException;
@@ -34,7 +33,6 @@ import org.springframework.beans.BeanWrapperImpl;
 
 import grails.core.support.proxy.EntityProxyHandler;
 import grails.core.support.proxy.ProxyHandler;
-import org.grails.core.util.IncludeExcludeSupport;
 import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.datastore.mapping.model.PersistentProperty;
 import org.grails.datastore.mapping.model.types.Association;
@@ -44,9 +42,6 @@ import org.grails.web.converters.Converter.CircularReferenceBehaviour;
 
 /** Serializes a mapped Grails domain type using its persistent metadata. */
 final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
-
-    // Stateless, and consulted once per property of every serialized object.
-    private static final IncludeExcludeSupport<String> INCLUDE_EXCLUDE_SUPPORT = new IncludeExcludeSupport<>();
 
     /** Per-write attribute holding the domain objects being written, outermost first. */
     private static final Object IN_PROGRESS = GrailsDomainJsonSerializer.class.getName() + ".inProgress";
@@ -89,14 +84,13 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
             return;
         }
         BeanWrapper bean = new BeanWrapperImpl(unwrapped);
-        List<String> includes = properties(context, GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, unwrapped.getClass());
-        List<String> excludes = properties(context, GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, unwrapped.getClass());
+        JsonProjection projection = projection(context, unwrapped.getClass(), value.getClass());
 
         generator.writeStartObject();
         inProgress.put(unwrapped, new Frame(generator.streamWriteContext().getNestingDepth(),
                 path(generator.streamWriteContext())));
         try {
-            writeProperties(unwrapped, bean, generator, context, includes, excludes);
+            writeProperties(bean, generator, context, projection);
         }
         finally {
             inProgress.remove(unwrapped);
@@ -104,19 +98,19 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
         generator.writeEndObject();
     }
 
-    private void writeProperties(Object unwrapped, BeanWrapper bean, JsonGenerator generator,
-            SerializationContext context, List<String> includes, List<String> excludes) throws JacksonException {
-        if (includeClass && shouldInclude(includes, excludes, "class")) {
+    private void writeProperties(BeanWrapper bean, JsonGenerator generator, SerializationContext context,
+            JsonProjection projection) throws JacksonException {
+        if (includeClass && shouldInclude(projection, "class")) {
             generator.writeStringProperty("class", entity.getName());
         }
         // An unsaved instance has neither yet; the legacy marshaller leaves them out rather than writing null
-        writePropertyIfSet(entity.getIdentity(), bean, generator, context, includes, excludes);
+        writePropertyIfSet(entity.getIdentity(), bean, generator, context, projection);
         if (includeVersion) {
-            writePropertyIfSet(entity.getVersion(), bean, generator, context, includes, excludes);
+            writePropertyIfSet(entity.getVersion(), bean, generator, context, projection);
         }
         for (PersistentProperty property : entity.getPersistentProperties()) {
             if (!property.equals(entity.getVersion())) {
-                writeProperty(property, bean, generator, context, includes, excludes);
+                writeProperty(property, bean, generator, context, projection);
             }
         }
     }
@@ -171,15 +165,15 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
     }
 
     private void writePropertyIfSet(PersistentProperty property, BeanWrapper bean, JsonGenerator generator,
-            SerializationContext context, List<String> includes, List<String> excludes) throws JacksonException {
+            SerializationContext context, JsonProjection projection) throws JacksonException {
         if (property != null && bean.getPropertyValue(property.getName()) != null) {
-            writeProperty(property, bean, generator, context, includes, excludes);
+            writeProperty(property, bean, generator, context, projection);
         }
     }
 
     private void writeProperty(PersistentProperty property, BeanWrapper bean, JsonGenerator generator,
-            SerializationContext context, List<String> includes, List<String> excludes) throws JacksonException {
-        if (property == null || !shouldInclude(includes, excludes, property.getName())) {
+            SerializationContext context, JsonProjection projection) throws JacksonException {
+        if (property == null || !shouldInclude(projection, property.getName())) {
             return;
         }
         Object propertyValue = bean.getPropertyValue(property.getName());
@@ -236,16 +230,14 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
         generator.writeEndObject();
     }
 
-    @SuppressWarnings("unchecked")
-    private List<String> properties(SerializationContext context, String attribute, Class<?> type) {
-        Object configured = context.getAttribute(attribute);
-        if (configured instanceof Map<?, ?> configuredByType) {
-            return (List<String>) configuredByType.get(type);
-        }
-        return configured instanceof List<?> list ? (List<String>) list : null;
+    /** The projection of this write, if it names the written object's type or the proxy's. */
+    private static JsonProjection projection(SerializationContext context, Class<?> type, Class<?> proxyType) {
+        Object projection = context.getAttribute(JsonProjection.ATTRIBUTE);
+        return projection instanceof JsonProjection projected && projected.appliesTo(type, proxyType) != null ?
+                projected : null;
     }
 
-    private boolean shouldInclude(List<String> includes, List<String> excludes, String property) {
-        return INCLUDE_EXCLUDE_SUPPORT.shouldInclude(includes, excludes, property);
+    private static boolean shouldInclude(JsonProjection projection, String property) {
+        return projection == null || projection.includes(property);
     }
 }

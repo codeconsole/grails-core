@@ -246,13 +246,15 @@ class DefaultJsonRendererSpec extends Specification {
         webRequest.response.contentAsString == '{"title":"Legacy"}'
     }
 
-    void 'per-response projections retain the legacy converter path'() {
-        given:
+    void 'a projection the selected converter cannot apply keeps the legacy converter path'() {
+        given: 'an application converter, which Grails does not adapt to its mapper'
         def converter = Mock(HttpMessageConverter) {
+            canWrite(ProjectionBody, MediaType.APPLICATION_JSON) >> true
             getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
         }
         def renderer = new DefaultJsonRenderer<ProjectionBody>(ProjectionBody)
         renderer.useSpringJson = true
+        renderer.grailsJsonMapperCustomizer = new GrailsJsonMapperCustomizer()
         renderer.springHttpMessageConverters = [converter]
         def webRequest = GrailsWebMockUtil.bindMockWebRequest()
 
@@ -261,8 +263,25 @@ class DefaultJsonRendererSpec extends Specification {
                 new ServletRenderContext(webRequest, [includes: ['title']]))
 
         then:
-        0 * converter._
+        0 * converter.write(_, _, _)
         webRequest.response.contentAsString == '{"title":"Included"}'
+    }
+
+    void 'a per-response projection is applied by the Grails mapper on the Spring path'() {
+        given:
+        def renderer = new DefaultJsonRenderer<ProjectionBody>(ProjectionBody)
+        renderer.useSpringJson = true
+        renderer.grailsJsonMapperCustomizer = new GrailsJsonMapperCustomizer()
+        renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(new ProjectionBody(title: 'Included', hidden: true),
+                new ServletRenderContext(webRequest, [excludes: ['hidden']]))
+
+        then:
+        webRequest.response.contentAsString == '{"title":"Included"}'
+        !renderer.legacyFallbackReported.get()
     }
 
     void 'respond selects a registered named JSON configuration'() {

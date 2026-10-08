@@ -47,12 +47,6 @@ import org.grails.web.converters.configuration.ConvertersConfigurationInitialize
  */
 public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustomizer {
 
-    /** Writer attribute holding the property names to include, as a List or a Map keyed by type. */
-    public static final String INCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".includes";
-
-    /** Writer attribute holding the property names to exclude, as a List or a Map keyed by type. */
-    public static final String EXCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".excludes";
-
     private final ConcurrentMap<JsonMapper, JsonMapper> grailsMappers = new ConcurrentHashMap<>();
     private final GrailsApplication grailsApplication;
     private final ProxyHandler proxyHandler;
@@ -145,5 +139,6 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
         module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
                 () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
         builder.addModule(module);
+        builder.addModule(JsonProjection.module());
     }
 }

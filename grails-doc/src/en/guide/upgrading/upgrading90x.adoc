@@ -132,9 +132,10 @@ values as strings. Only the Grails mapper serializes Spring `Errors` as an `erro
 object, field, message, and codes, without rejected values; Grails `respond errors` adapts that array into an
 RFC 9457 problem response.
 
-Grails retains the legacy converter path when a named converter configuration or per-response
-`includes`/`excludes` projection is requested, or when no configured MVC converter can write the
-selected type and media type. Explicit application and plugin `Renderer` beans continue to take
+Grails retains the legacy converter path when a renderer sets a legacy named converter
+configuration, when a per-response `includes`/`excludes` projection is requested and the selected
+converter is not Spring's standard Jackson converter, or when no configured MVC converter can write
+the selected type and media type. Explicit application and plugin `Renderer` beans continue to take
 precedence over the default renderer.
 
 Jackson conversion uses UTF-8 for intermediate bytes; the response writer applies
@@ -210,10 +211,15 @@ render json: book, jsonConfiguration: 'deep'
 render json: [ok: true]
 ----
 
-Both accept `includes` and `excludes` for domain objects or iterables of domain objects. Projections
-on non-domain values (including DTOs and maps) throw `IllegalArgumentException` before writing;
-they are never silently ignored. Use a DTO, Jackson view or explicit serializer for those values.
-Without `jsonConfiguration`, `respond x, includes: [...]` still uses the legacy projection path.
+Both accept `includes` and `excludes`. As with the legacy converter, a projection applies to the
+properties of the type written, or of each element's type when a collection or array is written,
+whether those are domain objects or other beans; objects of other types inside them are written in
+full. Properties are named by their bean property names, and a JSON name given by a Jackson
+annotation or naming strategy matches as well. A value with no properties to project, such as a map
+or a string, throws `IllegalArgumentException` before anything is written. A type that a Jackson
+serializer of its own writes is not filtered, and a warning names it. With
+`grails.web.rendering.json.spring: true`, `respond x, includes: [...]` without a configuration name
+applies projections the same way; otherwise it uses the legacy converter.
 Registered configurations are immutable: configure them inside the registration callback, and
 register the name again to replace a configuration rather than mutating a retained reference.
 

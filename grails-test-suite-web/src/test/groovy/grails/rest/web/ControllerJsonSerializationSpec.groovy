@@ -165,6 +165,22 @@ class ControllerJsonSerializationSpec extends Specification implements Controlle
         response.json == [title: 'GRAILS']
     }
 
+    void 'render json and respond apply a projection to a bean'() {
+        when:
+        controller.render(json: new JsonResponseBody(title: 'Grails', firstName: 'Ada'), excludes: ['firstName'])
+
+        then:
+        response.json == [title: 'Grails']
+
+        when:
+        response.reset()
+        response.format = 'json'
+        controller.respond(new JsonResponseBody(title: 'Grails', firstName: 'Ada'), includes: ['title'])
+
+        then:
+        response.json == [title: 'Grails']
+    }
+
     void 'render json without a name uses the default mapper'() {
         when:
         controller.render(json: [message: "Saved ${'Grails'}"])
