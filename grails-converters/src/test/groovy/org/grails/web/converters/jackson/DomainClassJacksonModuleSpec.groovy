@@ -29,8 +29,10 @@ import tools.jackson.core.JsonGenerator
 import tools.jackson.databind.MapperFeature
 import tools.jackson.databind.PropertyNamingStrategies
 import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.SerializationFeature
 import tools.jackson.databind.annotation.JsonNaming
 import tools.jackson.databind.annotation.JsonSerialize
+import tools.jackson.databind.exc.InvalidDefinitionException
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.ser.std.StdSerializer
 
@@ -150,6 +152,66 @@ class DomainClassJacksonModuleSpec extends Specification {
         expect:
         mapper().writeValueAsString(dog) == '{"@type":"Dog","id":2,"name":"Rex"}'
         mapper().writeValueAsString(new Pet(animal: dog)) == '{"animal":{"@type":"Dog","id":2,"name":"Rex"}}'
+    }
+
+    void "rendering deep, the reference to an instance already being written is offered to the rendering first"() {
+        given:
+        def first = new Partner(name: 'first')
+        first.id = 1
+        def second = new Partner(name: 'second', partner: first)
+        second.id = 2
+        first.partner = second
+        def offered = []
+        def rendering = new DomainClassRendering(grailsApplication, new DefaultProxyHandler(), false, false, true) {
+            @Override
+            boolean writeReference(Object reference, PersistentProperty idProperty, PersistentEntity entity) {
+                offered << reference.id
+                false
+            }
+        }
+
+        expect:
+        mapper(rendering).writeValueAsString(first) == '{"id":1,"name":"first","partner":{"id":2,"name":"second","partner":{"id":1}}}'
+        offered == [1L]
+    }
+
+    void "a domain instance with a type id in a @JsonUnwrapped property fails, as Jackson's own unwrapping does"() {
+        given:
+        def dog = new Dog(name: 'Rex')
+        dog.id = 2
+        def lenient = JsonMapper.builder()
+                .disable(SerializationFeature.FAIL_ON_UNWRAPPED_TYPE_IDENTIFIERS)
+                .addModule(new DomainClassJacksonModule(ConvertersConfigurationInitializer.jsonDomainClassRendering(grailsApplication, new DefaultProxyHandler())))
+                .build()
+
+        when:
+        mapper().writeValueAsString(new UnwrappedDog(dog: dog, note: 'n'))
+
+        then:
+        thrown(InvalidDefinitionException)
+
+        expect: 'without the type id, when the feature is disabled'
+        lenient.writeValueAsString(new UnwrappedDog(dog: dog, note: 'n')) == '{"id":2,"name":"Rex","note":"n"}'
+    }
+
+    void "references are named as the instance itself, by the mapper's naming strategy"() {
+        given:
+        def mapper = { boolean deep ->
+            JsonMapper.builder()
+                    .propertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE)
+                    .addModule(new DomainClassJacksonModule(new DomainClassRendering(grailsApplication, new DefaultProxyHandler(), false, false, deep)))
+                    .build()
+        }
+        def first = new Partner(name: 'first')
+        first.id = 1
+        def second = new Partner(name: 'second', partner: first)
+        second.id = 2
+        first.partner = second
+
+        expect: 'through an association, and rendering deep, through a cycle'
+        mapper(false).writeValueAsString(volume()) ==
+                '{"Id":1,"Title":"Grails","Shelf":{"Id":3},"Writers":[{"Id":1},{"Id":2}],"WritersByName":{"a":{"Id":1},"b":{"Id":2}}}'
+        mapper(true).writeValueAsString(first) == '{"Id":1,"Name":"first","Partner":{"Id":2,"Name":"second","Partner":{"Id":1}}}'
     }
 
     void "a domain class with a @JsonValue is written by Jackson"() {
@@ -380,6 +442,12 @@ class Code {
 
     @JsonValue
     String jsonValue() { code }
+}
+
+class UnwrappedDog {
+    @JsonUnwrapped
+    Dog dog
+    String note
 }
 
 class Unwrapped {
