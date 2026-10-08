@@ -385,6 +385,29 @@ class HibernateCriteriaBuilderSqlProjectionSpec extends Specification {
     }
 
     @Rollback
+    void 'a column alias in #quotes in the group by clause is matched regardless of case'() {
+        given:
+        saveBoxes()
+
+        when:
+        List rows = SqlProjectionBox.createCriteria().list {
+            projections {
+                sqlGroupProjection sql, groupBy, ['boxWidth', 'total'], [INTEGER, INTEGER]
+            }
+            order('boxWidth')
+        }
+
+        then:
+        rows*.toList() == [[2, 24], [4, 9]]
+        sqlCapture.statements.last() =~ /(?i)group by width\b/
+
+        where:
+        quotes            | sql                                         | groupBy
+        'backquotes'      | 'width as `boxWidth`, sum(height) as total' | '`BOXWIDTH`'
+        'square brackets' | 'width as [boxWidth], sum(height) as total' | '[BOXWIDTH]'
+    }
+
+    @Rollback
     void 'a date or a time is read as its SQL type'() {
         given:
         saveBoxes()

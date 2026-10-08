@@ -194,6 +194,32 @@ class JpaCriteriaQueryCreatorSpec extends HibernateGormDatastoreSpec {
         query.orderList[0].expression.is(selections[1])
     }
 
+    def "test createQuery matches a group by name #groupBy to a column alias case sensitively only in double quotes"() {
+        given:
+        var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)
+        var detachedCriteria = new DetachedCriteria(JpaCriteriaQueryCreatorSpecPerson)
+        var projections = new Query.ProjectionList()
+        projections.add(new SqlGroupProjection(groupBy))
+        projections.add(new SqlProjection("upper(last_name)", "fullName", String))
+        projections.add(new SqlProjection("count(*)", "total", Long))
+        var creator = new JpaCriteriaQueryCreator(projections, criteriaBuilder, entity, detachedCriteria, new DefaultConversionService())
+
+        when:
+        JpaCriteriaQuery<?> query = creator.createQuery()
+
+        then:
+        query.groupList.size() == 1
+        query.groupList[0].arguments[0].literalValue == groupedBy
+
+        where:
+        groupBy      | groupedBy
+        'FULLNAME'   | 'upper(last_name)'
+        '`FULLNAME`' | 'upper(last_name)'
+        '[FULLNAME]' | 'upper(last_name)'
+        '"fullName"' | 'upper(last_name)'
+        '"FULLNAME"' | '"FULLNAME"'
+    }
+
     def "test createQuery keeps a quoted group by name that is no column alias"() {
         given:
         var entity = getPersistentEntity(JpaCriteriaQueryCreatorSpecPerson)

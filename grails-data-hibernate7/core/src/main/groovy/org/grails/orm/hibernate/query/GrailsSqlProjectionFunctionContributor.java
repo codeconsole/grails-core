@@ -24,7 +24,7 @@ import org.hibernate.boot.model.FunctionContributor;
 /**
  * Registers the {@link GrailsSqlProjectionFunction}.
  *
- * @since 8.0.0
+ * @since 8.0.1
  */
 public class GrailsSqlProjectionFunctionContributor implements FunctionContributor {
 

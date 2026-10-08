@@ -37,7 +37,7 @@ import org.grails.datastore.mapping.query.Query;
  * followed by {@code as} and its column alias, as on Hibernate 5. It is split into one projection per column, so
  * every column is a selection of its own.</p>
  *
- * @since 8.0.0
+ * @since 8.0.1
  */
 public class SqlProjection extends Query.Projection {
 

@@ -225,11 +225,13 @@ public class JpaCriteriaQueryCreator<T> {
                         return context.getFullyQualifiedExpression(groupPropertyProjection.getPropertyName());
                     } else if (projection instanceof SqlGroupProjection sqlGroupProjection) {
                         // the column alias of a SQL projection does not reach the SQL, so a group by clause that
-                        // names one, quoted or not, groups by the SQL it stands for; as in SQL, a quoted name is
-                        // case sensitive
+                        // names one, quoted or not, groups by the SQL it stands for; as in standard SQL, a name in
+                        // double quotes is case sensitive, while backquotes (MySQL) and square brackets (SQL Server)
+                        // leave a column alias case insensitive
                         String groupBy = sqlGroupProjection.getSql().trim();
                         String name = SqlProjection.unquote(groupBy);
-                        SqlProjection aliased = findSqlProjection(name, name.equals(groupBy));
+                        boolean caseSensitive = groupBy.startsWith("\"") && !name.equals(groupBy);
+                        SqlProjection aliased = findSqlProjection(name, !caseSensitive);
                         return translator.translateSql(aliased != null ? aliased.getSql() : sqlGroupProjection.getSql(), null);
                     }
                     return null;

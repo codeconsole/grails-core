@@ -28,7 +28,7 @@ import org.grails.datastore.mapping.query.Query;
  * in a criteria query. It is not selected: the columns of the {@code sqlGroupProjection} are {@link SqlProjection}s.
  * In the SQL, {@code {alias}} stands for the table alias of the queried entity.
  *
- * @since 8.0.0
+ * @since 8.0.1
  */
 public class SqlGroupProjection extends Query.Projection {
 

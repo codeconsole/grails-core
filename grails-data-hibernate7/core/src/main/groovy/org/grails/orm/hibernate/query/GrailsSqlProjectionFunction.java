@@ -40,7 +40,7 @@ import org.hibernate.type.spi.TypeConfiguration;
  * literal and, if the SQL contains {@code {alias}}, a column of the queried entity whose table alias replaces it.
  * The function takes the type the criteria query gives it, as Hibernate's own {@code sql} function does.
  *
- * @since 8.0.0
+ * @since 8.0.1
  */
 public class GrailsSqlProjectionFunction extends AbstractSqmSelfRenderingFunctionDescriptor {
 
