@@ -113,6 +113,31 @@ class JsonMapperRenderingSpec extends Specification {
                 '{"role":"HEAD","unit":"SECONDS","labelled":"ONE","month":5}'
     }
 
+    void "an enum constant with a body renders by name, as every enum"() {
+        expect:
+        new JSON([status: BodyStatus.ACTIVE, shape: Shape.CIRCLE]).toString() == '{"status":"ACTIVE","shape":"CIRCLE"}'
+    }
+
+    void "a Number a module serializer writes renders as the mapper renders it, also inside a value the mapper writes"() {
+        given:
+        def context = applicationContext {
+            it.registerBean(JsonMapper, {
+                JsonMapper.builder().addModule(new SimpleModule()
+                        .addSerializer(Money, new MoneySerializer())
+                        .addSerializer(Wrapper, new WrapperSerializer())).build()
+            })
+        }
+        initialize([:], context)
+
+        expect:
+        new JSON([money: new Money(5), wrapper: new Wrapper(inner: new Money(6))]).toString() ==
+                '{"money":"$5","wrapper":{"inner":"$6","others":[]}}'
+        new JSON(new Money(7)).toString() == '"$7"'
+
+        cleanup:
+        context.close()
+    }
+
     void "an enum with a @JsonValue renders by name, as every enum, so that it binds back"() {
         expect:
         new JSON([status: Status.ACTIVE]).toString() == '{"status":"ACTIVE"}'
@@ -522,12 +547,68 @@ class JsonMapperRenderingSpec extends Specification {
                 ['a', 'b'] as char[], new File('/tmp/a.txt'), Paths.get('/tmp/a.txt'), Pattern.compile('a+b'),
                 StandardCharsets.UTF_8, InetAddress.getByAddress('h', [127, 0, 0, 1] as byte[]),
                 ByteBuffer.wrap([1, 2, 3] as byte[]), [(String): 'class key'],
-                [(OffsetDateTime.parse('2025-10-08T04:48:46.407-03:00')): 'keeps its offset']
+                [(OffsetDateTime.parse('2025-10-08T04:48:46.407-03:00')): 'keeps its offset'],
+                JsonMapper.builder().build().readTree('{"a":1,"b":[true,null]}')
         ]
     }
 }
 
 enum Role { HEAD, DISPATCHER, ADMIN }
+
+enum BodyStatus {
+    ACTIVE('A') {
+        @Override
+        String describe() { 'active' }
+    }
+
+    final String code
+
+    BodyStatus(String code) { this.code = code }
+
+    @JsonValue
+    String getCode() { code }
+
+    String describe() { '' }
+}
+
+enum Shape {
+    CIRCLE {
+        @Override
+        int corners() { 0 }
+    }
+
+    abstract int corners()
+}
+
+class Money extends Number {
+
+    final long amount
+
+    Money(long amount) { this.amount = amount }
+
+    int intValue() { (int) amount }
+
+    long longValue() { amount }
+
+    float floatValue() { amount }
+
+    double doubleValue() { amount }
+
+    @Override
+    String toString() { "Money($amount)" }
+}
+
+class MoneySerializer extends StdSerializer<Money> {
+
+    MoneySerializer() {
+        super(Money)
+    }
+
+    @Override
+    void serialize(Money money, JsonGenerator generator, SerializationContext context) {
+        generator.writeString('$' + money.amount)
+    }
+}
 
 enum Status {
     ACTIVE('A')

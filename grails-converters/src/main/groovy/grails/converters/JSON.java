@@ -23,6 +23,8 @@ import java.io.InputStream;
 import java.io.PushbackInputStream;
 import java.io.Reader;
 import java.io.Writer;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -199,8 +201,9 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
             else if (o instanceof Class<?>) {
                 writer.value(((Class<?>) o).getName());
             }
-            else if (o instanceof Number) {
-                writer.value((Number) o);
+            else if (o instanceof Number number && (ConvertersConfigurationHolder.isLegacyJson() || isJdkNumber(number))) {
+                // another Number is rendered by its marshaller, such as one the JsonMapper has a serializer for
+                writer.value(number);
             } else if (o instanceof Boolean) {
                 writer.value((Boolean) o);
             } else if (o.getClass().isPrimitive() && !o.getClass().equals(byte[].class)) {
@@ -227,6 +230,11 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         catch (JSONException e) {
             throw new ConverterException(e);
         }
+    }
+
+    private static boolean isJdkNumber(Number number) {
+        return number instanceof Integer || number instanceof Long || number instanceof Double || number instanceof BigDecimal ||
+                number instanceof Short || number instanceof Byte || number instanceof Float || number instanceof BigInteger;
     }
 
     /**

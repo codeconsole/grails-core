@@ -19,7 +19,6 @@
 package org.grails.web.json;
 
 import java.io.Writer;
-import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.Map;
@@ -231,9 +230,13 @@ public final class JsonMapperSupport {
         return visitor.getContext();
     }
 
+    /**
+     * A container is left to the Grails marshallers before its serializer is looked at. An {@code Iterable} is not: Jackson
+     * writes a collection or other iterable with a container serializer, and a bean-like one with a bean serializer, which
+     * are left to the Grails marshallers as well, while it writes a {@code Path} or a {@code JsonNode} as a value.
+     */
     private static boolean isContainer(Class<?> type) {
-        // a Path is an Iterable of its names, which Jackson writes as its URI
-        return (Iterable.class.isAssignableFrom(type) && !Path.class.isAssignableFrom(type)) || Map.class.isAssignableFrom(type) ||
+        return Map.class.isAssignableFrom(type) ||
                 Map.Entry.class.isAssignableFrom(type) || Iterator.class.isAssignableFrom(type) ||
                 Enumeration.class.isAssignableFrom(type) || BaseStream.class.isAssignableFrom(type) ||
                 (type.isArray() && !type.getComponentType().isPrimitive());

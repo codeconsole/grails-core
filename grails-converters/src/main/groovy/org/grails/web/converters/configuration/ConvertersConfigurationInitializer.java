@@ -179,7 +179,7 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
         // dates and times and the other single values the application's JsonMapper has a serializer for are written
         // by the mapper, as Spring Boot writes them
         marshallers.add(new org.grails.web.converters.marshaller.json.JsonMapperValueMarshaller());
-        marshallers.add(new org.grails.web.converters.marshaller.json.SimpleEnumMarshaller());
+        marshallers.add(new org.grails.web.converters.marshaller.json.SimpleEnumMarshaller(true));
         marshallers.add(new org.grails.web.converters.marshaller.json.RecordMarshaller());
         marshallers.add(new org.grails.web.converters.marshaller.json.OptionalMarshaller());
         marshallers.add(new org.grails.web.converters.marshaller.json.ArrayMarshaller());
