@@ -115,8 +115,10 @@ public class ConvertersConfigurationInitializer implements ApplicationContextAwa
         if (applicationContext != null) {
             ConvertersConfigurationHolder.setObservationRegistry(
                     applicationContext.getBeanProvider(ObservationRegistry.class).getIfAvailable(() -> ObservationRegistry.NOOP));
-            // the application's JsonMapper, or a default one when there is none, or more than one and none is primary
-            ConvertersConfigurationHolder.setJsonMapper(applicationContext.getBeanProvider(JsonMapper.class).getIfUnique());
+            // the application's JsonMapper, or a default one when there is none, or more than one and none is primary.
+            // Rendering as Grails 8 did, a default one, so that the application's Jackson settings do not change the text
+            boolean legacy = getGrailsConfig().getProperty(SETTING_CONVERTERS_JSON_LEGACY, Boolean.class, false);
+            ConvertersConfigurationHolder.setJsonMapper(legacy ? null : applicationContext.getBeanProvider(JsonMapper.class).getIfUnique());
         }
         initJSONConfiguration();
         initXMLConfiguration();

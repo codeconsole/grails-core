@@ -19,10 +19,22 @@
 package org.grails.web.converters.marshaller.json;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 import groovy.lang.GroovyObject;
 
+import org.springframework.beans.BeanWrapper;
+import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.util.ReflectionUtils;
 
 import grails.converters.JSON;
@@ -31,14 +43,23 @@ import grails.core.support.proxy.DefaultProxyHandler;
 import grails.core.support.proxy.EntityProxyHandler;
 import grails.core.support.proxy.ProxyHandler;
 import org.grails.core.artefact.DomainClassArtefactHandler;
+import org.grails.core.exceptions.GrailsConfigurationException;
 import org.grails.core.util.IncludeExcludeSupport;
 import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.datastore.mapping.model.PersistentProperty;
+import org.grails.datastore.mapping.model.config.GormProperties;
+import org.grails.datastore.mapping.model.types.Association;
+import org.grails.datastore.mapping.model.types.ManyToOne;
+import org.grails.datastore.mapping.model.types.OneToOne;
 import org.grails.datastore.mapping.reflect.ClassPropertyFetcher;
 import org.grails.web.converters.ConverterUtil;
+import org.grails.web.converters.configuration.ConvertersConfigurationHolder;
 import org.grails.web.converters.exceptions.ConverterException;
 import org.grails.web.converters.jackson.DomainClassRendering;
 import org.grails.web.converters.jackson.DomainClassSerializer;
+import org.grails.web.converters.marshaller.ByDatasourceDomainClassFetcher;
+import org.grails.web.converters.marshaller.ByGrailsApplicationDomainClassFetcher;
+import org.grails.web.converters.marshaller.DomainClassFetcher;
 import org.grails.web.converters.marshaller.IncludeExcludePropertyMarshaller;
 import org.grails.web.json.JSONWriter;
 
@@ -47,7 +68,8 @@ import org.grails.web.json.JSONWriter;
  * Object marshaller for domain classes to JSON. It renders an instance with a
  * {@link DomainClassSerializer}, through the converter's {@code JsonMapper}, with the includes and excludes of the
  * converter and of {@link #includesProperty(Object, String)} and {@link #excludesProperty(Object, String)}, and renders
- * the property values with the converter.
+ * the property values with the converter. With {@code grails.converters.json.legacy}, it renders an instance as
+ * Grails 8 did.
  *
  * @author Siegfried Puchbauer
  * @author Graeme Rocher
@@ -62,6 +84,8 @@ public class DomainClassMarshaller extends IncludeExcludePropertyMarshaller<JSON
     private GrailsApplication application;
 
     private final boolean overridesAsShortObject;
+
+    private List<DomainClassFetcher> domainClassFetchers;
 
     public DomainClassMarshaller(boolean includeVersion, GrailsApplication application) {
         this(includeVersion, new DefaultProxyHandler(), application);
@@ -103,8 +127,160 @@ public class DomainClassMarshaller extends IncludeExcludePropertyMarshaller<JSON
     }
 
     public void marshalObject(Object value, JSON json) throws ConverterException {
+        if (ConvertersConfigurationHolder.isLegacyJson()) {
+            marshalObjectAsGrails8(value, json);
+            return;
+        }
         Object object = proxyHandler.unwrapIfProxy(value);
         JsonMapperValueMarshaller.write(DomainClassSerializer.value(object, new Rendering(json, object.getClass())), json);
+    }
+
+    /**
+     * Renders an instance as Grails 8 did, except that a to-many association whose value is a {@code Map} is an object
+     * of all its entries, where Grails 8 failed unless it had exactly one.
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private void marshalObjectAsGrails8(Object value, JSON json) throws ConverterException {
+        JSONWriter writer = json.getWriter();
+        value = proxyHandler.unwrapIfProxy(value);
+        Class<?> clazz = value.getClass();
+
+        List<String> excludes = json.getExcludes(clazz);
+        List<String> includes = json.getIncludes(clazz);
+        IncludeExcludeSupport<String> includeExcludeSupport = new IncludeExcludeSupport<>();
+
+        BeanWrapper beanWrapper = new BeanWrapperImpl(value);
+
+        writer.object();
+
+        if (includeClass && shouldInclude(includeExcludeSupport, includes, excludes, value, "class")) {
+            writer.key("class").value(clazz.getName());
+        }
+
+        PersistentEntity domainClass = findDomainClass(value);
+
+        if (domainClass == null) {
+            throw new GrailsConfigurationException("Could not retrieve the respective entity for domain " + value.getClass().getName() + " in the mapping context API");
+        }
+
+        PersistentProperty id = domainClass.getIdentity();
+        if (id != null) {
+            //Composite keys dont return an identity. They also do not render in the JSON.
+            //If using Composite keys, it may be advisable to use a customer Marshaller.
+            if (shouldInclude(includeExcludeSupport, includes, excludes, value, id.getName())) {
+                Object idValue = extractValue(value, id);
+                if (idValue != null) {
+                    json.property(id.getName(), idValue);
+                }
+            }
+        }
+
+        if (shouldInclude(includeExcludeSupport, includes, excludes, value, GormProperties.VERSION) && isIncludeVersion()) {
+            PersistentProperty versionProperty = domainClass.getVersion();
+            Object version = extractValue(value, versionProperty);
+            if (version != null) {
+                json.property(GormProperties.VERSION, version);
+            }
+        }
+
+        List<PersistentProperty> properties = domainClass.getPersistentProperties();
+
+        for (PersistentProperty property : properties) {
+            if (property.equals(domainClass.getVersion())) {
+                continue;
+            }
+
+            if (!shouldInclude(includeExcludeSupport, includes, excludes, value, property.getName())) continue;
+
+            writer.key(property.getName());
+            if (!(property instanceof Association)) {
+                // Write non-relation property
+                Object val = beanWrapper.getPropertyValue(property.getName());
+                json.convertAnother(val);
+            }
+            else {
+                Object referenceObject = beanWrapper.getPropertyValue(property.getName());
+                if (isRenderDomainClassRelations()) {
+                    if (referenceObject == null) {
+                        writer.valueNull();
+                    }
+                    else {
+                        referenceObject = proxyHandler.unwrapIfProxy(referenceObject);
+                        if (referenceObject instanceof SortedMap) {
+                            referenceObject = new TreeMap((SortedMap) referenceObject);
+                        }
+                        else if (referenceObject instanceof SortedSet) {
+                            referenceObject = new TreeSet((SortedSet) referenceObject);
+                        }
+                        else if (referenceObject instanceof Set) {
+                            referenceObject = new LinkedHashSet((Set) referenceObject);
+                        }
+                        else if (referenceObject instanceof Map) {
+                            referenceObject = new LinkedHashMap((Map) referenceObject);
+                        }
+                        else if (referenceObject instanceof Collection) {
+                            referenceObject = new ArrayList((Collection) referenceObject);
+                        }
+                        json.convertAnother(referenceObject);
+                    }
+                }
+                else {
+                    if (referenceObject == null) {
+                        json.value(null);
+                    }
+                    else {
+
+                        PersistentEntity referencedDomainClass = ((Association) property).getAssociatedEntity();
+
+                        // Embedded are now always fully rendered
+                        if (referencedDomainClass == null || ((Association) property).isEmbedded() || property.getType().isEnum()) {
+                            json.convertAnother(referenceObject);
+                        }
+                        else if ((property instanceof OneToOne) || (property instanceof ManyToOne) || ((Association) property).isEmbedded()) {
+                            asShortObject(referenceObject, json, referencedDomainClass.getIdentity(), referencedDomainClass);
+                        }
+                        else {
+                            PersistentProperty referencedIdProperty = referencedDomainClass.getIdentity();
+                            if (referenceObject instanceof Collection) {
+                                Collection o = (Collection) referenceObject;
+                                writer.array();
+                                for (Object el : o) {
+                                    asShortObject(el, json, referencedIdProperty, referencedDomainClass);
+                                }
+                                writer.endArray();
+                            }
+                            else if (referenceObject instanceof Map) {
+                                Map<Object, Object> map = (Map<Object, Object>) referenceObject;
+                                writer.object();
+                                for (Map.Entry<Object, Object> entry : map.entrySet()) {
+                                    writer.key(String.valueOf(entry.getKey()));
+                                    asShortObject(entry.getValue(), json, referencedIdProperty, referencedDomainClass);
+                                }
+                                writer.endObject();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        writer.endObject();
+    }
+
+    private PersistentEntity findDomainClass(Object value) {
+        if (domainClassFetchers == null) {
+            domainClassFetchers = List.of(new ByGrailsApplicationDomainClassFetcher(application), new ByDatasourceDomainClassFetcher());
+        }
+        for (DomainClassFetcher fetcher : domainClassFetchers) {
+            PersistentEntity domain = fetcher.findDomainClass(value);
+            if (domain != null) {
+                return domain;
+            }
+        }
+        return null;
+    }
+
+    private boolean shouldInclude(IncludeExcludeSupport<String> includeExcludeSupport, List<String> includes, List<String> excludes, Object object, String propertyName) {
+        return includeExcludeSupport.shouldInclude(includes, excludes, propertyName) && shouldInclude(object, propertyName);
     }
 
     /**

@@ -22,11 +22,23 @@ import java.math.RoundingMode
 import java.time.ZoneId
 
 import spock.lang.Specification
+import tools.jackson.core.JsonGenerator
+import tools.jackson.core.StreamWriteFeature
+import tools.jackson.core.json.JsonWriteFeature
+import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.SerializationFeature
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.module.SimpleModule
+import tools.jackson.databind.ser.std.StdSerializer
 
 import org.springframework.context.ApplicationContext
+import org.springframework.context.support.GenericApplicationContext
 
 import grails.converters.JSON
 import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
+import grails.core.support.proxy.DefaultProxyHandler
+import grails.core.support.proxy.ProxyHandler
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
@@ -40,12 +52,16 @@ import org.grails.web.json.PrettyPrintJSONWriter
  */
 class Grails8JsonRenderingSpec extends Specification {
 
+    private static final Map<String, Object> LEGACY = ['grails.converters.json.legacy': true]
+
     TimeZone zone
+
+    GrailsApplication grailsApplication
 
     void setup() {
         zone = TimeZone.getDefault()
         TimeZone.setDefault(TimeZone.getTimeZone('UTC'))
-        def grailsApplication = new DefaultGrailsApplication()
+        grailsApplication = new DefaultGrailsApplication()
         grailsApplication.config.setAt('grails.converters.json.legacy', true)
         grailsApplication.initialise()
         def mappingContext = new KeyValueMappingContext('json')
@@ -86,6 +102,51 @@ class Grails8JsonRenderingSpec extends Specification {
 
         then: 'with the platform line separator'
         rendered == GRAILS_8_RENDER_PRETTY.collect { it.replace('\n', PrettyPrintJSONWriter.NEWLINE) }
+    }
+
+    void "domain class instances render as Grails 8 rendered them"() {
+        expect: 'associations, embedded values, proxies, includes and excludes, deep, the version and the class name'
+        Grails8DomainRendering.renderAll(LEGACY) == GRAILS_8_DOMAIN
+    }
+
+    void "the application's JsonMapper does not change the text"() {
+        given: 'a mapper that indents, writes numbers as strings, plain BigDecimals, dates in New York and a Cover itself'
+        def context = new GenericApplicationContext()
+        context.registerBean(JsonMapper, { configuredMapper() })
+        context.registerBean(ProxyHandler, { new DefaultProxyHandler() })
+        context.refresh()
+        new ConvertersConfigurationInitializer(grailsApplication: grailsApplication, applicationContext: context).initialize()
+
+        expect:
+        (DateTimeValues.all() + other()).collect { new JSON([value: it]).toString() } == GRAILS_8_VALUES
+        pretty().collect { new JSON(it).toString(true) } == GRAILS_8_TO_STRING_PRETTY
+
+        and: 'a Code, which has a @JsonValue, and a Cover, which the mapper has a serializer for, render as beans'
+        Grails8DomainRendering.renderAll(LEGACY, [(JsonMapper): configuredMapper()]) == GRAILS_8_DOMAIN
+
+        cleanup:
+        context.close()
+    }
+
+    void "toString(false) indents when pretty printing is configured, as Grails 8 ignored the argument"() {
+        given:
+        grailsApplication.config.setAt('grails.converters.json.pretty.print', true)
+        new ConvertersConfigurationInitializer(grailsApplication: grailsApplication).initialize()
+
+        expect:
+        pretty().collect { new JSON(it).toString(false) } ==
+                GRAILS_8_RENDER_PRETTY.collect { it.replace('\n', PrettyPrintJSONWriter.NEWLINE) }
+        pretty().collect { new JSON(it).toString(true) } == GRAILS_8_TO_STRING_PRETTY
+    }
+
+    private static JsonMapper configuredMapper() {
+        JsonMapper.builder()
+                .enable(SerializationFeature.INDENT_OUTPUT)
+                .enable(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS)
+                .enable(StreamWriteFeature.WRITE_BIGDECIMAL_AS_PLAIN)
+                .defaultTimeZone(TimeZone.getTimeZone('America/New_York'))
+                .addModule(new SimpleModule().addSerializer(Cover, new CoverSerializer()))
+                .build()
     }
 
     private static List<Object> other() {
@@ -226,6 +287,23 @@ class Grails8JsonRenderingSpec extends Specification {
             '{"value":{"amount":10.50,"created":"2026-09-25T03:00:00.000Z","name":"Fred","role":"ADMIN"}}'
     ]
 
+    /**
+     * The JSON of each {@link Grails8DomainRendering} scenario, rendered by Grails 8.0.x (232bb34006), in UTC.
+     */
+    private static final List<String> GRAILS_8_DOMAIN = [
+            '{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"id":7},"editor":{"id":8},"translator":null,"chapters":[{"id":1},{"id":2}],"chaptersByName":{"one":{"id":1}},"cover":{"colour":"blue","pages":387}}',
+            '{"class":"org.grails.web.converters.json.legacy.Novel","id":1,"version":3,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"class":"org.grails.web.converters.json.legacy.Author","id":7},"editor":{"class":"org.grails.web.converters.json.legacy.Author","id":8},"translator":null,"chapters":[{"class":"org.grails.web.converters.json.legacy.Chapter","id":1},{"class":"org.grails.web.converters.json.legacy.Chapter","id":2}],"chaptersByName":{"one":{"class":"org.grails.web.converters.json.legacy.Chapter","id":1}},"cover":{"colour":"blue","pages":387}}',
+            '{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"id":7,"name":"Ursula"},"editor":{"id":8,"name":"Virginia"},"translator":null,"chapters":[{"id":1,"heading":"One"},{"id":2,"heading":"Two"}],"chaptersByName":{"one":{"id":1,"heading":"One"}},"cover":{"colour":"blue","pages":387}}',
+            '{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"id":7,"name":"Ursula"},"editor":{"id":8,"name":"Virginia"},"translator":null,"chapters":[{"id":1,"heading":"One"},{"id":2,"heading":"Two"}],"chaptersByName":{"one":{"id":1,"heading":"One"}},"cover":{"colour":"blue","pages":387}}',
+            '{"title":"The Dispossessed","author":{"id":7},"chapters":[{"id":1},{"id":2}]}',
+            '{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","author":{"id":7},"editor":{"id":8},"translator":null,"chaptersByName":{"one":{"id":1}}}',
+            '{"title":"Unsaved","published":null,"role":null,"price":null,"author":null,"editor":null,"translator":null,"chapters":null,"chaptersByName":null,"cover":null}',
+            '{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"id":7},"editor":{"id":8},"translator":null,"chapters":[{"id":1},{"id":2}],"chaptersByName":{"one":{"id":1}},"cover":{"colour":"blue","pages":387}}',
+            '[{"id":1,"title":"The Dispossessed","published":"2026-09-25T03:00:00.000Z","role":"HEAD","price":12.50,"author":{"id":7},"editor":{"id":8},"translator":null,"chapters":[{"id":1},{"id":2}],"chaptersByName":{"one":{"id":1}},"cover":{"colour":"blue","pages":387}},{"name":"Unsaved"}]',
+            '{"class java.lang.String":"class","1970-01-01T00:00:00.000Z":"date","code:k":"code"}',
+            '{"code":{"code":"k"},"cover":{"colour":"red","pages":12}}'
+    ]
+
     private static final List<String> GRAILS_8_TO_STRING_PRETTY = [
             '{\n   "a": 1,\n   "b": [\n      1,\n      2\n   ],\n   "c": {"d": "e"},\n   "emptyMap": {},\n   "text": "<\\/b>",\n   "list": [\n      {"x": 1},\n      [\n         2,\n         3\n      ]\n   ],\n   "empty": []\n}',
             '[\n   1,\n   [\n      2,\n      3\n   ],\n   {"a": 1},\n   []\n]',
@@ -258,6 +336,18 @@ class Html {
     Html(String value) { this.value = value }
 
     String value() { value }
+}
+
+class CoverSerializer extends StdSerializer<Cover> {
+
+    CoverSerializer() {
+        super(Cover)
+    }
+
+    @Override
+    void serialize(Cover cover, JsonGenerator generator, SerializationContext context) {
+        generator.writeString("cover:${cover.colour}")
+    }
 }
 
 class Holder {

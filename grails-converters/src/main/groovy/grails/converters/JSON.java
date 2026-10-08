@@ -57,6 +57,7 @@ import org.grails.web.json.JSONException;
 import org.grails.web.json.JSONObject;
 import org.grails.web.json.JSONTokener;
 import org.grails.web.json.JSONWriter;
+import org.grails.web.json.JsonDateFormat;
 import org.grails.web.json.JsonMapperSupport;
 import org.grails.web.json.PathCapturingJSONWriterWrapper;
 import org.grails.web.json.PrettyPrintJSONWriter;
@@ -238,14 +239,15 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
 
     /**
      * The JSON object key for a map key, as the JsonMapper writes it: a {@code String} key as it is, and a
-     * {@code Date} key, for example, in the mapper's date format.
+     * {@code Date} key, for example, in the mapper's date format. Rendering as Grails 8 did
+     * ({@code grails.converters.json.legacy}), a date key as a UTC instant and any other key as its {@code toString()}.
      *
      * @param key a non-null map key
      * @return the JSON object key
      * @since 9.0
      */
     public String formatKey(Object key) {
-        return getJsonMapper().formatKey(key);
+        return ConvertersConfigurationHolder.isLegacyJson() ? JsonDateFormat.formatKey(key) : getJsonMapper().formatKey(key);
     }
 
     public ObjectMarshaller<JSON> lookupObjectMarshaller(Object target) {
@@ -269,15 +271,17 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
      * @throws JSONException
      */
     public String toString(boolean prettyPrint) throws JSONException {
-        if (prettyPrint && ConvertersConfigurationHolder.isLegacyJson()) {
-            // as Grails 8 indented it
+        if (ConvertersConfigurationHolder.isLegacyJson()) {
+            // as Grails 8 rendered it: with the configured pretty printing, and indented by three spaces for true
             String json = super.toString();
-            Object value = new JSONTokener(json).nextValue();
-            if (value instanceof JSONObject jsonObject) {
-                return jsonObject.toString(3);
-            }
-            if (value instanceof JSONArray jsonArray) {
-                return jsonArray.toString(3);
+            if (prettyPrint) {
+                Object value = new JSONTokener(json).nextValue();
+                if (value instanceof JSONObject jsonObject) {
+                    return jsonObject.toString(3);
+                }
+                if (value instanceof JSONArray jsonArray) {
+                    return jsonArray.toString(3);
+                }
             }
             return json;
         }
