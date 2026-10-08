@@ -103,6 +103,14 @@ The following values render differently than in Grails 8:
 | `[{},{}]`
 | `"ab"`
 
+| An enum constant with a body, whose class is a subclass of its enum
+| an object of its bean properties
+| its name, as any enum
+
+| `tools.jackson.databind.JsonNode`
+| an object of its bean properties
+| the JSON it holds
+
 | `Optional`
 | `{"empty":false,"present":true}`
 | its value, or `null` when it is empty
@@ -179,7 +187,9 @@ The JSON converter then renders values, including domain classes, with the marsh
 indents pretty printed JSON as Grails 8 did, and writes with a default `JsonMapper`, so that the application's
 `spring.jackson.*` settings and Jackson modules do not change the text: `render ... as JSON` and `JSON#toString` return
 the same text as in Grails 8. What Grails 8 failed to render, or rendered as invalid JSON, such as a single value, `NaN`,
-or a to-many association whose value is a `Map` with other than one entry, renders as in Grails 9.
+or a to-many association whose value is a `Map` with other than one entry, renders as in Grails 9. With
+`grails.converters.json.domain.jackson.enabled` set to `true` as well, the JSON converter still renders as Grails 8 did,
+and the application's `JsonMapper` renders domain classes with the module, as described below.
 
 To keep the Grails 8 rendering of some types only, register a marshaller for each, for example in `BootStrap.init`:
 
@@ -225,9 +235,12 @@ Jackson's bean serialization applies to a domain class, the serializer applies t
 getter, and the properties that a class-level `@JsonIgnoreProperties` names, such as those GORM names in the one it adds
 to every domain class.
 * It names the properties as Jackson does, by `@JsonProperty`, `@JsonNaming` and the mapper's naming strategy
-(`spring.jackson.property-naming-strategy`).
-* It writes the type id of a domain class with `@JsonTypeInfo`, and writes the properties of a domain class instance in
-a `@JsonUnwrapped` property into the enclosing object.
+(`spring.jackson.property-naming-strategy`), and names the id of a reference as the referenced class names it.
+* It writes the type id of a domain class with `@JsonTypeInfo`. With `include = EXISTING_PROPERTY`, the type id is the
+value of that property, so it is written only when the property is persistent; a transient or computed one is not.
+* It writes the properties of a domain class instance in a `@JsonUnwrapped` property into the enclosing object. As with
+Jackson's own unwrapping, an instance with a type id fails there, unless
+`SerializationFeature.FAIL_ON_UNWRAPPED_TYPE_IDENTIFIERS` is disabled.
 * A domain class with its own `@JsonSerialize` serializer, with a `@JsonValue`, or that implements `JacksonSerializable`
 is written by Jackson, and so is a subclass of a domain class that is neither a domain class nor a proxy of one.
 

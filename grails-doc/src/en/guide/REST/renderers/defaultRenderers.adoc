@@ -154,8 +154,8 @@ Grails then registers the serializer with the mapper, as the `domainClassJackson
 * The properties that `@JsonIgnoreProperties` names are left out, as Jackson leaves them out; GORM adds that annotation
 to every domain class, naming properties such as `errors` and `tenantId`. The converter renders those with its includes
 and excludes, as before.
-* Property names follow `@JsonProperty`, `@JsonNaming` and the mapper's naming strategy. A domain class with
-`@JsonTypeInfo` is written with its type id, and an instance in a `@JsonUnwrapped` property is unwrapped.
+* Property names follow `@JsonProperty`, `@JsonNaming` and the mapper's naming strategy, also in references. A domain
+class with `@JsonTypeInfo` is written with its type id, and an instance in a `@JsonUnwrapped` property is unwrapped.
 * A domain class with its own `@JsonSerialize` serializer, with a `@JsonValue`, or that implements `JacksonSerializable`
 is written by Jackson.
 
