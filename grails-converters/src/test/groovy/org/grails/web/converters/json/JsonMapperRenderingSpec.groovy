@@ -19,12 +19,17 @@
 package org.grails.web.converters.json
 
 import java.math.RoundingMode
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.nio.file.Paths
 import java.sql.Time
 import java.time.Month
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.regex.Pattern
 
 import com.fasterxml.jackson.annotation.JsonValue
 import spock.lang.Shared
@@ -455,7 +460,11 @@ class JsonMapperRenderingSpec extends Specification {
                 Locale.forLanguageTag('zh-Hant-TW'), Currency.getInstance('USD'), String, Role.DISPATCHER,
                 Optional.of('x'), Optional.empty(), new StringBuilder('sb'),
                 BigDecimal.ONE.divide(new BigDecimal(3), 5, RoundingMode.HALF_UP), ZoneId.of('Europe/Paris'),
-                [1, 'a', null], [a: [b: [1, [c: 2]]]], [(1): 'one'], new Point(1, 2), new Html('plain')
+                [1, 'a', null], [a: [b: [1, [c: 2]]]], [(1): 'one'], new Point(1, 2), new Html('plain'),
+                ['a', 'b'] as char[], new File('/tmp/a.txt'), Paths.get('/tmp/a.txt'), Pattern.compile('a+b'),
+                StandardCharsets.UTF_8, InetAddress.getByAddress('h', [127, 0, 0, 1] as byte[]),
+                ByteBuffer.wrap([1, 2, 3] as byte[]), [(String): 'class key'],
+                [(OffsetDateTime.parse('2025-10-08T04:48:46.407-03:00')): 'keeps its offset']
         ]
     }
 }

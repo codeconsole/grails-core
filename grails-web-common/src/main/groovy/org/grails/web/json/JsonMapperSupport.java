@@ -19,6 +19,7 @@
 package org.grails.web.json;
 
 import java.io.Writer;
+import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.Map;
@@ -231,7 +232,8 @@ public final class JsonMapperSupport {
     }
 
     private static boolean isContainer(Class<?> type) {
-        return Iterable.class.isAssignableFrom(type) || Map.class.isAssignableFrom(type) ||
+        // a Path is an Iterable of its names, which Jackson writes as its URI
+        return (Iterable.class.isAssignableFrom(type) && !Path.class.isAssignableFrom(type)) || Map.class.isAssignableFrom(type) ||
                 Map.Entry.class.isAssignableFrom(type) || Iterator.class.isAssignableFrom(type) ||
                 Enumeration.class.isAssignableFrom(type) || BaseStream.class.isAssignableFrom(type) ||
                 (type.isArray() && !type.getComponentType().isPrimitive());
