@@ -70,9 +70,8 @@ class VersionInfoSpec extends Specification {
         '7.0.17' | '20207-07-31'
     }
 
-    void "test the current snapshot build reports end of support"() {
+    void "test the current build reports end of support"() {
         expect:
-        VersionInfo.isGrailsSnapshot()
         VersionInfo.getEndOfSupport().present
         !VersionInfo.getDependencyVersions().containsKey('grails.endOfSupport')
     }

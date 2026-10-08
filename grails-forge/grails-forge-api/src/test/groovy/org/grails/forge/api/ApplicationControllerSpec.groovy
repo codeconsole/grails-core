@@ -58,12 +58,12 @@ class ApplicationControllerSpec extends Specification {
         response.versions["grails.version"]
     }
 
-    void "test snapshot versions report end of support"() {
+    void "test versions report end of support"() {
         given:
         def response = client.toBlocking().retrieve(HttpRequest.GET('/versions'), Map)
 
         expect:
-        response.versions["grails.version"].endsWith('-SNAPSHOT')
+        response.versions["grails.version"] == VersionInfo.getGrailsVersion()
         LocalDate.parse(response.endOfSupport) == VersionInfo.getEndOfSupport().get()
         !response.versions.containsKey("grails.endOfSupport")
     }
