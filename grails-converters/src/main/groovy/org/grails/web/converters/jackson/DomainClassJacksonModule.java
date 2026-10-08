@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import tools.jackson.core.Version;
 import tools.jackson.databind.BeanDescription;
 import tools.jackson.databind.JacksonModule;
+import tools.jackson.databind.JacksonSerializable;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.SerializationConfig;
 import tools.jackson.databind.ValueSerializer;
@@ -36,7 +37,9 @@ import tools.jackson.databind.ser.Serializers;
  * {@code JsonMapper}, so that writing a domain class instance with the mapper, including returning one from a
  * Spring MVC controller, renders it as {@code render ... as JSON} does.
  *
- * <p>A domain class with its own {@code @JsonSerialize} serializer keeps it.
+ * <p>A domain class with its own {@code @JsonSerialize} serializer keeps it, and so does one with a
+ * {@code @JsonValue}, or that implements {@code JacksonSerializable}, which Jackson writes as it writes any class. A
+ * subclass of a domain class that is neither a domain class nor a proxy class of one is written as a Jackson bean.
  *
  * @since 9.0
  */
@@ -86,15 +89,29 @@ public class DomainClassJacksonModule extends JacksonModule {
         @Override
         public ValueSerializer<?> findSerializer(SerializationConfig config, JavaType type,
                 BeanDescription.Supplier beanDescRef, JsonFormat.Value formatOverrides) {
+            Class<?> raw = type.getRawClass();
+            if (JacksonSerializable.class.isAssignableFrom(raw)) {
+                return null;
+            }
             DomainClassSerializer domainClassSerializer = serializer();
-            return domainClassSerializer.getRendering().isDomainClass(type.getRawClass()) ? domainClassSerializer : null;
+            if (!domainClassSerializer.getRendering().isDomainClass(raw)) {
+                return null;
+            }
+            // Jackson applies a @JsonValue after the serializers of modules, so a domain class with one is left to it
+            return beanDescRef.get().findJsonValueAccessor() == null ? domainClassSerializer : null;
         }
 
+        /**
+         * The serializer, with the rendering the supplier gives once the application is available: a rendering
+         * supplied before, such as for a type the mapper meets at startup, is not kept, as it knows no domain classes.
+         */
         private DomainClassSerializer serializer() {
             DomainClassSerializer current = serializer;
             if (current == null) {
                 current = new DomainClassSerializer(rendering.get());
-                serializer = current;
+                if (current.getRendering().hasApplication()) {
+                    serializer = current;
+                }
             }
             return current;
         }

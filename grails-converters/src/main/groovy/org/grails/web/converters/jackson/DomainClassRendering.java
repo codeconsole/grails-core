@@ -27,6 +27,8 @@ import groovy.lang.GroovyObject;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import org.springframework.util.ClassUtils;
+
 import grails.core.GrailsApplication;
 import grails.core.support.proxy.DefaultProxyHandler;
 import grails.core.support.proxy.EntityProxyHandler;
@@ -35,6 +37,7 @@ import org.grails.core.artefact.DomainClassArtefactHandler;
 import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.datastore.mapping.model.PersistentProperty;
 import org.grails.datastore.mapping.model.config.GormProperties;
+import org.grails.datastore.mapping.proxy.EntityProxy;
 import org.grails.datastore.mapping.reflect.ClassPropertyFetcher;
 import org.grails.web.converters.ConverterUtil;
 import org.grails.web.converters.marshaller.ByDatasourceDomainClassFetcher;
@@ -56,6 +59,8 @@ import org.grails.web.converters.marshaller.DomainClassFetcher;
  * @since 9.0
  */
 public class DomainClassRendering {
+
+    private static final String HIBERNATE_PROXY = "org.hibernate.proxy.HibernateProxy";
 
     private static final ClassValue<Set<String>> IGNORED_PROPERTIES = new ClassValue<>() {
         @Override
@@ -134,15 +139,46 @@ public class DomainClassRendering {
 
     /**
      * @param type a type
-     * @return whether the type is a domain class, or a proxy class of one
+     * @return whether the type is a domain class, or a proxy class of one; another subclass of a domain class is not
      */
     public boolean isDomainClass(Class<?> type) {
         if (grailsApplication == null) {
             return false;
         }
-        for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
-            if (grailsApplication.isArtefactOfType(DomainClassArtefactHandler.TYPE,
-                    ConverterUtil.trimProxySuffix(current.getName()))) {
+        if (isArtefact(type)) {
+            return true;
+        }
+        if (!isProxyClass(type)) {
+            return false;
+        }
+        for (Class<?> current = type.getSuperclass(); current != null && current != Object.class; current = current.getSuperclass()) {
+            if (isArtefact(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return whether the rendering knows the application's domain classes
+     */
+    boolean hasApplication() {
+        return grailsApplication != null;
+    }
+
+    private boolean isArtefact(Class<?> type) {
+        return grailsApplication.isArtefactOfType(DomainClassArtefactHandler.TYPE, ConverterUtil.trimProxySuffix(type.getName()));
+    }
+
+    /**
+     * Whether the type is a GORM or Hibernate proxy class, which subclasses the class it proxies.
+     */
+    private static boolean isProxyClass(Class<?> type) {
+        if (EntityProxy.class.isAssignableFrom(type)) {
+            return true;
+        }
+        for (Class<?> implemented : ClassUtils.getAllInterfacesForClassAsSet(type)) {
+            if (HIBERNATE_PROXY.equals(implemented.getName())) {
                 return true;
             }
         }

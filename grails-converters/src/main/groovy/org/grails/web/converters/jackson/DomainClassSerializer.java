@@ -24,24 +24,32 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.type.WritableTypeId;
 import tools.jackson.databind.JacksonSerializable;
 import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.introspect.BeanPropertyDefinition;
 import tools.jackson.databind.jsontype.TypeSerializer;
 import tools.jackson.databind.ser.std.StdSerializer;
+import tools.jackson.databind.util.NameTransformer;
 
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
@@ -68,6 +76,12 @@ import org.grails.datastore.mapping.reflect.ReflectionUtils;
  *
  * <p>A property annotated with {@code @JsonIgnore}, or with {@code @JsonProperty(access = WRITE_ONLY)}, on its field
  * or getter, is not written. The {@link DomainClassRendering} decides about the others.
+ *
+ * <p>Written by a mapper, rather than by the JSON converter, an instance's property names are those Jackson gives the
+ * class's properties, so the mapper's naming strategy, {@code @JsonNaming} and {@code @JsonProperty} names apply. The
+ * properties are written in the converter's order, whether or not the mapper sorts properties. The serializer writes
+ * the type id of a class with {@code @JsonTypeInfo}, and can write an instance's properties into an enclosing object,
+ * for a property annotated with {@code @JsonUnwrapped}.
  *
  * @since 9.0
  */
@@ -98,12 +112,21 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
 
     private final DomainClassRendering rendering;
 
+    private final NameTransformer unwrapper;
+
+    private final Map<Class<?>, Names> namesByType = new ConcurrentHashMap<>();
+
     /**
      * @param rendering how to render domain class instances
      */
     public DomainClassSerializer(DomainClassRendering rendering) {
+        this(rendering, null);
+    }
+
+    private DomainClassSerializer(DomainClassRendering rendering, NameTransformer unwrapper) {
         super(Object.class);
         this.rendering = rendering;
+        this.unwrapper = unwrapper;
     }
 
     /**
@@ -137,15 +160,53 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
     }
 
     @Override
+    public ValueSerializer<Object> unwrappingSerializer(NameTransformer nameTransformer) {
+        return new DomainClassSerializer(rendering,
+                unwrapper == null ? nameTransformer : NameTransformer.chainedTransformer(nameTransformer, unwrapper));
+    }
+
+    @Override
+    public boolean isUnwrappingSerializer() {
+        return unwrapper != null;
+    }
+
+    @Override
     public void serialize(Object value, JsonGenerator gen, SerializationContext ctxt) {
         Object object = rendering.unwrap(value);
+        boolean wrapped = unwrapper == null;
+        if (wrapped) {
+            gen.writeStartObject(object);
+        }
+        writeContents(object, gen, ctxt);
+        if (wrapped) {
+            gen.writeEndObject();
+        }
+    }
+
+    @Override
+    public void serializeWithType(Object value, JsonGenerator gen, SerializationContext ctxt, TypeSerializer typeSer) {
+        if (unwrapper != null) {
+            serialize(value, gen, ctxt);
+            return;
+        }
+        Object object = rendering.unwrap(value);
+        WritableTypeId typeId = typeSer.writeTypePrefix(gen, ctxt, typeSer.typeId(object, JsonToken.START_OBJECT));
+        writeContents(object, gen, ctxt);
+        typeSer.writeTypeSuffix(gen, ctxt, typeId);
+    }
+
+    /**
+     * Writes an instance's properties, or a reference to it when it is already being written further up.
+     */
+    private void writeContents(Object object, JsonGenerator gen, SerializationContext ctxt) {
+        Names names = names(object.getClass(), ctxt);
         Set<Object> instances = renderingInstances(ctxt);
         if (!instances.add(object)) {
-            writeReference(object, entity(object, rendering), gen, rendering);
+            writeReferenceProperties(object, entity(object, rendering), gen, rendering, names);
             return;
         }
         try {
-            write(object, gen, ctxt, rendering);
+            writeProperties(object, gen, ctxt, rendering, names);
         }
         finally {
             instances.remove(object);
@@ -155,27 +216,32 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
     private static void write(Object value, JsonGenerator gen, SerializationContext ctxt,
             DomainClassRendering rendering) {
         Object object = rendering.unwrap(value);
+        gen.writeStartObject(object);
+        writeProperties(object, gen, ctxt, rendering, Names.AS_THEY_ARE);
+        gen.writeEndObject();
+    }
+
+    private static void writeProperties(Object object, JsonGenerator gen, SerializationContext ctxt,
+            DomainClassRendering rendering, Names names) {
         PersistentEntity entity = entity(object, rendering);
         Set<String> ignored = IGNORED_PROPERTIES.get(object.getClass());
-        gen.writeStartObject(object);
+        List<WrittenProperty> fields = new ArrayList<>();
         if (rendering.isIncludeClass() && rendering.includes(object, "class")) {
-            gen.writeStringProperty("class", object.getClass().getName());
+            fields.add(new WrittenProperty("class", object.getClass().getName(), null, true));
         }
         // a composite key has no identity, and is not written
         PersistentProperty identity = entity.getIdentity();
         if (identity != null && !ignored.contains(identity.getName()) && rendering.includes(object, identity.getName())) {
             Object id = rendering.propertyValue(object, identity);
             if (id != null) {
-                gen.writeName(identity.getName());
-                gen.writePOJO(id);
+                fields.add(new WrittenProperty(identity.getName(), id, null, false));
             }
         }
         if (rendering.isIncludeVersion() && !ignored.contains(GormProperties.VERSION) &&
                 rendering.includes(object, GormProperties.VERSION)) {
             Object version = rendering.propertyValue(object, entity.getVersion());
             if (version != null) {
-                gen.writeName(GormProperties.VERSION);
-                gen.writePOJO(version);
+                fields.add(new WrittenProperty(GormProperties.VERSION, version, null, false));
             }
         }
         BeanWrapper bean = new BeanWrapperImpl(object);
@@ -184,16 +250,34 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
                     !rendering.includes(object, property.getName())) {
                 continue;
             }
-            gen.writeName(property.getName());
-            Object propertyValue = bean.getPropertyValue(property.getName());
-            if (property instanceof Association<?> association && propertyValue != null) {
-                writeAssociation(association, propertyValue, gen, ctxt, rendering);
+            fields.add(new WrittenProperty(property.getName(), bean.getPropertyValue(property.getName()),
+                    property instanceof Association<?> association ? association : null, false));
+        }
+        for (WrittenProperty field : fields) {
+            gen.writeName(names.name(field.name()));
+            if (field.association() != null && field.value() != null) {
+                writeAssociation(field.association(), field.value(), gen, ctxt, rendering);
+            }
+            else if (field.className()) {
+                gen.writeString((String) field.value());
             }
             else {
-                gen.writePOJO(propertyValue);
+                gen.writePOJO(field.value());
             }
         }
-        gen.writeEndObject();
+    }
+
+    /**
+     * The names this serializer writes an instance's properties with.
+     */
+    private Names names(Class<?> type, SerializationContext ctxt) {
+        return namesByType.computeIfAbsent(type, t -> {
+            Map<String, String> external = new HashMap<>();
+            for (BeanPropertyDefinition property : ctxt.introspectBeanDescription(ctxt.constructType(t)).findProperties()) {
+                external.put(property.getInternalName(), property.getName());
+            }
+            return new Names(external, unwrapper);
+        });
     }
 
     private static void writeAssociation(Association<?> association, Object value, JsonGenerator gen,
@@ -234,18 +318,25 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
             gen.writeNull();
             return;
         }
-        PersistentProperty identity = entity.getIdentity();
-        if (rendering.writeReference(reference, identity, entity)) {
+        if (rendering.writeReference(reference, entity.getIdentity(), entity)) {
             return;
         }
-        Object id = rendering.referenceId(reference, identity);
         gen.writeStartObject();
+        writeReferenceProperties(reference, entity, gen, rendering, Names.AS_THEY_ARE);
+        gen.writeEndObject();
+    }
+
+    private static void writeReferenceProperties(Object reference, PersistentEntity entity, JsonGenerator gen,
+            DomainClassRendering rendering, Names names) {
+        Object id = rendering.referenceId(reference, entity.getIdentity());
         if (rendering.isIncludeClass()) {
-            gen.writeStringProperty("class", entity.getName());
+            gen.writeStringProperty(names.name("class"), entity.getName());
         }
         if (id != null) {
-            gen.writeName("id");
-            // an id that is not a number, such as a MongoDB ObjectId, is written as its string
+            gen.writeName(names.name("id"));
+            // DomainClassMarshaller wrote the id of a reference with the converter's writer, which quotes the string of
+            // an id that is not a number, such as a MongoDB ObjectId; the id of an instance itself is written as any
+            // other value, by the mapper, as the converter rendered it in Grails 8 as well
             if (id instanceof Number || id instanceof Boolean) {
                 gen.writePOJO(id);
             }
@@ -253,7 +344,6 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
                 gen.writeString(id.toString());
             }
         }
-        gen.writeEndObject();
     }
 
     private static void writeKey(Object key, JsonGenerator gen, SerializationContext ctxt) {
@@ -307,6 +397,36 @@ public final class DomainClassSerializer extends StdSerializer<Object> {
             return new ArrayList(collection);
         }
         return value;
+    }
+
+    /**
+     * A property of an instance to write: its name, its value, its association, if it is one, and whether it is the
+     * class name, which is written as it is.
+     */
+    private record WrittenProperty(String name, Object value, Association<?> association, boolean className) {
+    }
+
+    /**
+     * The names to write an instance's properties with: those Jackson gives the class's properties, passed through the
+     * name transformer of an unwrapping serializer, or the property names as they are.
+     */
+    private static final class Names {
+
+        private static final Names AS_THEY_ARE = new Names(Map.of(), null);
+
+        private final Map<String, String> external;
+
+        private final NameTransformer unwrapper;
+
+        private Names(Map<String, String> external, NameTransformer unwrapper) {
+            this.external = external;
+            this.unwrapper = unwrapper;
+        }
+
+        private String name(String property) {
+            String name = external.getOrDefault(property, property);
+            return unwrapper != null ? unwrapper.transform(name) : name;
+        }
     }
 
     @SuppressWarnings("unchecked")

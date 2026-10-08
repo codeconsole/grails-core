@@ -21,9 +21,15 @@ package org.grails.web.converters.jackson
 import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.annotation.JsonUnwrapped
+import com.fasterxml.jackson.annotation.JsonValue
 import spock.lang.Specification
 import tools.jackson.core.JsonGenerator
+import tools.jackson.databind.MapperFeature
+import tools.jackson.databind.PropertyNamingStrategies
 import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.annotation.JsonNaming
 import tools.jackson.databind.annotation.JsonSerialize
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.ser.std.StdSerializer
@@ -38,6 +44,7 @@ import grails.core.support.proxy.EntityProxyHandler
 import grails.persistence.Entity
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
+import org.grails.datastore.mapping.proxy.EntityProxy
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
@@ -135,6 +142,96 @@ class DomainClassJacksonModuleSpec extends Specification {
         mapper().writeValueAsString(label) == '"label:x"'
     }
 
+    void "a domain class with @JsonTypeInfo is written with its type id, itself and through a property of its superclass"() {
+        given:
+        def dog = new Dog(name: 'Rex')
+        dog.id = 2
+
+        expect:
+        mapper().writeValueAsString(dog) == '{"@type":"Dog","id":2,"name":"Rex"}'
+        mapper().writeValueAsString(new Pet(animal: dog)) == '{"animal":{"@type":"Dog","id":2,"name":"Rex"}}'
+    }
+
+    void "a domain class with a @JsonValue is written by Jackson"() {
+        given:
+        def code = new Code(code: 'X1')
+        code.id = 1
+
+        expect:
+        mapper().writeValueAsString(code) == '"X1"'
+    }
+
+    void "a domain instance in a @JsonUnwrapped property is written into the enclosing object"() {
+        given:
+        def writer = new Writer(name: 'a')
+        writer.id = 1
+
+        expect: 'in the place of the property, in the order the mapper writes the properties of the enclosing bean'
+        mapper().writeValueAsString(new Unwrapped(writer: writer, prefixed: writer, note: 'n')) ==
+                '{"note":"n","w_id":1,"w_name":"a","id":1,"name":"a"}'
+    }
+
+    void "the mapper's naming strategy, @JsonNaming and @JsonProperty name the properties the mapper writes"() {
+        given:
+        def snakeCase = JsonMapper.builder()
+                .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .addModule(new DomainClassJacksonModule(ConvertersConfigurationInitializer.jsonDomainClassRendering(grailsApplication, new DefaultProxyHandler())))
+                .build()
+        def shelf = new Shelf(name: 'top')
+        shelf.id = 3
+        def titled = new Titled(bookTitle: 'G', shelf: shelf, subTitle: 's')
+        titled.id = 1
+        def kebab = new Kebab(bookTitle: 'K')
+        kebab.id = 4
+
+        expect:
+        snakeCase.writeValueAsString(titled) == '{"id":1,"book_title":"G","shelf":{"id":3},"subtitle":"s"}'
+        mapper().writeValueAsString(kebab) == '{"id":4,"book-title":"K"}'
+
+        and: 'the JSON converter writes the property names as they are'
+        new JSON(titled).toString() == '{"id":1,"bookTitle":"G","shelf":{"id":3},"subTitle":"s"}'
+    }
+
+    void "the properties are written in the converter's order, whether or not the mapper sorts properties"() {
+        given: 'Jackson 3 sorts the properties of beans alphabetically by default'
+        def unsorted = JsonMapper.builder()
+                .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+                .addModule(new DomainClassJacksonModule(ConvertersConfigurationInitializer.jsonDomainClassRendering(grailsApplication, new DefaultProxyHandler())))
+                .build()
+        def expected = '{"id":1,"title":"Grails","shelf":{"id":3},"writers":[{"id":1},{"id":2}],"writersByName":{"a":{"id":1},"b":{"id":2}}}'
+
+        expect:
+        JsonMapper.builder().build().isEnabled(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+        mapper().writeValueAsString(volume()) == expected
+        unsorted.writeValueAsString(volume()) == expected
+    }
+
+    void "a subclass of a domain class that is not one is written as a bean, and rendered as one by the converter"() {
+        given:
+        def subclass = new VolumeSubclass(title: 'Sub', extra: 'e')
+
+        when:
+        def mapped = mapper().writeValueAsString(subclass)
+        def rendered = new JSON(subclass).toString()
+
+        then:
+        mapped.contains('"extra":"e"')
+        rendered.contains('"extra":"e"')
+    }
+
+    void "an instance of a domain subclass is written as its own domain class, also through a property of its superclass"() {
+        given:
+        def dog = new Dog(name: 'Rex')
+        dog.id = 2
+        def kennel = new Kennel(resident: dog)
+        kennel.id = 5
+
+        expect: 'as a reference, or in full when rendering deep'
+        mapper().writeValueAsString(kennel) == '{"id":5,"resident":{"id":2}}'
+        mapper(new DomainClassRendering(grailsApplication, new DefaultProxyHandler(), false, false, true))
+                .writeValueAsString(kennel) == '{"id":5,"resident":{"@type":"Dog","id":2,"name":"Rex"}}'
+    }
+
     void "the JSON converter writes the includes and excludes of the converter"() {
         given:
         def json = new JSON(volume())
@@ -175,10 +272,12 @@ class DomainClassJacksonModuleSpec extends Specification {
     }
 
     private GrailsApplication domainApplication() {
-        def grailsApplication = new DefaultGrailsApplication(Volume, Shelf, Writer, Partner, Label, Member)
+        def grailsApplication = new DefaultGrailsApplication(Volume, Shelf, Writer, Partner, Label, Member, Animal, Dog, Code,
+                Titled, Kebab, Kennel)
         grailsApplication.initialise()
         def mappingContext = new KeyValueMappingContext('json')
-        mappingContext.addPersistentEntities(Volume, Shelf, Writer, Partner, Label, Member)
+        mappingContext.addPersistentEntities(Volume, Shelf, Writer, Partner, Label, Member, Animal, Dog, Code, Titled, Kebab,
+                Kennel)
         grailsApplication.setApplicationContext(Stub(ApplicationContext) {
             getBean('grailsDomainClassMappingContext', MappingContext) >> mappingContext
         })
@@ -241,10 +340,70 @@ class LabelSerializer extends StdSerializer<Label> {
     }
 }
 
-class WriterProxy extends Writer {
+@Entity
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
+class Animal {
+}
+
+@Entity
+class Dog extends Animal {
+    String name
+}
+
+class Pet {
+    Animal animal
+}
+
+@Entity
+class Kennel {
+    Animal resident
+}
+
+@Entity
+class Code {
+    String code
+
+    @JsonValue
+    String jsonValue() { code }
+}
+
+class Unwrapped {
+    @JsonUnwrapped
+    Writer writer
+    @JsonUnwrapped(prefix = 'w_')
+    Writer prefixed
+    String note
+}
+
+@Entity
+class Titled {
+    String bookTitle
+    Shelf shelf
+    @JsonProperty('subtitle')
+    String subTitle
+}
+
+@Entity
+@JsonNaming(PropertyNamingStrategies.KebabCaseStrategy)
+class Kebab {
+    String bookTitle
+}
+
+class VolumeSubclass extends Volume {
+    String extra
+}
+
+class WriterProxy extends Writer implements EntityProxy<Writer> {
     Writer target
     Long proxyId
+
+    void initialize() {}
+
+    boolean isInitialized() { target != null }
+
+    Serializable getProxyKey() { proxyId }
 }
+
 
 class WriterProxyHandler implements EntityProxyHandler {
 
