@@ -106,6 +106,7 @@ include(
         'grails-services',
         'grails-shell-cli',
         'grails-spring',
+        'grails-startup-progress',
         'grails-test-core',
         'grails-undertow',
         'grails-undertow-spring-boot',
@@ -587,6 +588,8 @@ include(
         'grails-test-examples-plugins-loadfirst',
         'grails-test-examples-plugins-loadsecond',
         'grails-test-examples-config-report',
+        'grails-test-examples-context-hierarchy',
+        'grails-test-examples-context-hierarchy-cli',
         'grails-test-examples-quartz',
         'grails-test-examples-scaffolding',
         'grails-test-examples-scaffolding-fields',
@@ -594,6 +597,9 @@ include(
         'grails-test-examples-undertow',
         'grails-test-examples-views-functional-tests',
         'grails-test-examples-views-functional-tests-plugin',
+        'grails-test-examples-startup-progress',
+        'grails-test-examples-welcome-page',
+        'grails-test-examples-welcome-page-jetty',
 )
 project(':grails-test-examples-async-events-pubsub-demo').projectDir = file('grails-test-examples/async-events-pubsub-demo')
 project(':grails-test-examples-benchmarks').projectDir = file('grails-test-examples/benchmarks')
@@ -634,6 +640,8 @@ project(':grails-test-examples-issue-10279').projectDir = file('grails-test-exam
 project(':grails-test-examples-plugins-exploded').projectDir = file('grails-test-examples/plugins/exploded')
 project(':grails-test-examples-cache').projectDir = file('grails-test-examples/cache')
 project(':grails-test-examples-config-report').projectDir = file('grails-test-examples/config-report')
+project(':grails-test-examples-context-hierarchy').projectDir = file('grails-test-examples/context-hierarchy')
+project(':grails-test-examples-context-hierarchy-cli').projectDir = file('grails-test-examples/context-hierarchy-cli')
 project(':grails-test-examples-scaffolding').projectDir = file('grails-test-examples/scaffolding')
 project(':grails-test-examples-scaffolding-fields').projectDir = file('grails-test-examples/scaffolding-fields')
 project(':grails-test-examples-views-functional-tests').projectDir = file('grails-test-examples/views-functional-tests')
@@ -641,6 +649,9 @@ project(':grails-test-examples-views-functional-tests-plugin').projectDir = file
 project(':grails-test-examples-test-phases').projectDir = file('grails-test-examples/test-phases')
 project(':grails-test-examples-jetty').projectDir = file('grails-test-examples/jetty')
 project(':grails-test-examples-undertow').projectDir = file('grails-test-examples/undertow')
+project(':grails-test-examples-startup-progress').projectDir = file('grails-test-examples/startup-progress')
+project(':grails-test-examples-welcome-page').projectDir = file('grails-test-examples/welcome-page')
+project(':grails-test-examples-welcome-page-jetty').projectDir = file('grails-test-examples/welcome-page-jetty')
 project(':grails-test-examples-latency').projectDir = file('grails-test-examples/latency')
 project(':grails-test-examples-openapi').projectDir = file('grails-test-examples/openapi')
 project(':grails-test-examples-openapi-rest-api').projectDir = file('grails-test-examples/openapi-rest-api')

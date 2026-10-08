@@ -79,10 +79,11 @@ jobs:
         with:
           # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
           # Keyed by branch version so each release branch maintains its own warm cache.
+          # Fixed-depth paths: the post step re-hashes after the build, where a `**` glob walks every output and times out.
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
-          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('dependencies.gradle', 'gradle/wrapper/gradle-wrapper.properties', '*/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
