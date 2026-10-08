@@ -134,6 +134,10 @@ To read a whole list, use `grailsApplication.config.getProperty('grails.cors.all
 `@ConfigurationProperties`. Spring's `Environment` exposes non-empty YAML lists through indexed properties such as
 `grails.cors.allowedOrigins[0]`. A list nested in a list uses one index per level, such as `app.groups[0][1]`.
 
+Because the list itself is not a property of the `Environment`, a `@Value('${grails.cors.allowedOrigins}')` placeholder
+cannot inject it, just as in a plain Spring Boot application. Bind the list with `@ConfigurationProperties` or with Spring Boot's
+`Binder`, or write the value as one comma-separated string where a `@Value` placeholder must read it.
+
 === Configuration Metadata
 
 Grails framework modules publish standard Spring Boot configuration metadata in
