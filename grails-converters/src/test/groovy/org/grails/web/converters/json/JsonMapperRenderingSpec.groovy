@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonValue
 import spock.lang.Shared
 import spock.lang.Specification
@@ -44,6 +46,7 @@ import tools.jackson.databind.ser.std.StdSerializer
 
 import org.springframework.context.ApplicationContext
 import org.springframework.context.support.GenericApplicationContext
+import org.springframework.validation.BeanPropertyBindingResult
 
 import grails.converters.JSON
 import grails.core.DefaultGrailsApplication
@@ -57,6 +60,7 @@ import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.exceptions.ConverterException
 import org.grails.web.converters.marshaller.ClosureObjectMarshaller
 import org.grails.web.converters.marshaller.ObjectMarshaller
+import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller
 import org.grails.web.json.DateTimeValues
 import org.grails.web.json.JSONWriter
 
@@ -310,6 +314,60 @@ class JsonMapperRenderingSpec extends Specification {
                 '{"month":"MAY","locale":"zh_TW_#Hant","bytes":[1,2,3]}'
     }
 
+    void "a marshaller registered with an explicit negative priority comes after the default marshallers"() {
+        given: 'default marshallers have the priorities -1, -2, and so on'
+        def context = applicationContext {
+            it.registerBean(ObjectMarshallerRegisterer, {
+                new ObjectMarshallerRegisterer(converterClass: JSON, priority: -100,
+                        marshaller: new ClosureObjectMarshaller<JSON>(Date, { Date date -> date.time }))
+            })
+        }
+        initialize([:], context)
+
+        expect: 'the mapper renders the date'
+        new JSON([date: new Date(1759909726407L)]).toString() == '{"date":"2025-10-08T07:48:46.407Z"}'
+
+        cleanup:
+        context.close()
+    }
+
+    void "the validation errors marshaller takes precedence over a module serializer for Errors"() {
+        given: 'the errors marshaller registered as the converters plugin registers it'
+        def context = applicationContext {
+            it.registerBean(JsonMapper, {
+                JsonMapper.builder().addModule(new SimpleModule().addSerializer(BeanPropertyBindingResult, new MapperErrorsSerializer())).build()
+            })
+            it.registerBean(ObjectMarshallerRegisterer, {
+                new ObjectMarshallerRegisterer(converterClass: JSON, marshaller: new ValidationErrorsMarshaller())
+            })
+        }
+        initialize([:], context)
+        def errors = new BeanPropertyBindingResult(new Object(), 'test')
+        errors.reject('failed', 'Error happening on test object.')
+
+        expect:
+        new JSON(errors).toString() == '{"errors":[{"object":"test","message":"Error happening on test object."}]}'
+
+        cleanup:
+        context.close()
+    }
+
+    void "a Throwable is rendered by the bean marshallers, as in Grails 8"() {
+        given:
+        def error = new IllegalStateException('boom')
+        def rendered = new JSON([error: error]).toString()
+        initialize(['grails.converters.json.legacy': true])
+
+        expect:
+        rendered.contains('"message":"boom"')
+        rendered == new JSON([error: error]).toString()
+    }
+
+    void "a record renders as an object of its components, without the Jackson annotations on them"() {
+        expect:
+        new JSON([person: new Person('Ada', 'x')]).toString() == '{"person":{"firstName":"Ada","ssn":"x"}}'
+    }
+
     void "a marshaller an ObjectMarshallerRegisterer registers takes precedence"() {
         given:
         def context = applicationContext {
@@ -492,6 +550,20 @@ enum Labelled {
 record Point(int x, int y) {}
 
 record Dated(Date when) {}
+
+record Person(@JsonProperty('first_name') String firstName, @JsonIgnore String ssn) {}
+
+class MapperErrorsSerializer extends StdSerializer<BeanPropertyBindingResult> {
+
+    MapperErrorsSerializer() {
+        super(BeanPropertyBindingResult)
+    }
+
+    @Override
+    void serialize(BeanPropertyBindingResult errors, JsonGenerator generator, SerializationContext context) {
+        generator.writeString('written by the mapper')
+    }
+}
 
 class Html {
     final String value

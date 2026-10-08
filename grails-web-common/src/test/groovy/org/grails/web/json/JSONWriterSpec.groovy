@@ -30,6 +30,8 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.module.SimpleModule
 import tools.jackson.databind.ser.std.StdSerializer
 
+import org.grails.buffer.StreamCharBuffer
+
 class JSONWriterSpec extends Specification {
 
     StringWriter out = new StringWriter()
@@ -111,6 +113,18 @@ class JSONWriterSpec extends Specification {
         then:
         path == '.list[0].a'
         out.toString() == '{"list":[{"a":1}]}'
+    }
+
+    void "a GString and a StreamCharBuffer are escaped for an HTML script element, as in Grails 8"() {
+        given:
+        def buffer = new StreamCharBuffer()
+        buffer.writer.write('</b> ')
+
+        when:
+        writer.array().value("</a>${1} ").value(buffer).value('</c> ').endArray()
+
+        then: 'by the Grails JavaScript encoder, as JSONWriter quoted them in Grails 8, and a String by the generator'
+        out.toString() == '["<\\/a>1\\u2028","<\\/b>\\u2028","<\\u002fc>\\u2028"]'
     }
 
     void "a single value is a JSON text, written without a flush"() {

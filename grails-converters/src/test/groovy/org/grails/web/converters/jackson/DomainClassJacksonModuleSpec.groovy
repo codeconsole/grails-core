@@ -232,6 +232,21 @@ class DomainClassJacksonModuleSpec extends Specification {
                 .writeValueAsString(kennel) == '{"id":5,"resident":{"@type":"Dog","id":2,"name":"Rex"}}'
     }
 
+    void "JSON.use('deep') renders associated instances in full with the converter"() {
+        expect:
+        JSON.use('deep') { new JSON(volume()).toString() } ==
+                '{"id":1,"title":"Grails","shelf":{"id":3,"name":"top"},"writers":[{"id":1,"name":"a"},{"id":2,"name":"b"}],"writersByName":{"a":{"id":1,"name":"a"},"b":{"id":2,"name":"b"}}}'
+    }
+
+    void "a domain class with a composite key is written without an id"() {
+        given:
+        def pair = new Pair(first: 'a', second: 'b')
+
+        expect:
+        new JSON(pair).toString() == '{"first":"a","second":"b"}'
+        mapper().writeValueAsString(pair) == '{"first":"a","second":"b"}'
+    }
+
     void "the JSON converter writes the includes and excludes of the converter"() {
         given:
         def json = new JSON(volume())
@@ -273,11 +288,11 @@ class DomainClassJacksonModuleSpec extends Specification {
 
     private GrailsApplication domainApplication() {
         def grailsApplication = new DefaultGrailsApplication(Volume, Shelf, Writer, Partner, Label, Member, Animal, Dog, Code,
-                Titled, Kebab, Kennel)
+                Titled, Kebab, Kennel, Pair)
         grailsApplication.initialise()
         def mappingContext = new KeyValueMappingContext('json')
         mappingContext.addPersistentEntities(Volume, Shelf, Writer, Partner, Label, Member, Animal, Dog, Code, Titled, Kebab,
-                Kennel)
+                Kennel, Pair)
         grailsApplication.setApplicationContext(Stub(ApplicationContext) {
             getBean('grailsDomainClassMappingContext', MappingContext) >> mappingContext
         })
@@ -387,6 +402,16 @@ class Titled {
 @JsonNaming(PropertyNamingStrategies.KebabCaseStrategy)
 class Kebab {
     String bookTitle
+}
+
+@Entity
+class Pair implements Serializable {
+    String first
+    String second
+
+    static mapping = {
+        id composite: ['first', 'second']
+    }
 }
 
 class VolumeSubclass extends Volume {

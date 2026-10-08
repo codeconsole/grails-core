@@ -79,7 +79,8 @@ Why the separation between converters and renderers? Well a renderer has more fl
 The JSON converter writes JSON through the application's Jackson `JsonMapper`, the one Spring Boot auto-configures, so a
 Grails application and a Spring Boot application return the same JSON for the same values. The mapper writes every
 single value it has a dedicated serializer for, such as dates and times, `Month`, `UUID`, `Locale`, `byte[]`, types with
-a `@JsonValue` and the types of Jackson modules registered with the application, and it formats and pretty prints the
+a `@JsonValue` other than enums and the types of Jackson modules registered with the application, and it formats and
+pretty prints the
 JSON text. `spring.jackson.*` properties therefore configure `render ... as JSON` as well:
 
 [source,yaml]
@@ -90,8 +91,9 @@ spring:
 ----
 
 Domain classes are rendered by a Jackson serializer that Grails provides, as described below. Beans, enums, records,
-`Optional`, collections and maps are rendered by Grails marshallers, and the values they contain as any other value is. Enums render by `name()`, so that the JSON binds back to them, and strings are
-escaped for an HTML `<script>` element (`</` is written as `<\u002f`). To render a type differently, register an object
+`Optional`, collections and maps are rendered by Grails marshallers, and the values they contain as any other value is.
+Enums render by `name()`, so that the JSON binds back to them, and strings are escaped for an HTML `<script>` element
+(`</` is written as `<\u002f`). To render a type differently, register an object
 marshaller for it, which takes precedence over the mapper, for example in `BootStrap.init`:
 
 [source,groovy]
@@ -106,8 +108,8 @@ such as the properties of its type, are rendered as any other value is, so objec
 object marshaller registered for the type itself takes precedence over the serializer.
 
 Setting `grails.converters.json.date` to `javascript` renders `java.util.Date` values as JavaScript `new Date(...)`
-constructors instead. Setting `grails.converters.json.legacy` to `true` renders JSON as Grails 8 did, while you migrate;
-the upgrade guide lists the differences.
+constructors instead. Setting `grails.converters.json.legacy` to `true` renders JSON as Grails 8 did; the upgrade guide
+lists the differences.
 
 Parsing is not affected: `JSON.parse` and `request.JSON` parse with Grails' own parser, which also accepts JSON that
 strict parsers reject, such as single-quoted strings and comments.
@@ -116,9 +118,7 @@ strict parsers reject, such as single-quoted strings and comments.
 ==== Domain Classes and the JsonMapper
 
 
-Grails registers a Jackson module for domain classes with the application's `JsonMapper`, so the JSON converter and the
-mapper render a domain class instance the same way, including when a Spring MVC controller returns one or when you call
-`jsonMapper.writeValueAsString(book)`:
+The JSON converter renders a domain class instance with a Jackson serializer that Grails provides:
 
 [source,json]
 ----
@@ -132,14 +132,11 @@ the mapper, an instance that is already being written further up is written as a
 `grails.converters.json.domain.include.class` are `true`.
 * A proxy is written as the instance it proxies, and a reference to a proxy is written from its identifier, without
 loading it.
-* A property annotated with `@JsonIgnore`, or with `@JsonProperty(access = WRITE_ONLY)`, is not written. The mapper also
-leaves out the properties that `@JsonIgnoreProperties` names, as Jackson does; GORM adds that annotation to every domain
-class, naming properties such as `errors` and `tenantId`. The converter renders those with its includes and excludes, as
-before.
-* A domain class with its own `@JsonSerialize` serializer keeps it.
+* A property annotated with `@JsonIgnore`, or with `@JsonProperty(access = WRITE_ONLY)`, is not written.
 
-The property values are written as the mapper writes any other value, and the JSON converter renders them with its
-marshallers. To leave the mapper's rendering of domain classes to Jackson's bean serialization, set:
+The property values are rendered by the converter's marshallers. The application's `JsonMapper` itself renders domain
+classes as Jackson beans, as it does any class. To have it render them as the JSON converter does, including when a
+Spring MVC controller returns one or when you call `jsonMapper.writeValueAsString(book)`, set:
 
 [source,yaml]
 ----
@@ -148,10 +145,22 @@ grails:
         json:
             domain:
                 jackson:
-                    enabled: false
+                    enabled: true
 ----
 
-The module is the `domainClassJacksonModule` bean, which you can also add to a `JsonMapper` you build yourself.
+Grails then registers the serializer with the mapper, as the `domainClassJacksonModule` bean, which you can also add to a
+`JsonMapper` you build yourself. Written by the mapper:
+
+* The properties that `@JsonIgnoreProperties` names are left out, as Jackson leaves them out; GORM adds that annotation
+to every domain class, naming properties such as `errors` and `tenantId`. The converter renders those with its includes
+and excludes, as before.
+* Property names follow `@JsonProperty`, `@JsonNaming` and the mapper's naming strategy. A domain class with
+`@JsonTypeInfo` is written with its type id, and an instance in a `@JsonUnwrapped` property is unwrapped.
+* A domain class with its own `@JsonSerialize` serializer, with a `@JsonValue`, or that implements `JacksonSerializable`
+is written by Jackson.
+
+Other Jackson annotations and settings, such as `@JsonInclude`, `@JsonView` or `@JsonFormat` on a property, do not apply
+to domain classes; the upgrade guide lists them.
 
 
 ==== Date and Time Rendering
