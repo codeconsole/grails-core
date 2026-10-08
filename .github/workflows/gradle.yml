@@ -186,6 +186,46 @@ jobs:
           --stacktrace
           --rerun-tasks
           -PskipCodeStyle
+  buildLogic:
+    # The build logic is an included build: the root build uses its plugins but never runs its tests
+    name: 'Build Logic'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: "Output Agent IP" # in the event RAO blocks this agent, this can be used to debug it
+        run: curl -s https://api.ipify.org
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v7.0.1
+      - name: "☕️ Setup JDK"
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: liberica
+          java-version: 21
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          # Fixed-depth paths: the post step re-hashes after the build, where a `**` glob walks every output and times out.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('dependencies.gradle', 'gradle/wrapper/gradle-wrapper.properties', '*/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
+      - name: "🐘 Setup Gradle"
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
+          develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
+      - name: "🔍 Setup TestLens"
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
+      - name: "🔨 Build and test the build logic"
+        if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
+        working-directory: 'build-logic'
+        run: >
+          ./gradlew check
+          --continue
+          --stacktrace
   build:
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
     name: 'Build Grails-Core (${{ matrix.job_name }})'
