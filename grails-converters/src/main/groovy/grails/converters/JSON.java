@@ -79,7 +79,7 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     protected boolean prettyPrint;
     protected JSONWriter writer;
     protected Stack<Object> referenceStack;
-    protected JsonMapperSupport jsonMapper;
+    protected JsonMapperSupport jsonMapperSupport;
     private JSONWriter jsonWriter;
 
     protected ConverterConfiguration<JSON> initConfig() {
@@ -113,10 +113,10 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
 
     @SuppressWarnings("deprecation")
     private void prepareRender(Writer out) {
-        jsonMapper = ConvertersConfigurationHolder.getJsonMapper();
+        jsonMapperSupport = ConvertersConfigurationHolder.getJsonMapperSupport();
         jsonWriter = prettyPrint && ConvertersConfigurationHolder.isLegacyJson() ?
-                new PrettyPrintJSONWriter(out, jsonMapper, PrettyPrintJSONWriter.DEFAULT_INDENT_STR) :
-                new JSONWriter(out, jsonMapper, prettyPrint);
+                new PrettyPrintJSONWriter(out, jsonMapperSupport, PrettyPrintJSONWriter.DEFAULT_INDENT_STR) :
+                new JSONWriter(out, jsonMapperSupport, prettyPrint);
         writer = jsonWriter;
         if (circularReferenceBehaviour == CircularReferenceBehaviour.PATH) {
             if (log.isInfoEnabled()) {
@@ -233,8 +233,8 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
      * @return the JsonMapper this converter writes with
      * @since 9.0
      */
-    public JsonMapperSupport getJsonMapper() {
-        return jsonMapper != null ? jsonMapper : ConvertersConfigurationHolder.getJsonMapper();
+    public JsonMapperSupport getJsonMapperSupport() {
+        return jsonMapperSupport != null ? jsonMapperSupport : ConvertersConfigurationHolder.getJsonMapperSupport();
     }
 
     /**
@@ -247,7 +247,7 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
      * @since 9.0
      */
     public String formatKey(Object key) {
-        return ConvertersConfigurationHolder.isLegacyJson() ? JsonDateFormat.formatKey(key) : getJsonMapper().formatKey(key);
+        return ConvertersConfigurationHolder.isLegacyJson() ? JsonDateFormat.formatKey(key) : getJsonMapperSupport().formatKey(key);
     }
 
     public ObjectMarshaller<JSON> lookupObjectMarshaller(Object target) {

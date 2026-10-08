@@ -18,6 +18,7 @@
  */
 package org.grails.web.converters.marshaller.json;
 
+import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.RecordComponent;
 
@@ -28,8 +29,9 @@ import org.grails.web.json.JSONException;
 import org.grails.web.json.JSONWriter;
 
 /**
- * JSON ObjectMarshaller which renders a record as an object of its components, in declaration order, as Spring Boot's
- * JsonMapper does. Each component value is rendered by the converter, as any other value is.
+ * JSON ObjectMarshaller which renders a record as an object of its components, by their names, in declaration order.
+ * Each component value is rendered by the converter, as any other value is. Jackson annotations on the components,
+ * such as {@code @JsonProperty} or {@code @JsonIgnore}, are not applied.
  *
  * @since 9.0
  */
@@ -50,7 +52,7 @@ public class RecordMarshaller implements ObjectMarshaller<JSON> {
             }
             writer.endObject();
         }
-        catch (IllegalAccessException | InvocationTargetException | JSONException e) {
+        catch (IllegalAccessException | InvocationTargetException | InaccessibleObjectException | JSONException e) {
             throw new ConverterException("Error converting record " + object.getClass().getName(), e);
         }
     }

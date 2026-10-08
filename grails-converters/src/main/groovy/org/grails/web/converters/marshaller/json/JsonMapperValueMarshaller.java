@@ -32,9 +32,9 @@ import org.grails.web.json.JsonMapperValue;
  * that Jackson modules registered with the application serialize
  * (see {@link org.grails.web.json.JsonMapperSupport#rendersValue(Class)}).
  *
- * <p>It is registered ahead of the enum, record, {@code Optional}, collection, map, domain class and bean marshallers,
- * so those never see such a value, and behind any marshaller an application registers, which takes precedence for the
- * types it supports.
+ * <p>It is registered after {@code ProxyUnwrappingMarshaller} and the domain class marshaller, and ahead of the enum,
+ * record, {@code Optional}, collection, map and bean marshallers, so those never see such a value. Any marshaller an
+ * application registers takes precedence for the types it supports.
  *
  * <p>A value nested in a value the mapper writes, such as a property that a Jackson module's serializer writes with
  * {@code JsonGenerator#writePOJO}, is rendered by the converter as any other value is, so marshallers apply to it.
@@ -45,7 +45,7 @@ import org.grails.web.json.JsonMapperValue;
 public class JsonMapperValueMarshaller implements ObjectMarshaller<JSON> {
 
     public boolean supports(Object object) {
-        return ConvertersConfigurationHolder.getJsonMapper().rendersValue(object.getClass());
+        return ConvertersConfigurationHolder.getJsonMapperSupport().rendersValue(object.getClass());
     }
 
     public void marshalObject(Object object, JSON converter) throws ConverterException {
@@ -57,7 +57,7 @@ public class JsonMapperValueMarshaller implements ObjectMarshaller<JSON> {
      */
     static void write(Object value, JSON converter) throws ConverterException {
         try {
-            converter.getWriter().value(new JsonMapperValue(value, converter.getJsonMapper(),
+            converter.getWriter().value(new JsonMapperValue(value, converter.getJsonMapperSupport(),
                     nested -> writeNested(nested, converter)));
         }
         catch (JSONException e) {

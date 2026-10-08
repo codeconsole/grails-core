@@ -33,10 +33,12 @@ import tools.jackson.core.PrettyPrinter;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
+import tools.jackson.databind.ser.jackson.JsonValueSerializer;
 import tools.jackson.databind.ser.impl.UnsupportedTypeSerializer;
 import tools.jackson.databind.ser.jdk.EnumSerializer;
 import tools.jackson.databind.ser.std.ReferenceTypeSerializer;
@@ -79,6 +81,10 @@ public final class JsonMapperSupport {
             }
             try {
                 ValueSerializer<?> serializer = serializationContext().findValueSerializer(type);
+                if (Enum.class.isAssignableFrom(type) && serializer instanceof JsonValueSerializer) {
+                    // an enum renders by name(), so that it binds back, even when it has a @JsonValue
+                    return false;
+                }
                 return !(serializer instanceof BeanSerializerBase || serializer instanceof ToEmptyObjectSerializer ||
                         serializer instanceof EnumSerializer || serializer instanceof ReferenceTypeSerializer ||
                         serializer instanceof StdContainerSerializer || serializer instanceof UnsupportedTypeSerializer);
@@ -110,11 +116,14 @@ public final class JsonMapperSupport {
      * never flushes or closes {@code out}: whoever owns it does.
      *
      * @param out the writer to write JSON to
-     * @param prettyPrint whether to indent the JSON with the mapper's default pretty printer
+     * @param prettyPrint whether to indent the JSON with the mapper's default pretty printer; when {@code false}, the
+     *        JSON is not indented, even if the mapper enables {@code SerializationFeature.INDENT_OUTPUT}
      * @return a generator writing to {@code out}
      */
     public JsonGenerator createGenerator(Writer out, boolean prettyPrint) {
-        ObjectWriter writer = (prettyPrint ? writingMapper.writerWithDefaultPrettyPrinter() : writingMapper.writer())
+        // not indented unless asked to be, even when the mapper indents its output (spring.jackson.serialization.indent-output)
+        ObjectWriter writer = (prettyPrint ? writingMapper.writerWithDefaultPrettyPrinter() :
+                writingMapper.writer().without(SerializationFeature.INDENT_OUTPUT))
                 .without(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .without(StreamWriteFeature.FLUSH_PASSED_TO_STREAM);
         return writer.createGenerator(new HtmlSafeJsonWriter(out));
@@ -137,7 +146,8 @@ public final class JsonMapperSupport {
 
     /**
      * Whether the mapper writes values of the type itself, with a dedicated serializer for a single value. Beans,
-     * records, enums other than those with their own serializer (such as {@code Month}), {@code Optional} and other
+     * records, enums other than those with their own serializer (such as {@code Month}), including an enum with a
+     * {@code @JsonValue}, {@code Optional} and other
      * reference types, collections, maps, iterables, streams and object arrays are left to Grails marshallers, so that
      * the values they contain are rendered as any other value is.
      *
@@ -149,7 +159,9 @@ public final class JsonMapperSupport {
     }
 
     /**
-     * Writes a value with the mapper, as a value inside the JSON document the generator is writing.
+     * Writes a value with the mapper, as a value inside the JSON document the generator is writing. Inside a value
+     * written with {@link #writeValue(JsonGenerator, Object, Predicate)}, the value takes part in that nested write: it
+     * is offered to the nested value writer first, as any value nested in that value is.
      *
      * @param generator a generator created by {@link #createGenerator(Writer, boolean)}
      * @param value the value

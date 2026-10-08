@@ -357,7 +357,7 @@ public class JSONWriter {
         if (o == null || o.equals(null)) {
             return valueNull();
         }
-        if (o instanceof JsonMapperValue mapperValue && mapperValue.getJsonMapper() == jsonMapper) {
+        if (o instanceof JsonMapperValue mapperValue && mapperValue.getJsonMapperSupport() == jsonMapper) {
             return write(() -> jsonMapper.writeValue(generator, mapperValue.getValue(), mapperValue.getNestedValueWriter()), o);
         }
         if (o instanceof Number number) {
@@ -475,7 +475,9 @@ public class JSONWriter {
             generator.writeNumber(bigInteger);
         }
         else {
-            jsonMapper.writeValue(generator, number);
+            // any other Number, such as an AtomicLong, as its text, as Jackson's NumberSerializer writes it: through
+            // the mapper, it would be offered to an active nested value writer, which may hand it back here
+            generator.writeNumber(String.valueOf(number));
         }
     }
 

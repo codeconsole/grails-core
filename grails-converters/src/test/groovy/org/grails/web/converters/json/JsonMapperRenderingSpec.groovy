@@ -23,12 +23,16 @@ import java.sql.Time
 import java.time.Month
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.fasterxml.jackson.annotation.JsonValue
 import spock.lang.Shared
 import spock.lang.Specification
+import spock.lang.Timeout
 import tools.jackson.core.JsonGenerator
 import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.SerializationFeature
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.module.SimpleModule
 import tools.jackson.databind.ser.std.StdSerializer
@@ -98,6 +102,47 @@ class JsonMapperRenderingSpec extends Specification {
         expect:
         new JSON([role: Role.HEAD, unit: ChronoUnit.SECONDS, labelled: Labelled.ONE, month: Month.MAY]).toString() ==
                 '{"role":"HEAD","unit":"SECONDS","labelled":"ONE","month":5}'
+    }
+
+    void "an enum with a @JsonValue renders by name, as every enum, so that it binds back"() {
+        expect:
+        new JSON([status: Status.ACTIVE]).toString() == '{"status":"ACTIVE"}'
+        new JSON(Status.ACTIVE).toString() == '"ACTIVE"'
+    }
+
+    void "a JsonMapper that indents its output does not indent JSON that is not pretty printed"() {
+        given: 'a mapper configured as spring.jackson.serialization.indent-output would configure it'
+        def mapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build()
+        def context = applicationContext { it.registerBean(JsonMapper, { mapper }) }
+        initialize([:], context)
+        def map = [a: 1, b: [1, 2]]
+
+        expect:
+        new JSON(map).toString() == '{"a":1,"b":[1,2]}'
+        new JSON(map).toString(false) == '{"a":1,"b":[1,2]}'
+        new JSON(map).toString(true) == mapper.writerWithDefaultPrettyPrinter().writeValueAsString(map)
+
+        cleanup:
+        context.close()
+    }
+
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void "a Number the mapper has no dedicated writer for is written once, inside a value a module serializer writes"() {
+        given: 'a marshaller that writes an AtomicInteger to the writer itself, and a module serializer that writes one'
+        def context = moduleContext()
+        initialize([:], context)
+        JSON.registerObjectMarshaller(new ObjectMarshaller<JSON>() {
+            boolean supports(Object object) { object instanceof AtomicInteger }
+
+            void marshalObject(Object object, JSON json) { json.writer.value((Number) object) }
+        })
+
+        expect:
+        new JSON([wrapper: new Wrapper(inner: new AtomicInteger(5)), number: new AtomicInteger(6)]).toString() ==
+                '{"wrapper":{"inner":5,"others":[]},"number":6}'
+
+        cleanup:
+        context.close()
     }
 
     void "a single #value.class.simpleName renders as a JSON value"() {
@@ -416,6 +461,17 @@ class JsonMapperRenderingSpec extends Specification {
 }
 
 enum Role { HEAD, DISPATCHER, ADMIN }
+
+enum Status {
+    ACTIVE('A')
+
+    final String code
+
+    Status(String code) { this.code = code }
+
+    @JsonValue
+    String getCode() { code }
+}
 
 enum Labelled {
     ONE

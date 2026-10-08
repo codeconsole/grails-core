@@ -105,10 +105,11 @@ public class ConvertersConfigurationHolder {
     }
 
     /**
-     * @return the Jackson mapper that {@link grails.converters.JSON} writes through
+     * @return the Jackson mapper that {@link grails.converters.JSON} writes through, as set by
+     *         {@link #setJsonMapper(JsonMapper)}
      * @since 9.0
      */
-    public static JsonMapperSupport getJsonMapper() {
+    public static JsonMapperSupport getJsonMapperSupport() {
         return jsonMapper;
     }
 

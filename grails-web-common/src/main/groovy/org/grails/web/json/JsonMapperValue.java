@@ -65,7 +65,7 @@ public final class JsonMapperValue implements JSONElement {
         return value;
     }
 
-    JsonMapperSupport getJsonMapper() {
+    JsonMapperSupport getJsonMapperSupport() {
         return jsonMapper;
     }
 
