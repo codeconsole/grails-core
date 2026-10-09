@@ -24,10 +24,6 @@ dependencies {
     add('testRuntimeOnly', 'org.objenesis:objenesis')
 }
 
-tasks.withType(GroovyCompile).configureEach {
-    options.forkOptions.jvmArgs += ['-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
-}
-
 boolean cacheTests = !doNotCacheTests
 tasks.withType(Test).configureEach {
     // Honor DO_NOT_CACHE_TESTS=1 so developers can repeatedly invoke the same test command
