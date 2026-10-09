@@ -213,7 +213,7 @@ jobs:
           restore-keys: |
             gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
@@ -571,6 +571,8 @@ jobs:
         # The known hanging cell finishes tests, prints the wrapper:test /
         # aggregate-report tail, then hangs before buildFinished. Timeout plus
         # that end-of-walk log and green XML is treated as success.
+        # The sentinel init script registers build listeners, which the
+        # configuration cache rejects, so this invocation runs without it.
         run: |
           hanging=0
           if [ "${{ matrix.java }}" = "21" ] && [ "${{ matrix.indy }}" = "true" ] && [ "${{ matrix.gradle_task }}" = "testShard" ]; then
@@ -583,6 +585,7 @@ jobs:
           set +e
           timeout --kill-after=30s "$limit" ./gradlew ${{ matrix.gradle_task }} \
             --init-script .github/ci-exit-after-build.init.gradle \
+            --no-configuration-cache \
             --no-daemon \
             --continue \
             --rerun-tasks \
