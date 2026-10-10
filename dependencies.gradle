@@ -123,7 +123,7 @@ ext {
             'scribejava.version'            : '8.3.3',
             // Logback 1.6.5 requires 2.0.19; align the SLF4J family above Boot's managed 2.0.18.
             'slf4j.version'                 : '2.0.19',
-            'spock.version'                 : '2.4-groovy-5.0',
+            'spock.version'                 : '2.5-groovy-6.0',
             // Not managed by spring-boot-dependencies. springdoc 3.x is the Spring Boot 4 /
             // Spring Framework 7 line; the grails-openapi module compiles against its
             // OpenApiCustomizer SPI and apps add the webmvc-ui starter for Swagger UI.
