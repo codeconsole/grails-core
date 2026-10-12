@@ -103,6 +103,19 @@ Example with multiple tags:
 ./gradlew iT -PincludeTestTags=geb,api
 ```
 
+## Test JVM sizing
+
+Tests run in forked JVMs, separate from the Gradle daemon that `org.gradle.jvmargs` sizes. These project properties tune them:
+
+* `maxTestParallel` - forks per `Test` task. Defaults to half the available processors locally and `4` on CI. Several `Test` tasks run at once, so `--max-workers` bounds the forks across the whole build
+* `testForkHeapMb` - maximum heap of each fork, in MB. Defaults to `768` on CI. Locally it is half the memory left after the daemon heap, divided by the Gradle worker count, kept between `768` and `1024`. Values below `768` are rejected
+
+To use less memory, lower the fork count first. To keep a value, set it in `~/.gradle/gradle.properties`.
+
+```bash
+./gradlew :grails-core:test -PmaxTestParallel=2 -PtestForkHeapMb=900
+```
+
 ## Environment variables
 
 * `DO_NOT_CACHE_TESTS` - set to `1` (or any truthy value) to force every `Test` task to run
