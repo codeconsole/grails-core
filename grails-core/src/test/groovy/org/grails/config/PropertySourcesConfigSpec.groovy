@@ -132,9 +132,21 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('.plain.nested.value.') == 'found'
         config.getProperty('...') == null
 
-        and: "a key that runs past a scalar answers with that scalar, as it always has"
-        // Grails 8 behaviour, pinned on purpose: apache/grails-core#16732 makes such a key absent on 9.0.x
-        config.getProperty('plain.nested.value.deeper') == 'found'
-        config.containsProperty('plain.nested.value.deeper')
+        and: "a key that runs past a scalar is absent, where Grails 8 answered with the scalar"
+        config.getProperty('plain.nested.value.deeper') == null
+        !config.containsProperty('plain.nested.value.deeper')
+    }
+
+    void 'a dotted key that runs past a scalar value is absent'() {
+        given: "a scalar value"
+        def config = new PropertySourcesConfig([server: [url: 'http://localhost']])
+
+        expect: "the scalar itself resolves"
+        config.getProperty('server.url') == 'http://localhost'
+
+        and: "a key that names a child of the scalar is absent rather than the scalar"
+        config.getProperty('server.url.port') == null
+        config.getProperty('server.url.port', String, 'none') == 'none'
+        !config.containsProperty('server.url.port')
     }
 }
