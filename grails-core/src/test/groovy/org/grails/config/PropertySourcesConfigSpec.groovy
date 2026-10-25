@@ -133,6 +133,7 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('...') == null
 
         and: "a key that runs past a scalar answers with that scalar, as it always has"
+        // Grails 8 behaviour, pinned on purpose: apache/grails-core#16732 makes such a key absent on 9.0.x
         config.getProperty('plain.nested.value.deeper') == 'found'
         config.containsProperty('plain.nested.value.deeper')
     }

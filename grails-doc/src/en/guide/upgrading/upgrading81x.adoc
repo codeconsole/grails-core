@@ -60,13 +60,15 @@ Default projects consistently include Mockito with Spock. When both Grails Data 
 
 For applications **no changes are required**: the environment of a running JVM cannot change, so every lookup has the same answer as before.
 
-A test that installs environment variables reflectively, with a library such as System Stubs or JUnit Pioneer, must install them before the application context is created, or ask the configuration to read the environment again afterwards:
+A test that installs environment variables reflectively, with a library such as System Stubs or JUnit Pioneer, installs them before the application context is created, through the `environment` of the Gradle test task or an extension that runs before the context starts, so the configuration reads them when it is built. That is the supported approach: the configuration then behaves exactly as it does for a running application.
+
+A test that can only install them after the application has started asks the configuration to read the environment again:
 
 [source,groovy]
 ----
 grailsApplication.config.refresh()
 ----
 
-`refresh()` is a method of the configuration implementation rather than of the `Config` interface, so it is a call for dynamically compiled test code. It reads the environment again and merges the property sources again, which replaces a value the test set on the configuration directly wherever a property source defines the same key. Call it again once the variables are removed: the configuration keeps the environment it last read.
+`refresh()` is a method of the configuration implementation rather than of the `Config` interface, so it is a call for dynamically compiled test code and may change with the implementation. It reads the environment again and merges the property sources again, which replaces a value the test set on the configuration directly wherever a property source defines the same key. Call it again once the variables are removed: the configuration keeps the environment it last read.
 
 Two smaller differences: variable names are upper-cased with `Locale.ROOT`, as Spring does, so a key containing `i` matches its upper-cased variable under a Turkish default locale too; and `getProperty(null)` returns the default value instead of throwing a `NullPointerException`.

@@ -693,7 +693,7 @@ interval needs, and <<upgrading80x>> for the details.
 
 ==== Faster Configuration Lookups
 
-`grailsApplication.config.getProperty` no longer probes the process environment on every call. The environment is read once, when the configuration is created, and its variable names are indexed, so a property that no variable can match is answered without touching `System.getenv`, and the walk through a dotted key no longer tokenises it. A test that installs environment variables after the application has started calls `refresh()` on the configuration to have them seen; see xref:upgrading#upgrading81x[the upgrade guide].
+`grailsApplication.config.getProperty` no longer probes the process environment on every call. The environment is read once, when the configuration is created, and its variable names are indexed, so a property that no variable can match is answered without touching `System.getenv`. A test that installs environment variables installs them before the application context is created, or calls `refresh()` on the configuration afterwards to have them seen; see xref:upgrading#upgrading81x[the upgrade guide].
 
 ==== Compiled Tag Resolution
 
