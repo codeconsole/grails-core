@@ -1195,3 +1195,11 @@ With `DISCRIMINATOR` multi-tenancy, GORM for MongoDB and GORM's in-memory datast
 * Without a current tenant, these methods throw `TenantNotFoundException`, as a query does. `getAll` without ids still returns an empty list.
 * Inside `Tenants.withoutId { }` a lookup by id is still not restricted to a tenant, and neither is a proxy returned by `load` or `proxy` that is initialized there. As the previous note says, only `withoutId` lifts the restriction: a tenant id of `DEFAULT` restricts a lookup by id to that tenant as it restricts a query.
 * A lookup by id still finds an instance that the session holds for the current tenant, including one that has been saved but not flushed, and it does not flush the session.
+
+==== 21. The character encoding filter runs first
+
+From Grails 7.0.18, the character encoding filter is registered at `Ordered.HIGHEST_PRECEDENCE`, the order Spring Boot gives its own encoding filter, instead of at order -180. A filter that ran before it and read a request parameter made the servlet container decode the request body before the encoding was set, as ISO-8859-1, so non-ASCII form input reached controllers garbled, for example `CafÃ©` for `Café`. The CAS plugin's single sign-out filter, which reads a parameter of every POST, did this whenever single sign-out was enabled, which is the default.
+
+* The CAS plugin's single sign-out filter is now registered right after the encoding filter.
+* A filter of your own that reads request parameters needs a later order than `Ordered.HIGHEST_PRECEDENCE`. One registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean` still runs before the encoding filter.
+* With `grails.filter.forceEncoding` set to `true`, the response encoding is now also set before filters that used to run ahead of the encoding filter, including on responses those filters write themselves.
