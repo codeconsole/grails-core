@@ -36,6 +36,11 @@ public class GormPersisterClassResolver extends StandardPersisterClassResolver {
     public Class<? extends CollectionPersister> getCollectionPersisterClass(Collection metadata) {
         if (!metadata.isOneToMany() &&
                 metadata.getElement() instanceof ManyToOne &&
+                !metadata.isIdentified() &&
+                metadata.getCustomSQLDelete() == null &&
+                metadata.getStateManagementType() == null &&
+                metadata.getSoftDeleteColumn() == null &&
+                metadata.getAuxiliaryTable() == null &&
                 !(metadata instanceof IndexedCollection)) {
             return JoinTableCollectionPersister.class;
         }

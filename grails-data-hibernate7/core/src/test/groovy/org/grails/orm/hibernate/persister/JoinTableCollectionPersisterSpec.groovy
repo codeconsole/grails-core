@@ -68,6 +68,42 @@ class JoinTableCollectionPersisterSpec extends Specification {
         persisterOf(JtcpItem, 'roles').getClass() == BasicCollectionPersister
     }
 
+    void 'an identifier bag and a soft-delete collection keep Hibernate persister'() {
+        given:
+        GormPersisterClassResolver resolver = new GormPersisterClassResolver()
+        org.hibernate.mapping.ManyToOne element = Stub(org.hibernate.mapping.ManyToOne)
+
+        when: 'an identifier bag of entities in a join table'
+        org.hibernate.mapping.IdentifierBag idBag = new org.hibernate.mapping.IdentifierBag(null, null)
+        idBag.element = element
+
+        then:
+        resolver.getCollectionPersisterClass(idBag) == BasicCollectionPersister
+
+        when: 'a soft-delete collection of entities in a join table'
+        org.hibernate.mapping.Set softDeleteSet = new org.hibernate.mapping.Set(null, null)
+        softDeleteSet.element = element
+        softDeleteSet.addAuxiliaryColumn(org.hibernate.mapping.SoftDeletable.INDICATOR, new org.hibernate.mapping.Column('deleted'))
+
+        then:
+        resolver.getCollectionPersisterClass(softDeleteSet) == BasicCollectionPersister
+
+        when: 'an audit or temporal collection with an auxiliary table'
+        org.hibernate.mapping.Set auxSet = new org.hibernate.mapping.Set(null, null)
+        auxSet.element = element
+        auxSet.auxiliaryTable = new org.hibernate.mapping.Table('audit_history')
+
+        then:
+        resolver.getCollectionPersisterClass(auxSet) == BasicCollectionPersister
+
+        when: 'an ordinary set of entities in a join table'
+        org.hibernate.mapping.Set ordinarySet = new org.hibernate.mapping.Set(null, null)
+        ordinarySet.element = element
+
+        then:
+        resolver.getCollectionPersisterClass(ordinarySet) == JoinTableCollectionPersister
+    }
+
     void 'removing one element of a set keeps the others'() {
         given: 'an item with three roles'
         datastore = datastore('jtcpSet')
