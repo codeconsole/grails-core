@@ -18,4 +18,5 @@
 #
 org.springframework.boot.EnvironmentPostProcessor=\
   org.grails.plugins.web.controllers.GrailsWebResourcesEnvironmentPostProcessor,\
-  org.grails.plugins.web.controllers.GrailsControllersEnvironmentPostProcessor
+  org.grails.plugins.web.controllers.GrailsControllersEnvironmentPostProcessor,\
+  org.grails.plugins.web.controllers.GrailsCharacterEncodingEnvironmentPostProcessor

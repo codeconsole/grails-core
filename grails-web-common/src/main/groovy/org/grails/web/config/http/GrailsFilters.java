@@ -28,7 +28,16 @@ public enum GrailsFilters {
 
     FIRST,
     ASSET_PIPELINE_FILTER,
+
+    /**
+     * The order of the character encoding filter Grails registered before 9.0.
+     *
+     * @deprecated since 9.0, for removal. Grails no longer registers a character encoding filter; Spring Boot
+     * registers one at {@code Ordered.HIGHEST_PRECEDENCE}, ahead of every other filter.
+     */
+    @Deprecated(since = "9.0", forRemoval = true)
     CHARACTER_ENCODING_FILTER,
+
     HIDDEN_HTTP_METHOD_FILTER,
     SITEMESH_FILTER,
     GRAILS_WEB_REQUEST_FILTER,

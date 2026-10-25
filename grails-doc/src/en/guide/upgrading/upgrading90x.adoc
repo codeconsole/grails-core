@@ -1229,3 +1229,13 @@ See <<asyncPromises,Promises>> and <<events,Events>>.
 
 `grails-async-rxjava3` carries a `null` value as the RxJava 1 factory and every other promise factory do: `createPromise()` and `createPromise(Class)` give a promise whose `get()` returns `null`, a task that returns `null` resolves to `null`, and a `null` value keeps its place in the list that `onComplete`, `onError` and `waitAll` deliver.
 `grails-async-rxjava2` does not: there `createPromise()` and `onComplete` over a list holding a bound promise of `null` fail with a `NullPointerException`, and a task that returns `null` resolves to the `java.lang.Void` class.
+
+==== 20. Spring Boot Registers the Character Encoding Filter
+
+Grails no longer registers a character encoding filter of its own. It used to, and Spring Boot's backed off, so `spring.servlet.encoding` had no effect in a Grails application. Spring Boot's filter now decodes requests: it runs at `Ordered.HIGHEST_PRECEDENCE`, ahead of every other filter, and `spring.servlet.encoding` configures it.
+
+* The request encoding is now overridden by default, as in any Spring Boot application, so a request that declares a charset of its own is still decoded as UTF-8. To keep the charset a request declares, as Grails 8 did, set `spring.servlet.encoding.force-request: false`.
+* `grails.filter.encoding` and `grails.filter.forceEncoding` are deprecated. Grails 9 translates them into `spring.servlet.encoding.charset` and `spring.servlet.encoding.force` and logs a warning, and a `spring.servlet.encoding` setting of the application wins over them. Use the Spring Boot properties instead.
+* `spring.servlet.encoding.enabled: false` turns the encoding filter off.
+* The CAS plugin's single sign-out filter, which reads a parameter of every POST, is registered right after the encoding filter.
+* A filter of your own that reads request parameters needs a later order than `Ordered.HIGHEST_PRECEDENCE`, or form input reaches controllers decoded as ISO-8859-1. One registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean` runs before the encoding filter.

@@ -117,10 +117,12 @@ class SpringSecurityCasGrailsPlugin extends Plugin {
                     ignoreInitConfiguration = true
                 }
 
+                // after Spring Boot's encoding filter, at HIGHEST_PRECEDENCE: SingleSignOutFilter reads the
+                // logoutRequest parameter of every POST
                 singleSignOutFilterRegistrationBean(FilterRegistrationBean) {
                     name = 'CAS Single Sign Out Filter'
                     filter = ref('singleSignOutFilter')
-                    order = Ordered.HIGHEST_PRECEDENCE
+                    order = Ordered.HIGHEST_PRECEDENCE + 1
                 }
 
                 singleSignOutHttpSessionListener(ServletListenerRegistrationBean, new SingleSignOutHttpSessionListener())

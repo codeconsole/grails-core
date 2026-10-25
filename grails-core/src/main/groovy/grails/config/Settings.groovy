@@ -230,13 +230,21 @@ interface Settings {
     String CONTROLLERS_RESPONSE_BODY_DEFAULT = 'false'
 
     /**
-     * The encoding to use for filters, default to UTF-8
+     * The encoding of the character encoding filter.
+     *
+     * @deprecated since 9.0, for removal. Spring Boot registers the character encoding filter; configure
+     * {@code spring.servlet.encoding.charset} instead.
      */
+    @Deprecated(since = '9.0', forRemoval = true)
     String FILTER_ENCODING = 'grails.filter.encoding'
 
     /**
-     * The encoding to use for filters, default to UTF-8
+     * Whether the character encoding filter overrides the encoding of the request and the response.
+     *
+     * @deprecated since 9.0, for removal. Spring Boot registers the character encoding filter; configure
+     * {@code spring.servlet.encoding.force} instead.
      */
+    @Deprecated(since = '9.0', forRemoval = true)
     String FILTER_FORCE_ENCODING = 'grails.filter.forceEncoding'
 
     /**

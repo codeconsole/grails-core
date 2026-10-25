@@ -17,14 +17,21 @@
  *  under the License.
  */
 
+import functionaltests.encoding.ParameterReadingFilter
 import functionaltests.interceptors.StaticInitFailureFilter
 import org.example.MyBean
 import org.springframework.boot.web.servlet.FilterRegistrationBean
+import org.springframework.core.Ordered
 // Place your Spring DSL code here
 beans = {
 	myBean(MyBean)
 	staticInitFailureFilter(FilterRegistrationBean) {
 		filter = new StaticInitFailureFilter()
 		urlPatterns = ['/staticInitFailure/*']
+	}
+	parameterReadingFilter(FilterRegistrationBean) {
+		filter = new ParameterReadingFilter()
+		urlPatterns = ['/encoding/*']
+		order = Ordered.HIGHEST_PRECEDENCE + 1
 	}
 }
