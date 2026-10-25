@@ -21,13 +21,12 @@ package org.grails.plugins.web.controllers;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import org.springframework.boot.EnvironmentPostProcessor;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.DefaultPropertiesPropertySource;
-import org.springframework.boot.logging.DeferredLogFactory;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
 
 import grails.config.Settings;
@@ -37,7 +36,9 @@ import grails.config.Settings;
  * {@code spring.servlet.encoding.charset} and {@code spring.servlet.encoding.force}, which configure the
  * character encoding filter Spring Boot registers. Grails no longer registers an encoding filter of its own.
  *
- * <p>A translated value is contributed as a Spring Boot default property (lowest precedence), and only when the
+ * <p>It is a context initializer, not an environment post-processor, because files named by
+ * {@code grails.config.locations} are loaded by {@code ExternalConfigRunListener} after the post-processors run.
+ * A translated value is contributed as a Spring Boot default property (lowest precedence), and only when the
  * application does not set the Spring Boot property itself.
  *
  * @since 9.0
@@ -45,23 +46,14 @@ import grails.config.Settings;
  * together with the two properties it translates
  */
 @Deprecated(since = "9.0", forRemoval = true)
-public class GrailsCharacterEncodingEnvironmentPostProcessor implements EnvironmentPostProcessor {
+public class GrailsCharacterEncodingInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-    // Spring Boot initializes logging after the environment post-processors run, and replays what was logged
-    // through the DeferredLogFactory it passes in once it has.
-    private final Log logger;
-
-    public GrailsCharacterEncodingEnvironmentPostProcessor() {
-        this.logger = LogFactory.getLog(GrailsCharacterEncodingEnvironmentPostProcessor.class);
-    }
-
-    public GrailsCharacterEncodingEnvironmentPostProcessor(DeferredLogFactory logFactory) {
-        this.logger = logFactory.getLog(GrailsCharacterEncodingEnvironmentPostProcessor.class);
-    }
+    private static final Logger logger = LoggerFactory.getLogger(GrailsCharacterEncodingInitializer.class);
 
     @Override
     @SuppressWarnings("removal")
-    public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+    public void initialize(ConfigurableApplicationContext applicationContext) {
+        var environment = applicationContext.getEnvironment();
         var translated = new LinkedHashMap<String, Object>();
         translate(environment, Settings.FILTER_ENCODING, "spring.servlet.encoding.charset", translated);
         translate(environment, Settings.FILTER_FORCE_ENCODING, "spring.servlet.encoding.force", translated);
@@ -79,12 +71,12 @@ public class GrailsCharacterEncodingEnvironmentPostProcessor implements Environm
         // DefaultPropertiesPropertySource.addOrMerge replaces a key, and the application may have set this one as a
         // default property itself
         if (environment.containsProperty(replacement)) {
-            logger.warn("'" + deprecatedProperty + "' is deprecated and will be removed. It is ignored, because '" +
-                    replacement + "' is set.");
+            logger.warn("'{}' is deprecated and will be removed. It is ignored, because '{}' is set.",
+                    deprecatedProperty, replacement);
             return;
         }
-        logger.warn("'" + deprecatedProperty + "' is deprecated and will be removed. Spring Boot registers the " +
-                "character encoding filter now, so use '" + replacement + "=" + value + "' instead.");
+        logger.warn("'{}' is deprecated and will be removed. Spring Boot registers the character encoding filter " +
+                "now, so use '{}={}' instead.", deprecatedProperty, replacement, value);
         translated.put(replacement, value);
     }
 }

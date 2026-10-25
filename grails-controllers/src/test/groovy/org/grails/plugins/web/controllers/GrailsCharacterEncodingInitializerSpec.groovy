@@ -19,21 +19,20 @@
 package org.grails.plugins.web.controllers
 
 import org.springframework.boot.env.DefaultPropertiesPropertySource
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
 import spock.lang.Specification
 
-class GrailsCharacterEncodingEnvironmentPostProcessorSpec extends Specification {
-
-    private final GrailsCharacterEncodingEnvironmentPostProcessor processor = new GrailsCharacterEncodingEnvironmentPostProcessor()
+class GrailsCharacterEncodingInitializerSpec extends Specification {
 
     void 'translates the deprecated Grails properties into spring.servlet.encoding'() {
         given: 'an application that still sets the Grails properties'
         def environment = environmentWith('grails.filter.encoding': 'ISO-8859-1', 'grails.filter.forceEncoding': 'true')
 
-        when: 'the environment is post-processed'
-        processor.postProcessEnvironment(environment, null)
+        when: 'the application context is initialized'
+        initialize(environment)
 
         then: 'Spring Boot reads the same settings from its own properties'
         environment.getProperty('spring.servlet.encoding.charset') == 'ISO-8859-1'
@@ -44,8 +43,8 @@ class GrailsCharacterEncodingEnvironmentPostProcessorSpec extends Specification 
         given: 'an application that sets both the Grails and the Spring Boot property'
         def environment = environmentWith('grails.filter.encoding': 'ISO-8859-1', 'spring.servlet.encoding.charset': 'UTF-16')
 
-        when: 'the environment is post-processed'
-        processor.postProcessEnvironment(environment, null)
+        when: 'the application context is initialized'
+        initialize(environment)
 
         then: 'the translated value is contributed at the lowest precedence'
         environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
@@ -56,8 +55,8 @@ class GrailsCharacterEncodingEnvironmentPostProcessorSpec extends Specification 
         def environment = environmentWith('grails.filter.encoding': 'ISO-8859-1')
         DefaultPropertiesPropertySource.addOrMerge(['spring.servlet.encoding.charset': 'UTF-16'], environment.propertySources)
 
-        when: 'the environment is post-processed'
-        processor.postProcessEnvironment(environment, null)
+        when: 'the application context is initialized'
+        initialize(environment)
 
         then: 'the deprecated value does not replace it'
         environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
@@ -67,12 +66,18 @@ class GrailsCharacterEncodingEnvironmentPostProcessorSpec extends Specification 
         given: 'an application that sets neither Grails property'
         def environment = new StandardEnvironment()
 
-        when: 'the environment is post-processed'
-        processor.postProcessEnvironment(environment, null)
+        when: 'the application context is initialized'
+        initialize(environment)
 
         then: 'Spring Boot defaults apply'
         !environment.propertySources.contains(DefaultPropertiesPropertySource.NAME)
         environment.getProperty('spring.servlet.encoding.charset') == null
+    }
+
+    private static void initialize(StandardEnvironment environment) {
+        def context = new GenericApplicationContext()
+        context.environment = environment
+        new GrailsCharacterEncodingInitializer().initialize(context)
     }
 
     private static StandardEnvironment environmentWith(Map<String, Object> properties) {
