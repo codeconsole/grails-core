@@ -37,8 +37,8 @@ import grails.config.Settings;
  * {@code spring.servlet.encoding.charset} and {@code spring.servlet.encoding.force}, which configure the
  * character encoding filter Spring Boot registers. Grails no longer registers an encoding filter of its own.
  *
- * <p>The translated values are contributed as Spring Boot default properties (lowest precedence), so an
- * application that sets {@code spring.servlet.encoding} itself wins.
+ * <p>A translated value is contributed as a Spring Boot default property (lowest precedence), and only when the
+ * application does not set the Spring Boot property itself.
  *
  * @since 9.0
  * @deprecated only needed while applications move to {@code spring.servlet.encoding}; it will be removed
@@ -74,6 +74,13 @@ public class GrailsCharacterEncodingEnvironmentPostProcessor implements Environm
             String replacement, Map<String, Object> translated) {
         var value = environment.getProperty(deprecatedProperty);
         if (value == null) {
+            return;
+        }
+        // DefaultPropertiesPropertySource.addOrMerge replaces a key, and the application may have set this one as a
+        // default property itself
+        if (environment.containsProperty(replacement)) {
+            logger.warn("'" + deprecatedProperty + "' is deprecated and will be removed. It is ignored, because '" +
+                    replacement + "' is set.");
             return;
         }
         logger.warn("'" + deprecatedProperty + "' is deprecated and will be removed. Spring Boot registers the " +

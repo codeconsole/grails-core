@@ -51,6 +51,18 @@ class GrailsCharacterEncodingEnvironmentPostProcessorSpec extends Specification 
         environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
     }
 
+    void 'keeps a spring.servlet.encoding default property of the application'() {
+        given: 'an application that sets the Spring Boot property as a default property and still has the Grails one'
+        def environment = environmentWith('grails.filter.encoding': 'ISO-8859-1')
+        DefaultPropertiesPropertySource.addOrMerge(['spring.servlet.encoding.charset': 'UTF-16'], environment.propertySources)
+
+        when: 'the environment is post-processed'
+        processor.postProcessEnvironment(environment, null)
+
+        then: 'the deprecated value does not replace it'
+        environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
+    }
+
     void 'contributes nothing when the deprecated properties are not set'() {
         given: 'an application that sets neither Grails property'
         def environment = new StandardEnvironment()
