@@ -1462,6 +1462,8 @@ Under Hibernate 7, an owner with two or more unidirectional `hasMany` associatio
 
 Two unidirectional associations to the same class share one join table by default, named after the owner and the element class, with a key column per association (`item_role` with `item_roles_id` and `item_deny_roles_id` for `static hasMany = [roles: Role, denyRoles: Role]`). Such a table is read, but new elements are not written, and neither are those of associations that `joinTable` maps onto one table. That is issue https://github.com/apache/grails-core/issues/10811[#10811] and is not fixed by this change; name a `joinTable` per association to give each its own table.
 
+Removing one element of a unidirectional `hasMany` set or bag, with `removeFrom*` or by binding a smaller set of ids, deleted every join table row of the owner, so the association lost all its elements (issue https://github.com/apache/grails-core/issues/16691[#16691]). Hibernate 7 deletes such a row by the owner's key and only those element columns that are not nullable, and the element column of a GORM join table is nullable. GORM now gives a set or a bag of entities in a join table a collection persister that deletes the row by the owner and the element, as Hibernate 5 did; the schema does not change. An application that configures a persister class resolver of its own with `hibernate.persister.resolver` keeps it, and with it the Hibernate 7 behaviour.
+
 ==== 27. GORM Properties Are Nullable by Default
 
 Grails 8 changes the validation default so that an *unconstrained persistent (domain) property is nullable by default* rather than required.
