@@ -32,6 +32,7 @@ import org.grails.orm.hibernate.query.JpaQueryContext
 import org.grails.orm.hibernate.query.PredicateGenerator
 import org.grails.orm.hibernate.query.SqlGroupProjection
 import org.grails.orm.hibernate.query.SqlProjection
+import org.grails.orm.hibernate.query.SqlSyntax
 import org.springframework.core.convert.support.DefaultConversionService
 import grails.gorm.annotation.Entity
 import org.grails.datastore.gorm.GormEntity
@@ -229,7 +230,7 @@ class JpaCriteriaQueryCreatorSpec extends HibernateGormDatastoreSpec {
         var projections = new Query.ProjectionList()
         projections.add(new SqlGroupProjection('"full name"'))
         SqlProjection.of('upper(last_name) as "full name", count(*) as [total count]', ["full name", "total count"],
-                [String, Long]).each { projections.add(it) }
+                [String, Long], SqlSyntax.TRANSACT_SQL).each { projections.add(it) }
         var creator = new JpaCriteriaQueryCreator(projections, criteriaBuilder, entity, detachedCriteria, new DefaultConversionService())
 
         when:
@@ -265,7 +266,7 @@ class JpaCriteriaQueryCreatorSpec extends HibernateGormDatastoreSpec {
         groupBy      | groupedBy
         'FULLNAME'   | 'upper(last_name)'
         '`FULLNAME`' | 'upper(last_name)'
-        '[FULLNAME]' | 'upper(last_name)'
+        '[FULLNAME]' | '[FULLNAME]'
         '"fullName"' | 'upper(last_name)'
         '"FULLNAME"' | '"FULLNAME"'
     }
