@@ -54,6 +54,7 @@ import org.hibernate.cfg.JdbcSettings;
 import org.hibernate.cfg.QuerySettings;
 import org.hibernate.context.spi.CurrentSessionContext;
 import org.hibernate.internal.util.config.ConfigurationHelper;
+import org.hibernate.persister.internal.PersisterClassResolverInitiator;
 import org.hibernate.service.ServiceRegistry;
 
 import org.springframework.beans.BeansException;
@@ -81,6 +82,7 @@ import org.grails.orm.hibernate.HibernateEventListeners;
 import org.grails.orm.hibernate.MetadataIntegrator;
 import org.grails.orm.hibernate.cfg.domainbinding.binder.GrailsDomainBinder;
 import org.grails.orm.hibernate.cfg.domainbinding.util.NamingStrategyProvider;
+import org.grails.orm.hibernate.persister.GormPersisterClassResolver;
 import org.grails.orm.hibernate.proxy.GrailsBytecodeProvider;
 import org.grails.orm.hibernate.query.RestrictedCollectionSqmTranslatorFactory;
 
@@ -298,6 +300,12 @@ public class HibernateMappingContextConfiguration extends Configuration
         // with a size subquery instead, which applies the restriction (apache/grails-core#16748)
         getProperties().putIfAbsent(QuerySettings.SEMANTIC_QUERY_TRANSLATOR,
                 RestrictedCollectionSqmTranslatorFactory.class.getName());
+
+        // Hibernate 7 leaves a nullable element column out of the delete of one row of a set, which then deletes every
+        // row of the owner; this resolver gives a set of entities in a join table a persister that deletes by the
+        // element too (apache/grails-core#16691)
+        getProperties().putIfAbsent(PersisterClassResolverInitiator.IMPL_NAME,
+                GormPersisterClassResolver.class.getName());
 
         final GrailsDomainBinder domainBinder = new GrailsDomainBinder(
                 dataSourceName,
