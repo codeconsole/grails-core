@@ -1462,6 +1462,10 @@ Under Hibernate 7, an owner with two or more unidirectional `hasMany` associatio
 
 Two unidirectional associations mapped onto one shared join table, with a key column each, are read but their new elements are still not written. That is issue https://github.com/apache/grails-core/issues/10811[#10811] and is not fixed by this change; map a table per association until it is.
 
+===== 26.13 Collection Criteria Next to Association Blocks
+
+Under Hibernate 7, calling a collection criterion such as `isNotEmpty('pets')`, `isEmpty('pets')`, or `sizeEq('pets', n)` next to an association block for the same collection (`pets { ... }`) threw a `ClassCastException` because the path resolved to the join rather than the collection attribute (issue https://github.com/apache/grails-core/issues/16633[#16633]). Collection criteria now resolve to the collection property on the parent whether they appear before or after an association block of the same name.
+
 ==== 27. GORM Properties Are Nullable by Default
 
 Grails 8 changes the validation default so that an *unconstrained persistent (domain) property is nullable by default* rather than required.
