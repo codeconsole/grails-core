@@ -226,7 +226,7 @@ public abstract class NavigableMapConfig implements Config {
      * Reads the process environment again, so that a variable installed after this config was
      * created, as a test can do reflectively, is seen by the lookups that follow.
      */
-    protected void refreshSystemEnvironment() {
+    void refreshSystemEnvironment() {
         systemEnvironment = new SystemEnvironmentIndex(System.getenv());
     }
 
