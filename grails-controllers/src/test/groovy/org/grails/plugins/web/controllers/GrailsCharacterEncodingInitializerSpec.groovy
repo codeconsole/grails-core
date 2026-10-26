@@ -18,6 +18,8 @@
  */
 package org.grails.plugins.web.controllers
 
+import ch.qos.logback.classic.Level
+
 import org.springframework.boot.env.DefaultPropertiesPropertySource
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
@@ -25,7 +27,19 @@ import org.springframework.core.env.StandardEnvironment
 
 import spock.lang.Specification
 
+import org.apache.grails.core.testing.support.LogCapture
+
 class GrailsCharacterEncodingInitializerSpec extends Specification {
+
+    private LogCapture logCapture
+
+    void setup() {
+        logCapture = new LogCapture(GrailsCharacterEncodingInitializer)
+    }
+
+    void cleanup() {
+        logCapture.close()
+    }
 
     void 'translates the deprecated Grails properties into spring.servlet.encoding'() {
         given: 'an application that still sets the Grails properties'
@@ -37,6 +51,14 @@ class GrailsCharacterEncodingInitializerSpec extends Specification {
         then: 'Spring Boot reads the same settings from its own properties'
         environment.getProperty('spring.servlet.encoding.charset') == 'ISO-8859-1'
         environment.getProperty('spring.servlet.encoding.force') == 'true'
+
+        and: 'each deprecated property is named with its replacement'
+        warnings() == [
+                "'grails.filter.encoding' is deprecated and will be removed. Spring Boot registers the character " +
+                        "encoding filter now, so use 'spring.servlet.encoding.charset=ISO-8859-1' instead.",
+                "'grails.filter.forceEncoding' is deprecated and will be removed. Spring Boot registers the character " +
+                        "encoding filter now, so use 'spring.servlet.encoding.force=true' instead."
+        ]
     }
 
     void 'lets a spring.servlet.encoding setting of the application win over a translated one'() {
@@ -48,6 +70,10 @@ class GrailsCharacterEncodingInitializerSpec extends Specification {
 
         then: 'the translated value is contributed at the lowest precedence'
         environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
+
+        and: 'the deprecated property is reported as ignored'
+        warnings() == ["'grails.filter.encoding' is deprecated and will be removed. It is ignored, because " +
+                "'spring.servlet.encoding.charset' is set."]
     }
 
     void 'keeps a spring.servlet.encoding default property of the application'() {
@@ -62,6 +88,27 @@ class GrailsCharacterEncodingInitializerSpec extends Specification {
         environment.getProperty('spring.servlet.encoding.charset') == 'UTF-16'
     }
 
+    void 'translates each deprecated property on its own'() {
+        given: 'an application that sets spring.servlet.encoding.force as a default property, and both Grails properties'
+        def environment = environmentWith('grails.filter.encoding': 'ISO-8859-1', 'grails.filter.forceEncoding': 'true')
+        DefaultPropertiesPropertySource.addOrMerge(['spring.servlet.encoding.force': 'false'], environment.propertySources)
+
+        when: 'the application context is initialized'
+        initialize(environment)
+
+        then: 'the encoding is translated and the force setting of the application is kept'
+        environment.getProperty('spring.servlet.encoding.charset') == 'ISO-8859-1'
+        environment.getProperty('spring.servlet.encoding.force') == 'false'
+
+        and: 'only grails.filter.forceEncoding is reported as ignored'
+        warnings() == [
+                "'grails.filter.encoding' is deprecated and will be removed. Spring Boot registers the character " +
+                        "encoding filter now, so use 'spring.servlet.encoding.charset=ISO-8859-1' instead.",
+                "'grails.filter.forceEncoding' is deprecated and will be removed. It is ignored, because " +
+                        "'spring.servlet.encoding.force' is set."
+        ]
+    }
+
     void 'contributes nothing when the deprecated properties are not set'() {
         given: 'an application that sets neither Grails property'
         def environment = new StandardEnvironment()
@@ -72,6 +119,13 @@ class GrailsCharacterEncodingInitializerSpec extends Specification {
         then: 'Spring Boot defaults apply'
         !environment.propertySources.contains(DefaultPropertiesPropertySource.NAME)
         environment.getProperty('spring.servlet.encoding.charset') == null
+
+        and: 'nothing is logged'
+        warnings().empty
+    }
+
+    private List<String> warnings() {
+        logCapture.events.findAll { it.level == Level.WARN }*.formattedMessage
     }
 
     private static void initialize(StandardEnvironment environment) {
