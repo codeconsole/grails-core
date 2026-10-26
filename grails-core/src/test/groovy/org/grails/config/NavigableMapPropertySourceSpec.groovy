@@ -18,6 +18,12 @@
  */
 package org.grails.config
 
+import org.grails.config.yaml.YamlPropertySourceLoader
+import org.springframework.boot.context.properties.bind.Bindable
+import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.core.env.PropertySource
+import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Specification
 
 /**
@@ -52,5 +58,32 @@ class NavigableMapPropertySourceSpec extends Specification {
         ps.getProperty('foo') == null
         ps.getNavigableProperty('foo') instanceof NavigableMap
 
+    }
+
+    def "a list and a map written by indexed keys are bound as Spring Boot binds them from application.yml"() {
+        given: "a list and a map written by indexed keys, and the same list and map in application.yml"
+        def map = new NavigableMap()
+        map.merge(['app.rows[0].name': 'first', 'app.rows[0].db.url': 'jdbc:x', 'app.rows[1].name': 'second', 'app.mappings[foo].name': 'x'], true)
+        def yaml = "app:\n  rows:\n    - name: first\n      db:\n        url: jdbc:x\n    - name: second\n  mappings:\n    foo:\n      name: x\n"
+
+        when:
+        def ps = new NavigableMapPropertySource("test", map)
+        def fromKeys = binderOf(ps)
+        def fromYaml = binderOf(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yaml.bytes)).first())
+
+        then: "the map is a nested map, so it is not a property itself, as for any nested map"
+        !ps.getPropertyNames().contains('app.mappings')
+        ps.getProperty('app.mappings') == null
+
+        and: "both are bound as they are from application.yml"
+        fromKeys.bind('app.rows', Bindable.listOf(Map)).get() == fromYaml.bind('app.rows', Bindable.listOf(Map)).get()
+        fromKeys.bind('app.mappings', Bindable.mapOf(String, Object)).get() == [foo: [name: 'x']]
+        fromYaml.bind('app.mappings', Bindable.mapOf(String, Object)).get() == [foo: [name: 'x']]
+    }
+
+    private static Binder binderOf(PropertySource source) {
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(source)
+        Binder.get(environment)
     }
 }
