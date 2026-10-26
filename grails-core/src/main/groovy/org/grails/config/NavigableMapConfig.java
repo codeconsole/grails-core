@@ -304,6 +304,15 @@ public abstract class NavigableMapConfig implements Config {
         return to;
     }
 
+    private static boolean holdsNavigableMap(List<?> list) {
+        for (Object o: list) {
+            if (o instanceof NavigableMap) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private ConfigObject convertPropsToMap(ConfigObject config) {
         for (Map.Entry<String, Object> entry: (Set<Map.Entry<String, Object>>) config.entrySet()) {
             final IdentityHashMap<NavigableMap, Map<Object, Object>> cache = new IdentityHashMap<>();
@@ -330,6 +339,14 @@ public abstract class NavigableMapConfig implements Config {
                 if (originalValue instanceof NavigableMap && targetType.equals(Map.class)) {
                     final IdentityHashMap<NavigableMap, Map<Object, Object>> cache = new IdentityHashMap<>();
                     return (T) convertToMap((NavigableMap) originalValue, cache);
+                } else if (originalValue instanceof List && Collection.class.isAssignableFrom(targetType) && holdsNavigableMap((List<?>) originalValue)) {
+                    // the maps of a list are given as plain maps, as a map is
+                    final IdentityHashMap<NavigableMap, Map<Object, Object>> cache = new IdentityHashMap<>();
+                    final List<Object> converted = new ArrayList<>();
+                    for (Object o: (List<?>) originalValue) {
+                        converted.add(o instanceof NavigableMap ? convertToMap((NavigableMap) o, cache) : o);
+                    }
+                    return (T) converted;
                 } else {
                     return (T) originalValue;
                 }

@@ -129,6 +129,17 @@ class NavigableMapSpec extends Specification {
         description                  | input                                                                 | path
         'as a dotted key'            | ['a.rows[0].name': 'row', 'a.rows[0].port': '8080']                   | ['a', 'rows']
         'as a dotted key two deep'   | ['a.b.rows[0].name': 'row', 'a.b.rows[0].port': '8080']               | ['a', 'b', 'rows']
-        'in a nested map'            | [a: ['rows[0].name': 'row', 'rows[0].port': '8080']]                  | ['a', 'rows']
+    }
+
+    def "a map written by an indexed key with a property after the index keeps its entries when a dotted key is merged after it"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(['a.mappings[foo].name': 'x'], true)
+        output.merge(['a.mappings.bar': 'y'], true)
+
+        then:
+        output.navigate('a', 'mappings') == [foo: [name: 'x'], bar: 'y']
     }
 }

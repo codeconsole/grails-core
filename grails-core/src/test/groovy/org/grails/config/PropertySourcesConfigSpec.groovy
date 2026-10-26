@@ -18,8 +18,10 @@
  */
 package org.grails.config
 
+import org.grails.config.yaml.YamlPropertySourceLoader
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -129,5 +131,58 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('app.rows', List) == [[name: 'first', port: '8080'], [name: 'second']]
         config.getProperty('app.rows[0].name') == 'first'
         config.getProperty('app', Map).rows == [[name: 'first', port: '8080'], [name: 'second']]
+    }
+
+    void 'an element of a list written by indexed keys is read through dot notation as deep as it goes'() {
+        given: "a list of maps from a source that holds indexed keys, as application.properties and system properties do"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('application.properties', [
+                'app.rows[0].name': 'first', 'app.rows[0].db.url': 'jdbc:x', 'app.rows[1].name': 'second',
+        ]))
+        def config = new PropertySourcesConfig(sources)
+
+        expect: "a property two levels into an element is read, and a miss inside one is null-safe"
+        config.app.rows[0].name == 'first'
+        config.app.rows[0].db.url == 'jdbc:x'
+        (config.app.rows[0].db.url ?: 'default') == 'jdbc:x'
+        (config.app.rows[1].missing.deeper ?: 'default') == 'default'
+        config.navigate('app', 'rows')*.name == ['first', 'second']
+    }
+
+    void 'a map written by indexed keys is read through dot notation, and a key it does not hold is null-safe'() {
+        given:
+        def config = new PropertySourcesConfig()
+
+        when:
+        config.merge(['app.mappings[foo].name': 'x'])
+
+        then:
+        config.app.mappings.foo.name == 'x'
+        (config.app.mappings.bar.deeper ?: 'default') == 'default'
+
+        when: "a dotted key under the same map is merged after it"
+        config.merge(['app.mappings.bar': 'y'])
+
+        then: "the map holds both"
+        config.navigate('app', 'mappings') == [foo: [name: 'x'], bar: 'y']
+    }
+
+    void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
+        given:
+        def config = new PropertySourcesConfig(source)
+
+        expect: "getProperty gives the maps as plain maps, as it gives a map"
+        List rows = config.getProperty('app.rows', List)
+        rows*.name == ['first', 'second']
+        rows.every { !(it instanceof NavigableMap) }
+
+        and: "dot notation reads into an element, and a miss inside one is null-safe"
+        config.app.rows[0].db.url == 'jdbc:x'
+        (config.app.rows[1].missing.deeper ?: 'default') == 'default'
+
+        where:
+        description         | source
+        'indexed keys'      | new MapPropertySource('application.properties', ['app.rows[0].name': 'first', 'app.rows[0].db.url': 'jdbc:x', 'app.rows[1].name': 'second'])
+        'application.yml'   | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("app:\n  rows:\n    - name: first\n      db:\n        url: jdbc:x\n    - name: second\n".bytes)).first()
     }
 }

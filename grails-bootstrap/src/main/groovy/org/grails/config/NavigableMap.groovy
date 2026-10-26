@@ -174,8 +174,9 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     /**
      * Holds the list or map that an indexed key with a property after the index, such as {@code a.rows[0].name}, writes
      * under its flat key, {@code a.rows}, in the nested map that owns it too, so that {@code navigate('a', 'rows')} and
-     * {@code config.a.rows} read it; splitting the key at every dot wrote only an entry named after the element there,
-     * {@code rows[0]}, which the flat keys of the element are read through and which is left as it is.
+     * {@code config.a.rows} read it: a list or map of the nested maps that splitting the key at every dot built there for
+     * each element, {@code rows[0]}, which hold the element as application.yml gives it and are left as they are. The flat
+     * keys are left as they are.
      */
     private void holdIndexedContainer(NavigableMap targetMap, String indexedKey) {
         int subscriptStart = indexedKey.indexOf('[')
@@ -184,13 +185,34 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             return
         }
         String containerKey = indexedKey.substring(0, subscriptStart)
-        Object container = targetMap.get(containerKey)
         int lastDot = containerKey.lastIndexOf('.')
-        NavigableMap owner = lastDot > -1 ? targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false) : targetMap
-        if (owner == null || owner.is(owner.getRootConfig()) || !(container instanceof List || container instanceof Map)) {
+        if (lastDot < 0) {
+            // the write of the container has put it in the map that owns it already
             return
         }
-        owner.put(containerKey.substring(lastDot + 1), container)
+        NavigableMap owner = targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false)
+        Object container = targetMap.get(containerKey)
+        if (owner == null) {
+            return
+        }
+        String name = containerKey.substring(lastDot + 1)
+        if (container instanceof List) {
+            List flatList = (List) container
+            List held = []
+            for (int i = 0; i < flatList.size(); i++) {
+                Object element = owner.get("${name}[${i}]".toString())
+                held.add(element instanceof NavigableMap ? element : flatList.get(i))
+            }
+            owner.put(name, held)
+        } else if (container instanceof Map) {
+            Object current = owner.get(name)
+            NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
+            for (Map.Entry entry in ((Map) container).entrySet()) {
+                Object element = owner.get("${name}[${entry.key}]".toString())
+                held.put(String.valueOf(entry.key), element instanceof NavigableMap ? element : entry.value)
+            }
+            owner.put(name, held)
+        }
     }
 
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {
