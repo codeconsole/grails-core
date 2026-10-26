@@ -118,19 +118,39 @@ class PropertySourcesConfigSpec extends Specification {
         cfg.foo.bar == ['two': '2']
     }
 
-    void 'a placeholder in a merged value is resolved once, for the flat key and the nested entry alike'() {
-        given: "a property source that answers a new value each time it is read"
+    void 'a placeholder in a value merged #description is resolved alike for the flat key and the nested entry'() {
+        given: "a property source that answers a new value each time it is read, and a section the config already holds"
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+        config.merge([app: [name: 'demo']])
+
+        when: "a value holding a placeholder is merged into the section"
+        config.merge(merged)
+
+        then: "the dotted key, the nested map and the export all read one resolved value"
+        String resolved = config.navigate('app', 'url')
+        resolved ==~ /http:\/\/host\d+/
+        config.toProperties().getProperty('app.url') == resolved
+        config['app.url'] == resolved
+        config.getProperty('app.url') == resolved
+
+        where:
+        description       | merged
+        'in a nested map' | [app: [url: 'http://${host}']]
+        'as a dotted key' | ['app.url': 'http://${host}']
+    }
+
+    void 'a placeholder in a value merged in a nested map is resolved once'() {
+        given:
         def counter = new CountingPropertySource()
         def config = new PropertySourcesConfig(counter)
 
-        when: "a map holding a placeholder is merged"
+        when:
         config.merge([app: [url: 'http://${host}']])
 
-        then: "the dotted key, the nested map and the export all read the one resolved value"
-        config.getProperty('app.url') == 'http://host1'
+        then:
         config['app.url'] == 'http://host1'
         config.navigate('app', 'url') == 'http://host1'
-        config.toProperties().getProperty('app.url') == 'http://host1'
         counter.readCount() == 1
     }
 
