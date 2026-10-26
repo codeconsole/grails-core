@@ -37,6 +37,7 @@ ext['logback.version'] = bomDependencyVersions['logback.version']
 ext['jackson-bom.version'] = bomDependencyVersions['jackson.version']
 ext['log4j2.version'] = gradleBomDependencyVersions['log4j2.version']
 ext['tomcat.version'] = bomDependencyVersions['tomcat.version']
+ext['hibernate-validator.version'] = bomDependencyVersions['hibernate-validator.version']
 
 jar {
     processResources.exclude('**/*.gsp')
