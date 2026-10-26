@@ -122,6 +122,7 @@ class PropertySourcesConfigSpec extends Specification {
         def config = new PropertySourcesConfig([a: [b: 'root'], x: ['a.b': 'nested'], logging: [level: ['org.springframework': 'DEBUG']]])
 
         expect: "each property is read and exported under its own name"
+        config['a.b'] == 'root'
         config.getProperty('a.b') == 'root'
         config.getProperty('x.a.b') == 'nested'
         config.getProperty('logging.level.org.springframework') == 'DEBUG'
@@ -132,5 +133,17 @@ class PropertySourcesConfigSpec extends Specification {
         and: "no property is written under the dotted key alone"
         config.getProperty('org.springframework') == null
         !config.toProperties().containsKey('org.springframework')
+    }
+
+    void 'a dotted key inside a nested map writes no property that the nested maps do not hold'() {
+        given: "a map with no b of its own, and a nested map holding a dotted key that alone names a.b"
+        def config = new PropertySourcesConfig([a: [c: '1'], x: ['a.b': 'nested']])
+
+        expect: "a.b is absent, and the dotted key is read under its full path"
+        config.getProperty('a.b') == null
+        !config.toProperties().containsKey('a.b')
+        config.navigate('a', 'b') == null
+        config.getProperty('x.a.b') == 'nested'
+        config.getProperty('a.c') == '1'
     }
 }
