@@ -87,4 +87,4 @@ A filter registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterReg
 
 ===== Required Actions
 
-For most applications **no changes are required**. Check that packaged stylesheets and scripts with non-ASCII characters are in the charset their responses now declare: UTF-8, or the encoding `grails.filter.encoding` names. A filter that has to run before the encoding filter can be registered at `Ordered.HIGHEST_PRECEDENCE`; a filter that reads request parameters needs a later order than that.
+For most applications **no changes are required**. Check that packaged stylesheets and scripts with non-ASCII characters are in the charset their responses now declare: UTF-8, or the encoding `grails.filter.encoding` names. A filter that has to run before the encoding filter can be registered at `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean`; a filter that reads request parameters needs a later order than that.
