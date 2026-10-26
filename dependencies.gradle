@@ -124,6 +124,10 @@ ext {
             // PackagerResolver where '../' in module coordinates escapes the configured buildRoot.
             'ivy.version'                   : '2.6.0',
             'hibernate-groovy-proxy.version': '1.1',
+            // Security: overrides spring-boot-dependencies (8.0.3.Final). 8.0.6.Final fixes CVE-2026-93879 (HV-2256)
+            // by escaping message parameters by default, so a {duplicates} value is no longer evaluated as
+            // Expression Language.
+            'hibernate-validator.version'   : '8.0.6.Final',
             'jakarta-servlet-api.version'   : '6.1.0',
             'jakarta-validation-api.version': '3.1.1',
             'junit.version'                 : '5.13.4',
@@ -257,6 +261,9 @@ ext {
             'junit-platform-suite-engine' : "org.junit.platform:junit-platform-suite-engine:${bomDependencyVersions['junit-platform.version']}",
             // end - boot & spock conflict, so pin the version we want (newest)
             'hibernate-groovy-proxy'      : "org.yakworks:hibernate-groovy-proxy:${bomDependencyVersions['hibernate-groovy-proxy.version']}",
+            // Security override of spring-boot-dependencies - see hibernate-validator.version
+            'hibernate-validator'                     : "org.hibernate.validator:hibernate-validator:${bomDependencyVersions['hibernate-validator.version']}",
+            'hibernate-validator-annotation-processor': "org.hibernate.validator:hibernate-validator-annotation-processor:${bomDependencyVersions['hibernate-validator.version']}",
             // Security override of spring-boot-dependencies - see micrometer.version
             'micrometer-commons'          : "io.micrometer:micrometer-commons:${bomDependencyVersions['micrometer.version']}",
             'micrometer-core'             : "io.micrometer:micrometer-core:${bomDependencyVersions['micrometer.version']}",
