@@ -176,7 +176,8 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      * under its flat key, {@code a.rows}, in the nested map that owns it too, so that {@code navigate('a', 'rows')} and
      * {@code config.a.rows} read it: a list or map of the nested maps that splitting the key at every dot built there for
      * each element, {@code rows[0]}, which hold the element as application.yml gives it and are left as they are. The flat
-     * keys are left as they are.
+     * key {@code a.rows} then holds the same list or map, as the flat key of a nested map holds that map, so a dotted key
+     * merged into it later is read through both. The flat keys of the elements are left as they are.
      */
     private void holdIndexedContainer(NavigableMap targetMap, String indexedKey) {
         int subscriptStart = indexedKey.indexOf('[')
@@ -203,6 +204,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 held.add(heldElement(owner.get("${name}[${i}]".toString()), flatList.get(i)))
             }
             owner.put(name, held)
+            targetMap.put(containerKey, held)
         } else if (container instanceof Map) {
             Object current = owner.get(name)
             NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
@@ -210,6 +212,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 held.put(String.valueOf(entry.key), heldElement(owner.get("${name}[${entry.key}]".toString()), entry.value))
             }
             owner.put(name, held)
+            targetMap.put(containerKey, held)
         }
     }
 

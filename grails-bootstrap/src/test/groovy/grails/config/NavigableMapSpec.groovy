@@ -125,6 +125,9 @@ class NavigableMapSpec extends Specification {
         then: 'the nested map holds the list, so navigation reads it'
         output.navigate(path as String[]) == [[name: 'row', port: '8080']]
 
+        and: 'the flat key holds the same list'
+        output.get(path.join('.')).is(output.navigate(path as String[]))
+
         where:
         description                  | input                                                                 | path
         'as a dotted key'            | ['a.rows[0].name': 'row', 'a.rows[0].port': '8080']                   | ['a', 'rows']
@@ -139,7 +142,8 @@ class NavigableMapSpec extends Specification {
         output.merge(['a.mappings[foo].name': 'x'], true)
         output.merge(['a.mappings.bar': 'y'], true)
 
-        then:
+        then: 'the nested map and the flat key hold the same map'
         output.navigate('a', 'mappings') == [foo: [name: 'x'], bar: 'y']
+        output.get('a.mappings').is(output.navigate('a', 'mappings'))
     }
 }

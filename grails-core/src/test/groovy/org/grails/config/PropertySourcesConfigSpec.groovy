@@ -163,8 +163,9 @@ class PropertySourcesConfigSpec extends Specification {
         when: "a dotted key under the same map is merged after it"
         config.merge(['app.mappings.bar': 'y'])
 
-        then: "the map holds both"
+        then: "the map holds both, read through the nested maps or the flat key"
         config.navigate('app', 'mappings') == [foo: [name: 'x'], bar: 'y']
+        config['app.mappings'] == [foo: [name: 'x'], bar: 'y']
     }
 
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
@@ -198,5 +199,6 @@ class PropertySourcesConfigSpec extends Specification {
         fromKeys.getProperty('app.rows', List) == fromYaml.getProperty('app.rows', List)
         fromKeys.getProperty('app.rows', List)[0] == [name: 'first', db: [url: 'jdbc:x'], 'db.url': 'jdbc:x']
         fromKeys.navigate('app', 'rows') == fromYaml.navigate('app', 'rows')
+        fromKeys['app.rows'] == fromYaml['app.rows']
     }
 }
