@@ -33,7 +33,9 @@ public enum GrailsFilters {
      * The order of the character encoding filter Grails registered before 9.0.
      *
      * @deprecated since 9.0, for removal. Grails no longer registers a character encoding filter; Spring Boot
-     * registers one at {@code Ordered.HIGHEST_PRECEDENCE}, ahead of every other filter.
+     * registers one at {@code Ordered.HIGHEST_PRECEDENCE}, ahead of every other filter. The filters after it
+     * take their orders from their position in this enum, so when it is removed, give them their current orders
+     * explicitly.
      */
     @Deprecated(since = "9.0", forRemoval = true)
     CHARACTER_ENCODING_FILTER,
