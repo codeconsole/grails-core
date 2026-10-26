@@ -200,19 +200,37 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             List flatList = (List) container
             List held = []
             for (int i = 0; i < flatList.size(); i++) {
-                Object element = owner.get("${name}[${i}]".toString())
-                held.add(element instanceof NavigableMap ? element : flatList.get(i))
+                held.add(heldElement(owner.get("${name}[${i}]".toString()), flatList.get(i)))
             }
             owner.put(name, held)
         } else if (container instanceof Map) {
             Object current = owner.get(name)
             NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
             for (Map.Entry entry in ((Map) container).entrySet()) {
-                Object element = owner.get("${name}[${entry.key}]".toString())
-                held.put(String.valueOf(entry.key), element instanceof NavigableMap ? element : entry.value)
+                held.put(String.valueOf(entry.key), heldElement(owner.get("${name}[${entry.key}]".toString()), entry.value))
             }
             owner.put(name, held)
         }
+    }
+
+    /**
+     * The element to hold: the nested map built for it, which also takes the entries of the flat key's element, such as
+     * {@code db.url} beside {@code db}, as an element from application.yml holds both, or the flat key's element itself.
+     */
+    private static Object heldElement(Object nested, Object flat) {
+        if (!(nested instanceof NavigableMap)) {
+            return flat
+        }
+        NavigableMap element = (NavigableMap) nested
+        if (flat instanceof Map) {
+            for (Map.Entry entry in ((Map) flat).entrySet()) {
+                String key = String.valueOf(entry.key)
+                if (!element.containsKey(key)) {
+                    element.put(key, entry.value)
+                }
+            }
+        }
+        element
     }
 
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {

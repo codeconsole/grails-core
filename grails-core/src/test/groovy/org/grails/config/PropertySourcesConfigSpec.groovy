@@ -185,4 +185,18 @@ class PropertySourcesConfigSpec extends Specification {
         'indexed keys'      | new MapPropertySource('application.properties', ['app.rows[0].name': 'first', 'app.rows[0].db.url': 'jdbc:x', 'app.rows[1].name': 'second'])
         'application.yml'   | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("app:\n  rows:\n    - name: first\n      db:\n        url: jdbc:x\n    - name: second\n".bytes)).first()
     }
+
+    void 'a list of maps written by indexed keys gives the same list as application.yml'() {
+        given:
+        def fromKeys = new PropertySourcesConfig(new MapPropertySource('application.properties', [
+                'app.rows[0].name': 'first', 'app.rows[0].db.url': 'jdbc:x', 'app.rows[1].name': 'second',
+        ]))
+        def fromYaml = new PropertySourcesConfig(new YamlPropertySourceLoader().load('application.yml',
+                new ByteArrayResource("app:\n  rows:\n    - name: first\n      db:\n        url: jdbc:x\n    - name: second\n".bytes)).first())
+
+        expect:
+        fromKeys.getProperty('app.rows', List) == fromYaml.getProperty('app.rows', List)
+        fromKeys.getProperty('app.rows', List)[0] == [name: 'first', db: [url: 'jdbc:x'], 'db.url': 'jdbc:x']
+        fromKeys.navigate('app', 'rows') == fromYaml.navigate('app', 'rows')
+    }
 }
