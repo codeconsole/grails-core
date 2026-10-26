@@ -127,6 +127,10 @@ ext {
             // Security: 5.11.1 fixes CVE-2026-88033 (GridFS query-operator injection in file identifiers) and
             // retains the 5.9.2 fix for CVE-2026-18710 (SOCKS5 proxy credentials exposed in logs).
             'mongodb.version'               : '5.11.1',
+            // Security: overrides spring-boot-dependencies (4.1.135.Final), which no open source Spring Boot 3.5.x
+            // release will move. 4.1.137.Final and later fix CVE-2026-75595 (SNI routing bypass via a fragmented
+            // TLS ClientHello) and the SPDY, HTTP/2 and CORS advisories against 4.1.135.Final.
+            'netty.version'                 : '4.1.139.Final',
             'nimbus-jose-jwt.version'       : '10.5',
             'opentelemetry.version'         : '1.62.0',
             'plexus-utils.version'          : '4.0.3',
@@ -160,6 +164,8 @@ ext {
             'asset-pipeline-bom': "cloud.wondrify:asset-pipeline-bom:${bomDependencyVersions['asset-pipeline-bom.version']}",
             'spock-bom'         : "org.spockframework:spock-bom:${bomDependencyVersions['spock.version']}",
             'jackson-bom'       : "com.fasterxml.jackson:jackson-bom:${bomDependencyVersions['jackson.version']}",
+            // Security override of spring-boot-dependencies - see netty.version
+            'netty-bom'         : "io.netty:netty-bom:${bomDependencyVersions['netty.version']}",
             'groovy-bom'        : "org.apache.groovy:groovy-bom:${bomDependencyVersions['groovy.version']}",
             'junit-bom'         : "org.junit:junit-bom:${bomDependencyVersions['junit.version']}",
             'selenium-bom'      : "org.seleniumhq.selenium:selenium-bom:${bomDependencyVersions['selenium.version']}",
