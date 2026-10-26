@@ -97,7 +97,9 @@ ext {
             'commons-lang3.version'         : '3.20.0',
             'geb-spock.version'             : '8.0.1',
             'groovy.version'                : '4.0.33',
-            'guava.version'                 : '33.6.0-jre',
+            // Security: 33.7.2 fixes CVE-2026-102554, unbounded allocation when deserializing CompactHashMap,
+            // CompactHashSet and MapMakerInternalMap.
+            'guava.version'                 : '33.7.2-jre',
             'h2.version'                    : '2.4.240',
             // Security: overrides spring-boot-dependencies (5.5.2). 5.6.4 fixes CVE-2026-64607, a connection leak in
             // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.5 targets
