@@ -116,4 +116,18 @@ class PropertySourcesConfigSpec extends Specification {
         then: 'the second value is not merged with the first value'
         cfg.foo.bar == ['two': '2']
     }
+
+    void 'a list merged as indexed keys with a property after the index is read through the nested maps'() {
+        given: "a config"
+        def config = new PropertySourcesConfig()
+
+        when: "a list of maps is merged as the indexed keys a flattened application.yml holds"
+        config.merge(['app.rows[0].name': 'first', 'app.rows[0].port': '8080', 'app.rows[1].name': 'second'])
+
+        then: "the nested maps hold the list, so every read of it agrees"
+        config.navigate('app', 'rows') == [[name: 'first', port: '8080'], [name: 'second']]
+        config.getProperty('app.rows', List) == [[name: 'first', port: '8080'], [name: 'second']]
+        config.getProperty('app.rows[0].name') == 'first'
+        config.getProperty('app', Map).rows == [[name: 'first', port: '8080'], [name: 'second']]
+    }
 }

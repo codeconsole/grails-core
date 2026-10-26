@@ -114,4 +114,21 @@ class NavigableMapSpec extends Specification {
         output['rabbitmq.connections']['foo'].username == 'guest'
         output['rabbitmq.connections']['foo'].password == 'guest'
     }
+
+    def "an indexed key with a property after the index builds the list in the nested map, written #description"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(input, true)
+
+        then: 'the nested map holds the list, so navigation reads it'
+        output.navigate(path as String[]) == [[name: 'row', port: '8080']]
+
+        where:
+        description                  | input                                                                 | path
+        'as a dotted key'            | ['a.rows[0].name': 'row', 'a.rows[0].port': '8080']                   | ['a', 'rows']
+        'as a dotted key two deep'   | ['a.b.rows[0].name': 'row', 'a.b.rows[0].port': '8080']               | ['a', 'b', 'rows']
+        'in a nested map'            | [a: ['rows[0].name': 'row', 'rows[0].port': '8080']]                  | ['a', 'rows']
+    }
 }

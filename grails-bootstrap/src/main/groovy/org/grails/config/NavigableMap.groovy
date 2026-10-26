@@ -158,8 +158,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                     mergeMapEntry(rootMap, path, targetMap, sourceKey, sourceValue, parseFlatKeys)
                     def pathParts = keyParts[0..-2]
                     Map actualTarget = targetMap.navigateSubMap(pathParts as List, true)
+                    String indexedKey = sourceKey
                     sourceKey = keyParts[-1]
                     mergeMapEntry(rootMap, pathParts.join('.'), actualTarget, sourceKey, sourceValue, parseFlatKeys)
+                    holdIndexedContainer(targetMap, indexedKey)
                 } else {
                     mergeMapEntry(rootMap, path, targetMap, sourceKey, sourceValue, parseFlatKeys)
                 }
@@ -167,6 +169,28 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 mergeMapEntry(rootMap, path, targetMap, sourceKey, sourceValue, parseFlatKeys)
             }
         }
+    }
+
+    /**
+     * Holds the list or map that an indexed key with a property after the index, such as {@code a.rows[0].name}, writes
+     * under its flat key, {@code a.rows}, in the nested map that owns it too, so that {@code navigate('a', 'rows')} and
+     * {@code config.a.rows} read it; splitting the key at every dot wrote only an entry named after the element there,
+     * {@code rows[0]}, which the flat keys of the element are read through and which is left as it is.
+     */
+    private void holdIndexedContainer(NavigableMap targetMap, String indexedKey) {
+        int subscriptStart = indexedKey.indexOf('[')
+        int subscriptEnd = subscriptStart > -1 ? indexedKey.indexOf(']', subscriptStart) : -1
+        if (subscriptEnd < 0 || indexedKey.indexOf('.', subscriptEnd) < 0) {
+            return
+        }
+        String containerKey = indexedKey.substring(0, subscriptStart)
+        Object container = targetMap.get(containerKey)
+        int lastDot = containerKey.lastIndexOf('.')
+        NavigableMap owner = lastDot > -1 ? targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false) : targetMap
+        if (owner == null || owner.is(owner.getRootConfig()) || !(container instanceof List || container instanceof Map)) {
+            return
+        }
+        owner.put(containerKey.substring(lastDot + 1), container)
     }
 
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {
