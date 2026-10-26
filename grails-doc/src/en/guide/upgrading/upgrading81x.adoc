@@ -84,7 +84,7 @@ Every filter ordered between `Ordered.HIGHEST_PRECEDENCE + 1` and -181 now runs 
 * A filter that reads a request body sent without a charset through `getReader()` now decodes it as UTF-8, or as `grails.filter.encoding` says, instead of as ISO-8859-1.
 * With `grails.filter.forceEncoding: true`, a response such a filter writes without a charset is now encoded with the forced encoding instead of ISO-8859-1, and a request encoding such a filter sets is no longer replaced by the forced one.
 
-A filter registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean` still runs before the encoding filter.
+A filter registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean` still runs before the encoding filter. The CAS plugin's single sign-out filter, which reads a parameter of every POST, was registered that way; it is now registered right after the encoding filter, at `Ordered.HIGHEST_PRECEDENCE + 1`.
 
 ===== Required Actions
 
