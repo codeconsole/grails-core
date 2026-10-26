@@ -380,15 +380,30 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings) {
+        flattenKeys(flatConfig, currentMap, path, forceStrings, this, 0)
+    }
+
+    /**
+     * Writes the entries of a map under their names. An entry of a map written by map subscripts, such as {@code /api/**}
+     * of {@code app.routes[/api/**]}, is written under the bracketed flat key that the nearest enclosing nested map holds
+     * for it, relative to that map, and so is skipped here, where it would be written again under the dotted name
+     * {@code app.routes./api/**}, which Spring Boot binds as {@code api}; so is a dotted flat key of the map itself that
+     * names the same entry, as a merge of a block holding the entry writes {@code app.routes./api/**} at the root.
+     */
+    private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings,
+                             NavigableMap owner, int ownerDepth) {
+        NavigableMap childOwner = currentMap instanceof NavigableMap ? (NavigableMap) currentMap : owner
+        int childOwnerDepth = currentMap instanceof NavigableMap ? path.size() : ownerDepth
+        List<String> relativePath = path.subList(ownerDepth, path.size())
         currentMap.each { key, value ->
             String stringKey = String.valueOf(key)
-            if (value != null && !isEntryOfBracketedKey(currentMap, path, stringKey)) {
+            if (value != null && !isNamedInBrackets(owner, relativePath, stringKey)) {
                 if (value instanceof Map) {
                     List<String> newPathList = []
                     newPathList.addAll(path)
                     newPathList.add(stringKey)
 
-                    flattenKeys(flatConfig, (Map) value, newPathList.asImmutable(), forceStrings)
+                    flattenKeys(flatConfig, (Map) value, newPathList.asImmutable(), forceStrings, childOwner, childOwnerDepth)
                 } else {
                     String fullKey
                     if (path) {
@@ -417,14 +432,20 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * Whether the entry is one of a map written by map subscripts that the root holds under its bracketed flat key, as
-     * {@code app.routes[/api/**]} holds the entry {@code /api/**} of the map {@code app.routes}: that key exports it, and
-     * its dotted name, {@code app.routes./api/**}, would export it a second time under a name Spring Boot binds as
-     * {@code api}.
+     * Whether the entry is held by the map under a bracketed flat key, relative to the map: {@code routes[/api/**]} for
+     * the entry {@code /api/**} below {@code routes}, or, for a flat key of the map itself such as
+     * {@code app.routes./api/**}, the bracketed key that splits it at one of its dots, {@code app.routes[/api/**]}.
      */
-    private boolean isEntryOfBracketedKey(Map currentMap, List<String> path, String key) {
-        path && !(currentMap instanceof NavigableMap) && rootConfig.is(this) &&
-                delegateMap.containsKey("${path.join('.')}[${key}]".toString())
+    private static boolean isNamedInBrackets(NavigableMap owner, List<String> relativePath, String key) {
+        if (relativePath) {
+            return owner.containsKey("${relativePath.join('.')}[${key}]".toString())
+        }
+        for (int dot = key.indexOf('.'); dot > 0; dot = key.indexOf('.', dot + 1)) {
+            if (owner.containsKey("${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString())) {
+                return true
+            }
+        }
+        false
     }
 
     @Override

@@ -18,11 +18,13 @@
  */
 package org.grails.config
 
+import org.grails.config.yaml.YamlPropertySourceLoader
 import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
 import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -148,5 +150,23 @@ class PropertySourcesConfigSpec extends Specification {
 
         expect:
         config.toProperties().getProperty('plain.nested') == 'value'
+    }
+
+    void 'a map written by map subscripts is exported once whatever precedes it in application.yml, #description'() {
+        given: "application.yml as Grails loads it, which keeps the order of the file"
+        def config = new PropertySourcesConfig(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yaml.bytes)).first())
+
+        when:
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', config.toProperties() as Map<String, Object>))
+
+        then:
+        !config.toProperties().stringPropertyNames().any { it.contains('./') }
+        Binder.get(published).bind(prefix, Bindable.mapOf(String, Object)).get() == bound
+
+        where:
+        description                          | yaml                                                                         | prefix        | bound
+        'a plain key before a bracketed one' | "app:\n  routes:\n    default: z\n    '[/api/**]': x\n"                       | 'app.routes'  | [default: 'z', '/api/**': 'x']
+        'a subscript after a subscript'      | "app:\n  tenants:\n    '[acme]':\n      routes:\n        '[/api/**]': x\n" | 'app.tenants' | [acme: [routes: ['/api/**': 'x']]]
     }
 }

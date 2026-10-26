@@ -208,4 +208,24 @@ test.another = true
         !cloned.is(configMap)
         cloned == configMap
     }
+
+    def "an entry of a map written by map subscripts is flattened once, by its bracketed key, #description"() {
+        given:
+        NavigableMap configMap = new NavigableMap()
+        merges.each { Map merged -> configMap.merge(merged, true) }
+
+        when:
+        NavigableMap flattened = from.call(configMap)
+
+        then:
+        flattened.toFlatConfig().keySet() == keys as Set
+        flattened.toProperties().stringPropertyNames() == keys as Set
+
+        where:
+        description                          | merges                                                      | from                                        | keys
+        'after a dotted key in the same map' | [['app.routes.default': 'z'], ['app.routes[/api/**]': 'x']] | { NavigableMap map -> map }                 | ['app.routes.default', 'app.routes[/api/**]']
+        'after another subscript'            | [['app.tenants[acme].routes[/api/**]': 'x']]                | { NavigableMap map -> map }                 | ['app.tenants[acme].routes[/api/**]']
+        'from a nested map'                  | [['app.routes[/api/**]': 'x']]                              | { NavigableMap map -> map.navigate('app') } | ['routes[/api/**]']
+        'from a copy'                        | [['app.routes[/api/**]': 'x']]                              | { NavigableMap map -> map.clone() }         | ['app.routes[/api/**]']
+    }
 }
