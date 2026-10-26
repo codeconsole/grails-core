@@ -19,7 +19,6 @@
 package org.grails.web.config.http;
 
 import org.springframework.boot.autoconfigure.security.SecurityProperties;
-import org.springframework.core.Ordered;
 
 /**
  * Stores the default order numbers of all Grails filters for use in configuration.
@@ -30,14 +29,7 @@ public enum GrailsFilters {
 
     FIRST,
     ASSET_PIPELINE_FILTER,
-
-    /**
-     * Runs ahead of every other filter, as Spring Boot's own encoding filter does. A filter that reads a request
-     * parameter before the encoding is set makes the servlet container decode the request body with its default
-     * charset (ISO-8859-1), for the rest of the request.
-     */
-    CHARACTER_ENCODING_FILTER(Ordered.HIGHEST_PRECEDENCE),
-
+    CHARACTER_ENCODING_FILTER,
     HIDDEN_HTTP_METHOD_FILTER,
     SITEMESH_FILTER,
     GRAILS_WEB_REQUEST_FILTER,
