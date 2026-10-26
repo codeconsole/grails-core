@@ -99,10 +99,11 @@ ext {
             'httpclient5.version'           : '5.6.4',
             // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 and later fix CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
             'httpcore5.version'             : '5.4.4',
-            // Security: pac4j 6.5.x pulls 2.22.1. 2.22.3 fixes CVE-2026-89425, CVE-2026-89407,
-            // CVE-2026-91777 and CVE-2026-91776, and retains the fixes for CVE-2026-19032,
+            // Security: pac4j 6.5.x pulls 2.22.1. 2.22.4 fixes CVE-2026-110879 (databind type id validation) and
+            // the Avro, CBOR, Protobuf and Smile CVEs listed in its release notes, and retains the 2.22.3 fixes for
+            // CVE-2026-89425, CVE-2026-89407, CVE-2026-91777 and CVE-2026-91776 and the fixes for CVE-2026-19032,
             // CVE-2026-68497 and CVE-2026-83557 on the 2.22.x line.
-            'jackson.version'               : '2.22.3',
+            'jackson.version'               : '2.22.4',
             // Security: overrides spring-boot-dependencies (1.5.34). 1.5.38 is the newest release of the 1.5.x line
             // and matches what Spring Boot 4.1.x manages. See the CVE-2026-19880 and CVE-2026-104721 notes in
             // VulnerabilityScanPlugin for the logback advisories this version does not clear.
