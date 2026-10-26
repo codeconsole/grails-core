@@ -701,6 +701,10 @@ scheduler does not know about explains why it is not registered — neither ends
 any more. See <<quartzLongRunningJobs,Long-Running Jobs>> for what a job that outlives its trigger's
 interval needs, and <<upgrading80x>> for the details.
 
+==== Faster Configuration Lookups
+
+`grailsApplication.config.getProperty` no longer probes the process environment on every call. The environment is read once, when the configuration is created, and its variable names are indexed, so a property that no variable can match is answered without touching `System.getenv`. A test that installs environment variables installs them before the application context is created, or calls `refresh()` on the configuration afterwards to have them seen; see xref:upgrading#upgrading81x[the upgrade guide].
+
 ==== Compiled Tag Resolution
 
 Tag libraries are now described when they are compiled, and that description resolves tag calls in
