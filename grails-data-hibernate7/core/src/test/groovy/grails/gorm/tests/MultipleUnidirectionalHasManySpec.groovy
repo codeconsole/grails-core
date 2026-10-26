@@ -123,17 +123,17 @@ class MultipleUnidirectionalHasManySpec extends HibernateGormDatastoreSpec {
         MuhGroup.get(first.id).roles.isEmpty()
     }
 
-    void "two unidirectional hasMany associations sharing one join table keep their rows across a flush of the owner"() {
-        given: "a persisted account whose allow and deny roles share one join table, with a row for each in that table"
+    void "two unidirectional hasMany associations to the same class sharing the default join table keep their rows across a flush of the owner"() {
+        given: "a persisted account whose allow and deny roles share the default join table, with a key column each, and a row for each in that table"
         def account = new MuhSharedAccount(name: 'Shared account').save(flush: true)
         def allow = new MuhRole(authority: 'ROLE_ALLOW').save(flush: true)
         def deny = new MuhRole(authority: 'ROLE_DENY').save(flush: true)
         MuhSharedAccount.withSession { session ->
             session.createNativeMutationQuery(
-                    "insert into muh_shared_account_roles (account_id, role_id, deny_role_id) values (${account.id}, ${allow.id}, null)".toString()
+                    "insert into muh_shared_account_muh_role (muh_role_id, muh_shared_account_roles_id, muh_shared_account_deny_roles_id) values (${allow.id}, ${account.id}, null)".toString()
             ).executeUpdate()
             session.createNativeMutationQuery(
-                    "insert into muh_shared_account_roles (account_id, role_id, deny_role_id) values (${account.id}, null, ${deny.id})".toString()
+                    "insert into muh_shared_account_muh_role (muh_role_id, muh_shared_account_roles_id, muh_shared_account_deny_roles_id) values (${deny.id}, null, ${account.id})".toString()
             ).executeUpdate()
             session.clear()
         }
@@ -151,7 +151,7 @@ class MultipleUnidirectionalHasManySpec extends HibernateGormDatastoreSpec {
 
         then: "the shared table keeps both rows, and the added deny role has a row of its own with the deny key column"
         MuhRole deny2 = MuhRole.findByAuthority('ROLE_DENY_2')
-        sharedRows() == [[account.id, allow.id, null], [account.id, null, deny.id], [account.id, null, deny2.id]]
+        sharedRows() == [[allow.id, account.id, null], [deny.id, null, account.id], [deny2.id, null, account.id]]
         MuhSharedAccount.get(account.id).roles*.authority == ['ROLE_ALLOW']
         MuhSharedAccount.get(account.id).denyRoles*.authority.sort() == ['ROLE_DENY', 'ROLE_DENY_2']
     }
@@ -160,8 +160,8 @@ class MultipleUnidirectionalHasManySpec extends HibernateGormDatastoreSpec {
         given: "an account whose allow and deny roles share a join table, and a role already allowed"
         def account = new MuhSharedAccount(name: 'Strict account').save(flush: true)
         def role = new MuhRole(authority: 'ROLE_ONCE').save(flush: true)
-        String allow = "insert into muh_shared_account_roles (account_id, role_id, deny_role_id) values (${account.id}, ${role.id}, null)"
-        String deny = "insert into muh_shared_account_roles (account_id, role_id, deny_role_id) values (${account.id}, null, ${role.id})"
+        String allow = "insert into muh_shared_account_muh_role (muh_role_id, muh_shared_account_roles_id, muh_shared_account_deny_roles_id) values (${role.id}, ${account.id}, null)"
+        String deny = "insert into muh_shared_account_muh_role (muh_role_id, muh_shared_account_roles_id, muh_shared_account_deny_roles_id) values (${role.id}, null, ${account.id})"
         MuhSharedAccount.withSession { it.createNativeMutationQuery(allow.toString()).executeUpdate() }
 
         expect: "the same role denied by the same account is accepted: it is another association"
@@ -211,7 +211,7 @@ class MultipleUnidirectionalHasManySpec extends HibernateGormDatastoreSpec {
     private static List<List> sharedRows() {
         MuhSharedAccount.withSession { session ->
             session.createNativeQuery(
-                    'select account_id, role_id, deny_role_id from muh_shared_account_roles order by role_id nulls last, deny_role_id', Object[]
+                    'select muh_role_id, muh_shared_account_roles_id, muh_shared_account_deny_roles_id from muh_shared_account_muh_role order by muh_role_id', Object[]
             ).list()*.toList()
         }
     }
@@ -270,10 +270,6 @@ class MuhSharedAccount {
     Long id
     String name
     static hasMany = [roles: MuhRole, denyRoles: MuhRole]
-    static mapping = {
-        roles joinTable: [name: 'muh_shared_account_roles', key: 'account_id', column: 'role_id']
-        denyRoles joinTable: [name: 'muh_shared_account_roles', key: 'account_id', column: 'deny_role_id']
-    }
 }
 
 @Entity
