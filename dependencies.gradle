@@ -26,9 +26,9 @@ ext {
             'asm.version'                   : '9.10.1',
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.1',
-            'asset-pipeline-gradle.version' : '5.0.35',
+            'asset-pipeline-gradle.version' : '5.0.36',
             'bnd.version'                   : '7.1.0',
-            'byte-buddy.version'            : '1.18.14',
+            'byte-buddy.version'            : '1.18.16',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-spock.version'          : '2.3-groovy-3.0',
@@ -81,12 +81,12 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.0.35',
+            'asset-pipeline-bom.version'    : '5.0.36',
             'cas-client-core.version'       : '4.0.4',
-            'bootstrap-icons.version'       : '1.13.1',
+            'bootstrap-icons.version'       : '1.13.2',
             'bootstrap.version'             : '5.3.8',
             // Align with pac4j-oauth 6.5.x so the BOM manages the transitive version too.
-            'commons-codec.version'         : '1.22.0',
+            'commons-codec.version'         : '1.22.1',
             'commons-compress.version'      : '1.28.0',
             'commons-lang3.version'         : '3.20.0',
             'geb-spock.version'             : '8.0.1',
@@ -94,9 +94,9 @@ ext {
             'guava.version'                 : '33.6.0-jre',
             'h2.version'                    : '2.4.240',
             // Security: overrides spring-boot-dependencies (5.5.2). 5.6.4 fixes CVE-2026-64607, a connection leak in
-            // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.4 still targets
-            // httpcore5 5.4.3, so it needs no companion httpcore5 change.
-            'httpclient5.version'           : '5.6.4',
+            // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.5 targets
+            // httpcore5 5.4.4, which httpcore5.version already pins.
+            'httpclient5.version'           : '5.6.5',
             // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 and later fix CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
             'httpcore5.version'             : '5.4.4',
             // Security: pac4j 6.5.x pulls 2.22.1. 2.22.4 fixes CVE-2026-110879 (databind type id validation) and
@@ -123,7 +123,7 @@ ext {
             // Security: overrides spring-boot-dependencies (1.15.12). 1.16.7 is the oldest open source release that
             // fixes CVE-2026-59295 (DoS in the Apache HttpAsyncClient instrumentation) and CVE-2026-59296 (metric
             // name/tag injection via unsanitised newlines); the 1.15.13 patch is Enterprise Support only.
-            'micrometer.version'            : '1.16.7',
+            'micrometer.version'            : '1.16.8',
             // Security: 5.11.1 fixes CVE-2026-88033 (GridFS query-operator injection in file identifiers) and
             // retains the 5.9.2 fix for CVE-2026-18710 (SOCKS5 proxy credentials exposed in logs).
             'mongodb.version'               : '5.11.1',
