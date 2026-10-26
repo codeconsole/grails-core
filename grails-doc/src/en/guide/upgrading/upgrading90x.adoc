@@ -1229,3 +1229,11 @@ See <<asyncPromises,Promises>> and <<events,Events>>.
 
 `grails-async-rxjava3` carries a `null` value as the RxJava 1 factory and every other promise factory do: `createPromise()` and `createPromise(Class)` give a promise whose `get()` returns `null`, a task that returns `null` resolves to `null`, and a `null` value keeps its place in the list that `onComplete`, `onError` and `waitAll` deliver.
 `grails-async-rxjava2` does not: there `createPromise()` and `onComplete` over a list holding a bound promise of `null` fail with a `NullPointerException`, and a task that returns `null` resolves to the `java.lang.Void` class.
+
+==== 20. A Configuration Key Below a Value That Is Not a Map Is Absent
+
+In Grails 8, `getProperty` on `grailsApplication.config` answered a dotted key that runs past a value that is not a map with that value: `server.url.port` when `server.url` is a string, `server.ports.0` when `server.ports` is a list, or `grails.gorm.default.constraints.nullable` when `grails.gorm.default.constraints` is a closure from `application.groovy`. `containsProperty` of such a key was `true`. In Grails 9 the key is absent: `getProperty` returns `null` or the default, `containsProperty` returns `false`, and `navigate` answers `null`.
+
+===== Required Actions
+
+Code that reads a child of a string, a list or a closure and relied on being answered with the parent reads the parent instead.

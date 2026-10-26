@@ -1,6 +1,6 @@
 ---
 name: grails-9-upgrade
-description: Guide for upgrading Grails applications from Grails 8.x to Grails 9, covering the Groovy 6 baseline, the GPars deprecation in favour of groovy.concurrent, invokedynamic compilation, the separate grails-xml module, the opt-in settings for Spring JSON rendering, Jackson request binding, Spring MVC exception handlers and response bodies, the Jackson-backed JSON converter and domain class rendering, named JSON configurations, RFC 9457 validation problems, format resolution, web unit tests, generated GORM id and version properties, RxGORM on RxJava 3 (imports, blocking calls, subscribers, empty results), and the deprecated RxJava 1 and RxJava 2 async and events modules
+description: Guide for upgrading Grails applications from Grails 8.x to Grails 9, covering the Groovy 6 baseline, the GPars deprecation in favour of groovy.concurrent, invokedynamic compilation, the separate grails-xml module, the opt-in settings for Spring JSON rendering, Jackson request binding, Spring MVC exception handlers and response bodies, the Jackson-backed JSON converter and domain class rendering, named JSON configurations, RFC 9457 validation problems, format resolution, web unit tests, generated GORM id and version properties, RxGORM on RxJava 3 (imports, blocking calls, subscribers, empty results), the deprecated RxJava 1 and RxJava 2 async and events modules, and configuration keys below a value that is not a map, which are absent
 license: Apache-2.0
 ---
 
@@ -426,6 +426,12 @@ A datastore implementation of RxGORM compiled for Grails 8 or earlier, such as t
 - Code that hands RxJava types to the Grails ones, such as the `rx.Scheduler` given to the `RxEventBus` constructor, moves to the RxJava 3 types as described above.
 - Configure RxJava 3 scheduling through `io.reactivex.rxjava3.plugins.RxJavaPlugins` instead of RxJava 1 `RxJavaHooks` or RxJava 2 `RxJavaPlugins`.
 
+## A Configuration Key Below a Value That Is Not a Map Is Absent
+
+`getProperty` on `grailsApplication.config` answers a dotted key that runs past a value that is not a map, such as `server.url.port` when `server.url` is a string, `server.ports.0` when `server.ports` is a list, or `grails.gorm.default.constraints.nullable` when the parent is a closure from `application.groovy`, with `null` or the default, and `containsProperty` of such a key is `false`; Grails 8 answered with the parent value. `navigate` answers `null` too.
+
+- Code that reads a child of a string, a list or a closure and relied on being answered with the parent reads the parent instead.
+
 ## Verification Checklist
 
 - [ ] `gradle.properties` names the Grails 9 version and the wrapper is Gradle 9.8 or later
@@ -448,6 +454,7 @@ A datastore implementation of RxGORM compiled for Grails 8 or earlier, such as t
 - [ ] `@ControllerAdvice` beans meant only for Spring MVC controllers are scoped, and no Grails controller that renders views carries `@ResponseBody` or `@RestController`
 - [ ] No plain superclass of a domain class refers to the generated `id` or `version` in `@CompileStatic` code, `@ToString` or `@EqualsAndHashCode`
 - [ ] The application starts with no `deprecated` warning from the Grails async or events modules
+- [ ] No code reads a child of a string, list or closure configuration value expecting the parent
 - [ ] The full test suite passes on Groovy 6
 
 ## Pitfalls to Avoid
