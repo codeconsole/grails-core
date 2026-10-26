@@ -142,6 +142,9 @@ ext {
             // Security: 6.5.6 fixes CVE-2026-82463 (reversed profile type check) and CVE-2026-82464 (logout open
             // redirect); 6.5.9 includes the follow-up logout redirect and direct-client CSRF fixes on the same line.
             'pac4j.version'                 : '6.5.9',
+            // Security: overrides spring-boot-dependencies (42.7.11). 42.7.12 and later fix CVE-2026-54291, a silent
+            // channel-binding authentication downgrade. Forge's PostgreSQL feature adds the driver without a version.
+            'postgresql.version'            : '42.7.14',
             'rxjava.version'                : '1.3.8',
             'rxjava2.version'               : '2.2.21',
             'rxjava3.version'               : '3.1.12',
@@ -274,6 +277,8 @@ ext {
             'plexus-utils'                                   : "org.codehaus.plexus:plexus-utils:${bomDependencyVersions['plexus-utils.version']}",
             // Required alongside plexus-utils 4.x - see plexus-xml.version
             'plexus-xml'                                     : "org.codehaus.plexus:plexus-xml:${bomDependencyVersions['plexus-xml.version']}",
+            // Security override of spring-boot-dependencies - see postgresql.version
+            'postgresql'                                     : "org.postgresql:postgresql:${bomDependencyVersions['postgresql.version']}",
             'rxjava'                                         : "io.reactivex:rxjava:${bomDependencyVersions['rxjava.version']}",
             'rxjava2'                                        : "io.reactivex.rxjava2:rxjava:${bomDependencyVersions['rxjava2.version']}",
             'rxjava3'                                        : "io.reactivex.rxjava3:rxjava:${bomDependencyVersions['rxjava3.version']}",
