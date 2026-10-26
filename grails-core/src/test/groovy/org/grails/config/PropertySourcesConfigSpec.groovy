@@ -116,4 +116,21 @@ class PropertySourcesConfigSpec extends Specification {
         then: 'the second value is not merged with the first value'
         cfg.foo.bar == ['two': '2']
     }
+
+    void 'a dotted key inside a nested map is exported under its full path and overwrites no other property'() {
+        given: "a map holding a property and, in a nested map, a dotted key that alone names the same property"
+        def config = new PropertySourcesConfig([a: [b: 'root'], x: ['a.b': 'nested'], logging: [level: ['org.springframework': 'DEBUG']]])
+
+        expect: "each property is read and exported under its own name"
+        config.getProperty('a.b') == 'root'
+        config.getProperty('x.a.b') == 'nested'
+        config.getProperty('logging.level.org.springframework') == 'DEBUG'
+        config.toProperties().getProperty('a.b') == 'root'
+        config.toProperties().getProperty('x.a.b') == 'nested'
+        config.toProperties().getProperty('logging.level.org.springframework') == 'DEBUG'
+
+        and: "no property is written under the dotted key alone"
+        config.getProperty('org.springframework') == null
+        !config.toProperties().containsKey('org.springframework')
+    }
 }

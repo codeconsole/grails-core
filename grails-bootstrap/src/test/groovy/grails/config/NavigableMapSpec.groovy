@@ -114,4 +114,33 @@ class NavigableMapSpec extends Specification {
         output['rabbitmq.connections']['foo'].username == 'guest'
         output['rabbitmq.connections']['foo'].password == 'guest'
     }
+
+    def "a dotted key inside a nested map is merged under the path of that map"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when: 'a nested map holds a dotted key that, alone, names another property'
+        output.merge([a: [b: 'root'], x: ['a.b': 'nested']], true)
+
+        then: 'the other property keeps its value, read as a flat key and through the nested maps'
+        output['a.b'] == 'root'
+        output.navigate('a', 'b') == 'root'
+
+        and: 'the dotted key is read under the path of the map that holds it'
+        output['x.a.b'] == 'nested'
+        output.navigate('x', 'a', 'b') == 'nested'
+    }
+
+    def "a dotted key inside a nested map writes no key at the root"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge([logging: [level: ['org.springframework': 'DEBUG']]], true)
+
+        then:
+        output['logging.level.org.springframework'] == 'DEBUG'
+        !output.containsKey('org.springframework')
+        !output.keySet().contains('org.springframework')
+    }
 }
