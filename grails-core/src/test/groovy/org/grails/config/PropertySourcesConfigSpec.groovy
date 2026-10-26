@@ -20,6 +20,7 @@ package org.grails.config
 
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.env.PropertySource
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -115,5 +116,39 @@ class PropertySourcesConfigSpec extends Specification {
 
         then: 'the second value is not merged with the first value'
         cfg.foo.bar == ['two': '2']
+    }
+
+    void 'a placeholder in a merged value is resolved once, for the flat key and the nested entry alike'() {
+        given: "a property source that answers a new value each time it is read"
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+
+        when: "a map holding a placeholder is merged"
+        config.merge([app: [url: 'http://${host}']])
+
+        then: "the dotted key, the nested map and the export all read the one resolved value"
+        config.getProperty('app.url') == 'http://host1'
+        config['app.url'] == 'http://host1'
+        config.navigate('app', 'url') == 'http://host1'
+        config.toProperties().getProperty('app.url') == 'http://host1'
+        counter.readCount() == 1
+    }
+
+    static class CountingPropertySource extends PropertySource<Object> {
+
+        private int reads
+
+        CountingPropertySource() {
+            super('counting', new Object())
+        }
+
+        @Override
+        Object getProperty(String name) {
+            name == 'host' ? "host${++reads}".toString() : null
+        }
+
+        int readCount() {
+            reads
+        }
     }
 }
