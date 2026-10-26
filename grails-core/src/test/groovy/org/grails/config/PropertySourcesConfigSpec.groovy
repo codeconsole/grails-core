@@ -18,8 +18,11 @@
  */
 package org.grails.config
 
+import org.springframework.boot.context.properties.bind.Bindable
+import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.env.StandardEnvironment
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -115,5 +118,35 @@ class PropertySourcesConfigSpec extends Specification {
 
         then: 'the second value is not merged with the first value'
         cfg.foo.bar == ['two': '2']
+    }
+
+    void 'a map written by map subscripts is exported by its bracketed keys only, which Spring Boot binds as written'() {
+        given: "a map written by map subscripts, as application.yml writes '[/api/**]'"
+        def config = new PropertySourcesConfig(new MapPropertySource('yaml', [
+                'app.routes[/api/**]': 'x', 'app.routes[/v1.0/**]': 'y', 'app.routes[k]': 'z',
+                'app.cors[/admin/**].allowedOrigins[0]': 'https://a.example.com',
+        ]))
+
+        when:
+        Properties exported = config.toProperties()
+
+        then: "no entry is exported a second time by a dotted name"
+        exported.stringPropertyNames().findAll { it.startsWith('app.routes') } as Set == ['app.routes[/api/**]', 'app.routes[/v1.0/**]', 'app.routes[k]'] as Set
+        !exported.stringPropertyNames().any { it.startsWith('app.cors./') }
+
+        and: "Spring Boot binds the exported map with the keys the file wrote"
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', exported as Map<String, Object>))
+        Binder.get(published).bind('app.routes', Bindable.mapOf(String, String)).get() == ['/api/**': 'x', '/v1.0/**': 'y', k: 'z']
+        Binder.get(published).bind('app.cors', Bindable.mapOf(String, Object)).get().keySet() == ['/admin/**'] as Set
+    }
+
+    void 'a map put as a value is exported by the dotted names of its entries'() {
+        given:
+        def config = new PropertySourcesConfig()
+        config.put('plain', [nested: 'value'])
+
+        expect:
+        config.toProperties().getProperty('plain.nested') == 'value'
     }
 }

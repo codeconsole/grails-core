@@ -382,7 +382,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings) {
         currentMap.each { key, value ->
             String stringKey = String.valueOf(key)
-            if (value != null) {
+            if (value != null && !isEntryOfBracketedKey(currentMap, path, stringKey)) {
                 if (value instanceof Map) {
                     List<String> newPathList = []
                     newPathList.addAll(path)
@@ -414,6 +414,17 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 }
             }
         }
+    }
+
+    /**
+     * Whether the entry is one of a map written by map subscripts that the root holds under its bracketed flat key, as
+     * {@code app.routes[/api/**]} holds the entry {@code /api/**} of the map {@code app.routes}: that key exports it, and
+     * its dotted name, {@code app.routes./api/**}, would export it a second time under a name Spring Boot binds as
+     * {@code api}.
+     */
+    private boolean isEntryOfBracketedKey(Map currentMap, List<String> path, String key) {
+        path && !(currentMap instanceof NavigableMap) && rootConfig.is(this) &&
+                delegateMap.containsKey("${path.join('.')}[${key}]".toString())
     }
 
     @Override
