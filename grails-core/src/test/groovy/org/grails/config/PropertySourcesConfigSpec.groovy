@@ -243,6 +243,23 @@ class PropertySourcesConfigSpec extends Specification {
         'after the list was replaced' | [['app.rows[0].name': 'old'], ['app.rows': [[name: 'new']]], ['app.rows[0].name': '${x}']]
     }
 
+    void 'a placeholder in a dotted property after a map subscript is resolved alike for every read of it'() {
+        given: "a property source that holds the value of the placeholder, and a nested map the subscript names"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('env', [x: 'resolved']))
+        def config = new PropertySourcesConfig(sources)
+        config.merge(['a.b.c.d': 'old'])
+
+        when:
+        config.merge(['a[b].c.d': '${x}'])
+
+        then:
+        config.navigate('a', 'b', 'c', 'd') == 'resolved'
+        config.getProperty('a.b.c.d') == 'resolved'
+        config['a.b.c.d'] == 'resolved'
+        config.getProperty('a[b].c.d') == 'resolved'
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)

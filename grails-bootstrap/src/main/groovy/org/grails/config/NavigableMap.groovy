@@ -295,6 +295,26 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     private static class HeldList extends ArrayList<Object> {
     }
 
+    /**
+     * Writes a value under the rest of a key after its subscript, {@code c.d} of {@code a[b].c.d}, into the map the
+     * subscript names. A nested map is merged into, through {@link #mergeMapEntry(NavigableMap, String, Object)} as every
+     * other entry is, so that its nested map {@code c} takes {@code d} as a dotted key merged into it would, and a flat
+     * key of the root under the dotted name of the entry, {@code a.b.c.d}, takes the value it stored. Any other map
+     * takes the rest of the key as one entry.
+     */
+    private void putBelowSubscript(NavigableMap rootMap, Map map, String remainder, Object value) {
+        if (!(map instanceof NavigableMap) || remainder.indexOf('.') < 0) {
+            map.put(remainder, value)
+            return
+        }
+        NavigableMap nested = (NavigableMap) map
+        mergeMaps(nested, '', nested, [(remainder): value], true)
+        String dottedName = (nested.getPath() + [remainder]).join('.')
+        if (rootMap.containsKey(dottedName)) {
+            rootMap.put(dottedName, nested.get(remainder))
+        }
+    }
+
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {
         int subscriptStart = sourceKey.indexOf('[')
         int subscriptEnd = sourceKey.indexOf(']')
@@ -313,7 +333,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                         if (list.size() > i) {
                             def v = list.get(i)
                             if (v instanceof Map) {
-                                ((Map) v).put(remainder, sourceValue)
+                                putBelowSubscript(rootMap, (Map) v, remainder, sourceValue)
                             } else {
                                 Map newMap = [:]
                                 newMap.put(remainder, sourceValue)
@@ -334,7 +354,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
 
                         def v = nestedMap.get(index)
                         if (v instanceof Map) {
-                            ((Map) v).put(remainder, sourceValue)
+                            putBelowSubscript(rootMap, (Map) v, remainder, sourceValue)
                         } else {
                             Map newMap = [:]
                             newMap.put(remainder, sourceValue)

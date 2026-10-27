@@ -241,4 +241,23 @@ class NavigableMapSpec extends Specification {
         !output.containsKey('org.springframework')
         !output.keySet().contains('org.springframework')
     }
+
+    def "a dotted property after a map subscript is written into the nested map the subscript names, written #description"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(written, true)
+        output.merge(['a[b].c.d': 'new'], true)
+
+        then: 'the nested map, its flat key and the flattened config all hold the new value'
+        output.navigate('a', 'b', 'c', 'd') == 'new'
+        output.get('a.b.c.d') == 'new'
+        output.toFlatConfig().get('a.b.c.d') == 'new'
+
+        where:
+        description          | written
+        'after a dotted key' | ['a.b.c.d': 'old']
+        'after a nested map' | [a: [b: [c: [d: 'old']]]]
+    }
 }
