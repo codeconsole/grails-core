@@ -242,10 +242,13 @@ class GrailsGradlePlugin implements Plugin<Project> {
     private void configureGroovyCompiler(Project project) {
         project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
             if (c.name == 'compileGroovy') {
-                // Resource-only changes do not ordinarily invalidate compilation. This file changes
-                // whether the compiler owns the generated imports resource, so adding or deleting it
-                // must run the transform even when no Groovy source changed.
+                // Resource-only changes do not ordinarily invalidate compilation. These files change
+                // what the compiler generates: whether it owns the imports resource, and what it
+                // merges into the factories files, so adding, editing or deleting one must run the
+                // transforms even when no Groovy source changed.
                 AutoConfigurationImportsCompileInput.register(project, c)
+                FactoriesCompileInput.registerGrailsFactories(project, c)
+                FactoriesCompileInput.registerCliFactories(project, c)
             }
             // Publish the project base directory to the Groovy compiler's worker daemon JVM so the
             // GlobalGrailsClassInjectorTransformation AST transform can locate

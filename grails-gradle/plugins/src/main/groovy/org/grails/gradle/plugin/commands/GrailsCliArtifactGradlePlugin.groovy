@@ -32,11 +32,13 @@ import org.gradle.api.component.SoftwareComponentFactory
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 
 import javax.inject.Inject
 
+import org.grails.gradle.plugin.core.FactoriesCompileInput
 import org.grails.gradle.plugin.core.TestPhase
 import org.grails.gradle.plugin.core.TestPhasesGradlePlugin
 
@@ -107,6 +109,14 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
 
         SourceSetContainer sourceSets = project.extensions.getByType(SourceSetContainer)
         SourceSet cliSourceSet = sourceSets.create(CLI_SOURCE_SET_NAME)
+
+        // the compiler merges the hand-authored grails-cli.factories into the one it generates for the
+        // commands, so a change to that file has to recompile them even when no command changed
+        project.plugins.withId('groovy') {
+            project.tasks.named(cliSourceSet.getCompileTaskName('groovy'), GroovyCompile).configure { GroovyCompile task ->
+                FactoriesCompileInput.registerCliFactories(project, task)
+            }
+        }
 
         JavaPluginExtension java = project.extensions.getByType(JavaPluginExtension)
         java.registerFeature(CLI_SOURCE_SET_NAME) { spec ->
