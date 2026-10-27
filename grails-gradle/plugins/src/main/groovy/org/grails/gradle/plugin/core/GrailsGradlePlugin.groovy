@@ -249,6 +249,12 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 AutoConfigurationImportsCompileInput.register(project, c)
                 FactoriesCompileInput.registerGrailsFactories(project, c)
                 FactoriesCompileInput.registerCliFactories(project, c)
+                // A deleted class that nothing depends on compiles nothing, so the factories files the
+                // compiler generated are reconciled with what the compilation produced once it is done.
+                PruneGeneratedFactories.register(project, c, PruneGeneratedFactories.GRAILS_FACTORIES_LOCATION,
+                        [FactoriesCompileInput.GRAILS_FACTORIES_PATH])
+                PruneGeneratedFactories.register(project, c, PruneGeneratedFactories.CLI_FACTORIES_LOCATION,
+                        FactoriesCompileInput.CLI_FACTORIES_PATHS)
             }
             // Publish the project base directory to the Groovy compiler's worker daemon JVM so the
             // GlobalGrailsClassInjectorTransformation AST transform can locate

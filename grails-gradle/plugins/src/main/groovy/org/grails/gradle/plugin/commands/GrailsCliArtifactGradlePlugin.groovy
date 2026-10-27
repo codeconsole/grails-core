@@ -39,6 +39,7 @@ import org.gradle.api.plugins.JavaPluginExtension
 import javax.inject.Inject
 
 import org.grails.gradle.plugin.core.FactoriesCompileInput
+import org.grails.gradle.plugin.core.PruneGeneratedFactories
 import org.grails.gradle.plugin.core.TestPhase
 import org.grails.gradle.plugin.core.TestPhasesGradlePlugin
 
@@ -111,10 +112,13 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
         SourceSet cliSourceSet = sourceSets.create(CLI_SOURCE_SET_NAME)
 
         // the compiler merges the hand-authored grails-cli.factories into the one it generates for the
-        // commands, so a change to that file has to recompile them even when no command changed
+        // commands, so a change to that file has to recompile them even when no command changed, and a
+        // command deleted without anything being recompiled has to leave the generated file all the same
         project.plugins.withId('groovy') {
             project.tasks.named(cliSourceSet.getCompileTaskName('groovy'), GroovyCompile).configure { GroovyCompile task ->
                 FactoriesCompileInput.registerCliFactories(project, task)
+                PruneGeneratedFactories.register(project, task, PruneGeneratedFactories.CLI_FACTORIES_LOCATION,
+                        FactoriesCompileInput.CLI_FACTORIES_PATHS)
             }
         }
 
