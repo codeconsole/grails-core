@@ -168,6 +168,23 @@ class PropertySourcesConfigSpec extends Specification {
         config['app.mappings'] == [foo: [name: 'x'], bar: 'y']
     }
 
+    void 'a list replaced after an indexed key wrote it keeps none of its old elements'() {
+        given:
+        def config = new PropertySourcesConfig()
+
+        when: "a list is written by an indexed key, replaced, and then written to by an indexed key again"
+        config.merge(['app.rows[0].name': 'old'])
+        config.merge(['app.rows': [[name: 'new']]])
+        config.merge(['app.rows[0].port': '8080'])
+
+        then: "every read gives the element of the list that replaced it"
+        config.navigate('app', 'rows') == [[name: 'new', port: '8080']]
+        config.getProperty('app.rows', List) == [[name: 'new', port: '8080']]
+        config['app.rows'] == [[name: 'new', port: '8080']]
+        config.getProperty('app.rows[0].name') == 'new'
+        config.app.rows[0].name == 'new'
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)

@@ -217,6 +217,19 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
+     * Removes the keys that indexed keys and map subscripts wrote for the entries of a list or map, such as
+     * {@code rows[0]} and {@code rows[0].name} for {@code rows}, so that a subscript written after the list or map is
+     * replaced does not find the entries it replaced.
+     */
+    private static void removeSubscriptKeys(NavigableMap map, String key) {
+        String prefix = "${key}[".toString()
+        List<String> subscriptKeys = map.keySet().findAll { String k -> k.startsWith(prefix) } as List<String>
+        for (String subscriptKey in subscriptKeys) {
+            map.remove(subscriptKey)
+        }
+    }
+
+    /**
      * The element to hold: the nested map built for it, which also takes the entries of the flat key's element, such as
      * {@code db.url} beside {@code db}, as an element from application.yml holds both, or the flat key's element itself.
      */
@@ -338,6 +351,13 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 }
                 targetMap.remove(sourceKey)
             } else {
+                if (currentValue instanceof Collection || (currentValue instanceof Map && !(sourceValue instanceof Map))) {
+                    // the write replaces the list or map, so the keys its entries were written under go with it
+                    removeSubscriptKeys(targetMap, sourceKey)
+                    if (path) {
+                        removeSubscriptKeys(rootMap, "${path}.${sourceKey}".toString())
+                    }
+                }
                 if (path) {
                     rootMap.put("${path}.${sourceKey}".toString(), newValue)
                 }

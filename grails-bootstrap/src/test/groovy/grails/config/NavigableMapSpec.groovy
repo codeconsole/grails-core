@@ -146,4 +146,42 @@ class NavigableMapSpec extends Specification {
         output.navigate('a', 'mappings') == [foo: [name: 'x'], bar: 'y']
         output.get('a.mappings').is(output.navigate('a', 'mappings'))
     }
+
+    def "a list replaced after an indexed key wrote it gets no old element back from a later indexed key, replaced #description"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(['a.rows[0].name': 'old'], true)
+        output.merge(replacement, true)
+        output.merge(['a.rows[0].port': '8080'], true)
+
+        then:
+        output.navigate('a', 'rows') == [[name: 'new', port: '8080']]
+        output.get('a.rows') == [[name: 'new', port: '8080']]
+
+        where:
+        description       | replacement
+        'as a dotted key' | ['a.rows': [[name: 'new']]]
+        'in a nested map' | [a: [rows: [[name: 'new']]]]
+    }
+
+    def "the keys indexed keys and map subscripts wrote go with the list or map they wrote, #description"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(written, true)
+        output.merge(replacement, true)
+
+        then:
+        output.keySet() == ['a', name] as Set
+        output.navigate('a').keySet() == [name.substring(2)] as Set
+
+        where:
+        description                  | written                         | replacement                 | name
+        'a list replaced by a list'  | ['a.rows[0].name': 'old']       | ['a.rows': [[name: 'new']]] | 'a.rows'
+        'a list replaced by a value' | ['a.rows[0].name': 'old']       | ['a.rows': 'value']         | 'a.rows'
+        'a map replaced by a value'  | ['a.mappings[foo].name': 'old'] | ['a.mappings': 'value']     | 'a.mappings'
+    }
 }
