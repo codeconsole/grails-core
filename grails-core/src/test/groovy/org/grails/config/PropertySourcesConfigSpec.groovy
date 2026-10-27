@@ -184,6 +184,25 @@ class PropertySourcesConfigSpec extends Specification {
         counter.readCount() == 1
     }
 
+    void 'a placeholder in a dotted key inside a nested map is read alike for the flat key and the nested entry'() {
+        given: "a property source that answers a new value each time it is read"
+        def config = new PropertySourcesConfig(new CountingPropertySource())
+
+        when: "a nested map holding a dotted key with a placeholder is merged"
+        config.merge([grails: ['gorm.url': 'http://${host}']])
+
+        then: "the dotted key, the nested map and the export all read one resolved value"
+        String resolved = config.navigate('grails', 'gorm', 'url')
+        resolved ==~ /http:\/\/host\d+/
+        config['grails.gorm.url'] == resolved
+        config.getProperty('grails.gorm.url') == resolved
+        config.toProperties().getProperty('grails.gorm.url') == resolved
+
+        and: "no property is written under the dotted key alone"
+        config.getProperty('gorm.url') == null
+        !config.containsKey('gorm.url')
+    }
+
     static class CountingPropertySource extends PropertySource<Object> {
 
         private int reads
