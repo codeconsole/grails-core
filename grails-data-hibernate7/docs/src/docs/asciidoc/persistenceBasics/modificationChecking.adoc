@@ -64,7 +64,7 @@ println book.dirtyPropertyNames    // ['title', 'genre']
 
 === Dirty Checking and Abstract Base Classes
 
-A domain class can extend an abstract base class defined in `src/main/groovy`. GORM only tracks changes to the properties of such a base class if the base class is annotated with `@DirtyCheck`:
+A domain class can extend an abstract base class defined in a source location other than `grails-app/domain`. GORM only tracks changes to properties of such a base class if the base class is annotated with `@DirtyCheck`:
 
 [source,groovy]
 ----
