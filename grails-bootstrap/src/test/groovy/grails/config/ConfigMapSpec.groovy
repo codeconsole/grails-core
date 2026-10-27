@@ -228,4 +228,35 @@ test.another = true
         'from a nested map'                  | [['app.routes[/api/**]': 'x']]                              | { NavigableMap map -> map.navigate('app') } | ['routes[/api/**]']
         'from a copy'                        | [['app.routes[/api/**]': 'x']]                              | { NavigableMap map -> map.clone() }         | ['app.routes[/api/**]']
     }
+
+    def "an entry its bracketed key does not hold in full is flattened under its own name, #description"() {
+        given:
+        NavigableMap configMap = new NavigableMap()
+        merges.each { Map merged -> configMap.merge(merged, true) }
+
+        expect: 'every field is flattened with the value the nested maps hold'
+        exported.every { String name, Object value -> configMap.toFlatConfig().get(name) == value }
+        exported.every { String name, Object value -> configMap.toProperties().getProperty(name) == value }
+
+        where:
+        description                                      | merges                                                                         | exported
+        'a field merged after a map written in brackets' | [['routes[api]': [target: 'http://localhost'], 'routes[api].enabled': 'true']] | ['routes.api.target': 'http://localhost', 'routes.api.enabled': 'true']
+        'a dotted key merged after a null in brackets'   | [['app.routes[k]': null], ['app.routes.k': 'new']]                             | ['app.routes.k': 'new']
+        'a dotted key merged after a value in brackets'  | [['app.routes[k]': 'old'], ['app.routes.k': 'new']]                            | ['app.routes.k': 'new']
+    }
+
+    def "an entry written in brackets is flattened once when every field is held in brackets, #description"() {
+        given:
+        NavigableMap configMap = new NavigableMap()
+        configMap.merge(merged, true)
+
+        expect:
+        configMap.toFlatConfig().keySet() == keys as Set
+        configMap.toProperties().stringPropertyNames() == keys as Set
+
+        where:
+        description                     | merged                                                                                                                     | keys
+        'a map written in brackets'     | ['app.routes[api]': [target: 'http://localhost', enabled: 'true']]                                                         | ['app.routes[api].target', 'app.routes[api].enabled']
+        'lists written below a bracket' | ['grails.cors.mappings[/api/**].allowedOrigins[0]': 'https://a', 'grails.cors.mappings[/api/**].allowedMethods[0]': 'GET'] | ['grails.cors.mappings[/api/**].allowedOrigins', 'grails.cors.mappings[/api/**].allowedOrigins[0]', 'grails.cors.mappings[/api/**].allowedMethods', 'grails.cors.mappings[/api/**].allowedMethods[0]']
+    }
 }

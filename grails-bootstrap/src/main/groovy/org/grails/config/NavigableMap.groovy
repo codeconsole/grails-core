@@ -399,7 +399,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         List<String> relativePath = path.subList(ownerDepth, path.size())
         currentMap.each { key, value ->
             String stringKey = String.valueOf(key)
-            if (value != null && !isNamedInBrackets(owner, relativePath, stringKey)) {
+            if (value != null && !isExportedInBrackets(owner, relativePath, stringKey, value)) {
                 if (value instanceof Map) {
                     List<String> newPathList = []
                     newPathList.addAll(path)
@@ -434,13 +434,17 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * Whether the entry is held by the map under a bracketed flat key, relative to the map: {@code routes[/api/**]} for
-     * the entry {@code /api/**} below {@code routes}, or, for a flat key of the map itself such as
-     * {@code app.routes./api/**}, the bracketed key that splits it at one of its dots, {@code app.routes[/api/**]}.
+     * Whether a bracketed flat key exports the entry, so that the walk skips its dotted name. Below the map, the entry
+     * {@code /api/**} of {@code routes} is exported by {@code routes[/api/**]} when that key exports every name and value
+     * the entry would, and not when it holds another value, such as one a later dotted write left behind, or a map
+     * missing some of the entry's fields. At the map itself, a flat key such as {@code app.routes./api/**}, which a merge
+     * writes beside the nested entry, is skipped when a bracketed key such as {@code app.routes[/api/**]} splits it at
+     * one of its dots, since the walk of the nested maps exports the entry.
      */
-    private static boolean isNamedInBrackets(NavigableMap owner, List<String> relativePath, String key) {
+    private static boolean isExportedInBrackets(NavigableMap owner, List<String> relativePath, String key, Object value) {
         if (relativePath) {
-            return owner.containsKey("${relativePath.join('.')}[${key}]".toString())
+            String bracketedKey = "${relativePath.join('.')}[${key}]".toString()
+            return owner.containsKey(bracketedKey) && exportsAll(owner.get(bracketedKey), value)
         }
         for (int dot = key.indexOf('.'); dot > 0; dot = key.indexOf('.', dot + 1)) {
             if (owner.containsKey("${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString())) {
@@ -448,6 +452,37 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             }
         }
         false
+    }
+
+    /**
+     * Whether flattening {@code bracketed} writes every name and value that flattening {@code value} writes.
+     */
+    private static boolean exportsAll(Object bracketed, Object value) {
+        if (!(value instanceof Map)) {
+            return bracketed == value
+        }
+        if (!(bracketed instanceof Map)) {
+            return false
+        }
+        Map<String, Object> exported = leavesOf((Map) bracketed, '', [:])
+        for (Map.Entry<String, Object> leaf in leavesOf((Map) value, '', [:]).entrySet()) {
+            if (!exported.containsKey(leaf.key) || exported.get(leaf.key) != leaf.value) {
+                return false
+            }
+        }
+        true
+    }
+
+    private static Map<String, Object> leavesOf(Map map, String prefix, Map<String, Object> leaves) {
+        for (Map.Entry entry in (Set<Map.Entry>) map.entrySet()) {
+            String name = prefix + String.valueOf(entry.key)
+            if (entry.value instanceof Map) {
+                leavesOf((Map) entry.value, name + '.', leaves)
+            } else if (entry.value != null) {
+                leaves.put(name, entry.value)
+            }
+        }
+        leaves
     }
 
     @Override

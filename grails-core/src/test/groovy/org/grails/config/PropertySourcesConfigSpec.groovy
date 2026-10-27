@@ -171,6 +171,24 @@ class PropertySourcesConfigSpec extends Specification {
         'a subscript after a subscript'      | "app:\n  tenants:\n    '[acme]':\n      routes:\n        '[/api/**]': x\n" | 'app.tenants' | [acme: [routes: ['/api/**': 'x']]]
     }
 
+    void 'Spring Boot binds every field of an entry written in brackets that a later merge changed, #description'() {
+        given:
+        def config = new PropertySourcesConfig()
+        merges.each { Map merged -> config.merge(merged) }
+
+        when:
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', config.toProperties() as Map<String, Object>))
+
+        then:
+        Binder.get(published).bind(prefix, Bindable.mapOf(String, Object)).get() == bound
+
+        where:
+        description                                      | merges                                                                         | prefix       | bound
+        'a field merged after a map written in brackets' | [['routes[api]': [target: 'http://localhost'], 'routes[api].enabled': 'true']] | 'routes'     | [api: [target: 'http://localhost', enabled: 'true']]
+        'a dotted key merged after a null in brackets'   | [['app.routes[k]': null], ['app.routes.k': 'new']]                             | 'app.routes' | [k: 'new']
+    }
+
     void 'a placeholder in a value merged #description is resolved alike for the flat key and the nested entry'() {
         given: "a property source that answers a new value each time it is read, and a section the config already holds"
         def counter = new CountingPropertySource()
