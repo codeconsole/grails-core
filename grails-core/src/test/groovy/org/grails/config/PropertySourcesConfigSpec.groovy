@@ -186,6 +186,17 @@ class PropertySourcesConfigSpec extends Specification {
         config.app.rows[0].name == 'new'
     }
 
+    void 'an element of a list in application.yml is read by its indexed key'() {
+        given:
+        def config = new PropertySourcesConfig(new YamlPropertySourceLoader().load('application.yml',
+                new ByteArrayResource("app:\n  rows:\n    - name: first\n      db:\n        url: jdbc:x\n".bytes)).first())
+
+        expect:
+        config.getProperty('app.rows[0].name') == 'first'
+        config.getProperty('app.rows[0].db.url') == 'jdbc:x'
+        config.app.rows[0].db.url == 'jdbc:x'
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)

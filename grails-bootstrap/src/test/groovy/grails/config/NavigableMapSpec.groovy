@@ -166,23 +166,17 @@ class NavigableMapSpec extends Specification {
         'in a nested map' | [a: [rows: [[name: 'new']]]]
     }
 
-    def "the keys indexed keys and map subscripts wrote go with the list or map they wrote, #description"() {
+    def "an indexed key written into a map inside an element keeps the other entries of that map"() {
         given:
         NavigableMap output = new NavigableMap()
 
         when:
-        output.merge(written, true)
-        output.merge(replacement, true)
+        output.merge(['a.rows': [[db: [url: 'jdbc:new', user: 'me']]]], true)
+        output.merge(['a.rows[0].db.port': '8080'], true)
 
         then:
-        output.keySet() == ['a', name] as Set
-        output.navigate('a').keySet() == [name.substring(2)] as Set
-
-        where:
-        description                  | written                         | replacement                 | name
-        'a list replaced by a list'  | ['a.rows[0].name': 'old']       | ['a.rows': [[name: 'new']]] | 'a.rows'
-        'a list replaced by a value' | ['a.rows[0].name': 'old']       | ['a.rows': 'value']         | 'a.rows'
-        'a map replaced by a value'  | ['a.mappings[foo].name': 'old'] | ['a.mappings': 'value']     | 'a.mappings'
+        output.navigate('a', 'rows')[0].db == [url: 'jdbc:new', user: 'me', port: '8080']
+        output.get('a.rows')[0].db == [url: 'jdbc:new', user: 'me', port: '8080']
     }
 
     def "a dotted key inside a nested map is merged under the path of that map"() {

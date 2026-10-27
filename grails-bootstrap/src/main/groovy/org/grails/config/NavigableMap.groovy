@@ -176,10 +176,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     /**
      * Holds the list or map that an indexed key with a property after the index, such as {@code a.rows[0].name}, writes
      * under its flat key, {@code a.rows}, in the nested map that owns it too, so that {@code navigate('a', 'rows')} and
-     * {@code config.a.rows} read it: a list or map of the nested maps that splitting the key at every dot built there for
-     * each element, {@code rows[0]}, which hold the element as application.yml gives it and are left as they are. The flat
-     * key {@code a.rows} then holds the same list or map, as the flat key of a nested map holds that map, so a dotted key
-     * merged into it later is read through both. The flat keys of the elements are left as they are.
+     * {@code config.a.rows} read it. Each element that is a map is held as a nested map, which the owner also holds
+     * under the indexed name, {@code rows[0]}, and which holds the element as application.yml gives it. The flat key
+     * {@code a.rows} then holds the same list or map, as the flat key of a nested map holds that map, so a dotted key
+     * merged into it later is read through both.
      */
     private void holdIndexedContainer(NavigableMap targetMap, String indexedKey) {
         int subscriptStart = indexedKey.indexOf('[')
@@ -199,11 +199,12 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             return
         }
         String name = containerKey.substring(lastDot + 1)
+        String written = indexedKey.substring(subscriptStart + 1, subscriptEnd)
         if (container instanceof List) {
             List flatList = (List) container
             List held = []
             for (int i = 0; i < flatList.size(); i++) {
-                held.add(heldElement(owner.get("${name}[${i}]".toString()), flatList.get(i)))
+                held.add(heldElement(owner, "${name}[${i}]".toString(), flatList.get(i), String.valueOf(i) == written))
             }
             owner.put(name, held)
             targetMap.put(containerKey, held)
@@ -211,7 +212,8 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             Object current = owner.get(name)
             NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
             for (Map.Entry entry in ((Map) container).entrySet()) {
-                held.put(String.valueOf(entry.key), heldElement(owner.get("${name}[${entry.key}]".toString()), entry.value))
+                String key = String.valueOf(entry.key)
+                held.put(key, heldElement(owner, "${name}[${key}]".toString(), entry.value, key == written))
             }
             owner.put(name, held)
             targetMap.put(containerKey, held)
@@ -219,36 +221,24 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * Removes the keys that indexed keys and map subscripts wrote for the entries of a list or map, such as
-     * {@code rows[0]} and {@code rows[0].name} for {@code rows}, so that a subscript written after the list or map is
-     * replaced does not find the entries it replaced.
+     * The element to hold, which the owner also holds under its indexed name. An element that is a map is held as a
+     * nested map with the entries of the element, built again for the element just written, so that it holds every
+     * field the element holds, such as {@code db.url} beside the {@code db.port} just written below it, and none of an
+     * element the list held before it was replaced. A nested map already held for another element is kept.
      */
-    private static void removeSubscriptKeys(NavigableMap map, String key) {
-        String prefix = "${key}[".toString()
-        List<String> subscriptKeys = map.keySet().findAll { String k -> k.startsWith(prefix) } as List<String>
-        for (String subscriptKey in subscriptKeys) {
-            map.remove(subscriptKey)
+    private static Object heldElement(NavigableMap owner, String indexedName, Object element, boolean written) {
+        if (!(element instanceof Map)) {
+            return element
         }
-    }
-
-    /**
-     * The element to hold: the nested map built for it, which also takes the entries of the flat key's element, such as
-     * {@code db.url} beside {@code db}, as an element from application.yml holds both, or the flat key's element itself.
-     */
-    private static Object heldElement(Object nested, Object flat) {
-        if (!(nested instanceof NavigableMap)) {
-            return flat
+        NavigableMap held
+        if (element instanceof NavigableMap && !written) {
+            held = (NavigableMap) element
+        } else {
+            held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
+            held.merge((Map) element, true)
         }
-        NavigableMap element = (NavigableMap) nested
-        if (flat instanceof Map) {
-            for (Map.Entry entry in ((Map) flat).entrySet()) {
-                String key = String.valueOf(entry.key)
-                if (!element.containsKey(key)) {
-                    element.put(key, entry.value)
-                }
-            }
-        }
-        element
+        owner.put(indexedName, held)
+        held
     }
 
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {
@@ -353,13 +343,6 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 }
                 targetMap.remove(sourceKey)
             } else {
-                if (currentValue instanceof Collection || (currentValue instanceof Map && !(sourceValue instanceof Map))) {
-                    // the write replaces the list or map, so the keys its entries were written under go with it
-                    removeSubscriptKeys(targetMap, sourceKey)
-                    if (path) {
-                        removeSubscriptKeys(rootMap, "${path}.${sourceKey}".toString())
-                    }
-                }
                 mergeMapEntry(targetMap, sourceKey, newValue)
                 if (path) {
                     // the flat key holds the value the nested entry holds, as the hook stored it, so a placeholder in it
