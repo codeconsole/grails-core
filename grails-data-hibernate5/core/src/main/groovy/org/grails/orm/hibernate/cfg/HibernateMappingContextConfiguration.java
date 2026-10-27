@@ -19,6 +19,7 @@
 
 package org.grails.orm.hibernate.cfg;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -72,6 +73,7 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
 import org.springframework.util.ClassUtils;
 
+import org.apache.grails.data.hibernate5.core.querytail.QueryTailStatementInspector;
 import org.grails.datastore.gorm.GormEntity;
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
@@ -110,6 +112,7 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
     private ResourcePatternResolver resourcePatternResolver = new PathMatchingResourcePatternResolver();
     private MetadataContributor metadataContributor;
     private Set<Class> additionalClasses = new HashSet<>();
+    private transient File queryTailFile;
 
     public void setHibernateMappingContext(HibernateMappingContext hibernateMappingContext) {
         this.hibernateMappingContext = hibernateMappingContext;
@@ -302,38 +305,43 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
                 PropertyAccessStrategy.class, "traitProperty", TraitPropertyAccessStrategy.class
         );
 
-        setSessionFactoryObserver(new SessionFactoryObserver() {
-            private static final long serialVersionUID = 1;
-
-            public void sessionFactoryCreated(SessionFactory factory) {}
-
-            public void sessionFactoryClosed(SessionFactory factory) {
-                if (serviceRegistry != null) {
-                    ((ServiceRegistryImplementor) serviceRegistry).destroy();
-                }
-            }
-        });
-
-        StandardServiceRegistryBuilder standardServiceRegistryBuilder = createStandardServiceRegistryBuilder(bootstrapServiceRegistry)
-                                                                                    .applySettings(getProperties());
-
-        // Groovy-aware entity proxies: without this, any Groovy MOP dispatch through a proxy
-        // (proxy.id, getMetaClass(), truthy checks) initializes it. PojoEntityTuplizer resolves
-        // the ProxyFactoryFactory from the service registry, so a provided service wins over the
-        // default initiator. Hibernate 7 gets the same behavior via GrailsBytecodeProvider.
-        standardServiceRegistryBuilder.addService(ProxyFactoryFactory.class,
-                new GrailsBytecodeProvider().getProxyFactoryFactory());
-
-        StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
-        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        SessionFactoryObserver configuredObserver = getSessionFactoryObserver();
         try {
-            Thread.currentThread().setContextClassLoader(appClassLoader);
-            sessionFactory = super.buildSessionFactory(serviceRegistry);
+            StandardServiceRegistryBuilder standardServiceRegistryBuilder = createStandardServiceRegistryBuilder(bootstrapServiceRegistry)
+                                                                                        .applySettings(getProperties());
+
+            // Groovy-aware entity proxies: without this, any Groovy MOP dispatch through a proxy
+            // (proxy.id, getMetaClass(), truthy checks) initializes it. PojoEntityTuplizer resolves
+            // the ProxyFactoryFactory from the service registry, so a provided service wins over the
+            // default initiator. Hibernate 7 gets the same behavior via GrailsBytecodeProvider.
+            standardServiceRegistryBuilder.addService(ProxyFactoryFactory.class,
+                    new GrailsBytecodeProvider().getProxyFactoryFactory());
+
+            // Only now, after a subclass's registry builder may have set an observer of its own, which these tell first.
+            if (queryTailFile != null) {
+                QueryTailStatementInspector queryTail = new QueryTailStatementInspector(dataSourceName, queryTailFile);
+                queryTail.wrap(standardServiceRegistryBuilder);
+                queryTail.observe(this);
+            }
+            ServiceRegistryClosingObserver closing = new ServiceRegistryClosingObserver(getSessionFactoryObserver());
+            setSessionFactoryObserver(closing);
+
+            StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
+            closing.registry = serviceRegistry;
+            ClassLoader previous = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(appClassLoader);
+                sessionFactory = super.buildSessionFactory(serviceRegistry);
+            }
+            finally {
+                Thread.currentThread().setContextClassLoader(previous);
+            }
+            this.serviceRegistry = serviceRegistry;
         }
         finally {
-            Thread.currentThread().setContextClassLoader(previous);
+            // the next session factory is given observers of its own in front of the one the application set
+            setSessionFactoryObserver(configuredObserver);
         }
-        this.serviceRegistry = serviceRegistry;
 
         return sessionFactory;
     }
@@ -400,5 +408,67 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
 
     public void setMetadataContributor(MetadataContributor metadataContributor) {
         this.metadataContributor = metadataContributor;
+    }
+
+    /**
+     * Sets the file query-tail capture records the statements of the session factories this
+     * configuration builds to. Each session factory is given an inspector, and a capture, of its own,
+     * which takes the place of the statement inspector the session factory would run, wherever the
+     * application configured that one, and runs it, and of the observer the application set, which it
+     * keeps telling. Once the session factory is built, the configuration holds what the application
+     * set again, so that the next session factory is given its own as well.
+     *
+     * @param queryTailFile the capture file, or null to record nothing
+     */
+    public void setQueryTailFile(File queryTailFile) {
+        this.queryTailFile = queryTailFile;
+    }
+
+    /**
+     * Destroys the service registry of a session factory once it has closed, so that a session factory
+     * closed while another of the configuration runs leaves the registry of the other alone. The
+     * observer the configuration holds once the registry builder is created, the one the application
+     * set, even as the build began, or the query-tail capture in front of it, is told first.
+     */
+    private static class ServiceRegistryClosingObserver implements SessionFactoryObserver {
+
+        private static final long serialVersionUID = 1;
+
+        private final SessionFactoryObserver configured;
+
+        /** The registry of the session factory, set once it is built. */
+        private transient StandardServiceRegistry registry;
+
+        ServiceRegistryClosingObserver(SessionFactoryObserver configured) {
+            this.configured = configured;
+        }
+
+        @Override
+        public void sessionFactoryCreated(SessionFactory factory) {
+            if (configured != null) {
+                configured.sessionFactoryCreated(factory);
+            }
+        }
+
+        @Override
+        public void sessionFactoryClosing(SessionFactory factory) {
+            if (configured != null) {
+                configured.sessionFactoryClosing(factory);
+            }
+        }
+
+        @Override
+        public void sessionFactoryClosed(SessionFactory factory) {
+            try {
+                if (configured != null) {
+                    configured.sessionFactoryClosed(factory);
+                }
+            }
+            finally {
+                if (registry != null) {
+                    ((ServiceRegistryImplementor) registry).destroy();
+                }
+            }
+        }
     }
 }

@@ -34,6 +34,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.PropertyResolver;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import org.apache.grails.data.simple.querytail.SimpleMapQueryTail;
 import org.grails.datastore.gorm.GormEnhancer;
 import org.grails.datastore.gorm.GormInstanceApi;
 import org.grails.datastore.gorm.GormStaticApi;
@@ -92,12 +93,14 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
     private final MultiTenancySettings.MultiTenancyMode multiTenancyMode;
     protected final Map<String, SimpleMapDatastore> datastoresByConnectionSource = new LinkedHashMap<>();
     protected final boolean failOnError;
+    private final SimpleMapQueryTail queryTail;
 
     public SimpleMapDatastore(ConnectionSources<Map<String, Map>, ConnectionSourceSettings> connectionSources, MappingContext mappingContext, ConfigurableApplicationEventPublisher eventPublisher) {
         super(mappingContext);
         this.connectionSources = connectionSources;
         ConnectionSource<Map<String, Map>, ConnectionSourceSettings> defaultConnectionSource = connectionSources.getDefaultConnectionSource();
         this.inmemoryData = defaultConnectionSource.getSource();
+        this.queryTail = SimpleMapQueryTail.create(defaultConnectionSource.getName(), defaultConnectionSource.getSettings().getQueryTail());
         DatastoreTransactionManager dtm = new DatastoreTransactionManager();
         dtm.setDatastore(this);
         this.transactionManager = dtm;
@@ -129,6 +132,9 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
         }
         this.eventPublisher = eventPublisher;
         this.gormEnhancer = initialize(defaultConnectionSource.getSettings());
+        if (queryTail != null) {
+            queryTail.open();
+        }
     }
 
     public SimpleMapDatastore(ConnectionSources<Map<String, Map>, ConnectionSourceSettings> connectionSources, ConfigurableApplicationEventPublisher eventPublisher, Class... classes) {
@@ -303,6 +309,14 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
         return this.eventPublisher;
     }
 
+    /**
+     * @return the query-tail capture of this datastore's connection source, or null when capture is not enabled
+     * @since 9.0
+     */
+    public SimpleMapQueryTail getQueryTail() {
+        return queryTail;
+    }
+
     public Map<String, Map> getBackingMap() {
         return inmemoryData;
     }
@@ -399,8 +413,25 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
             destroy();
         } catch (Exception e) {
             throw new IOException(e);
+        } finally {
+            closeQueryTails();
         }
         gormEnhancer.close();
+    }
+
+    /**
+     * Closes the query-tail captures of this datastore and of the datastores of its other connection sources,
+     * which close with it.
+     */
+    private void closeQueryTails() {
+        for (SimpleMapDatastore child : datastoresByConnectionSource.values()) {
+            if (child != this && child.queryTail != null) {
+                child.queryTail.close();
+            }
+        }
+        if (queryTail != null) {
+            queryTail.close();
+        }
     }
 
     @Override

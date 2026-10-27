@@ -18,6 +18,7 @@
  */
 package org.grails.orm.hibernate.cfg;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
@@ -39,6 +40,7 @@ import jakarta.persistence.MappedSuperclass;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.SessionFactory;
+import org.hibernate.SessionFactoryObserver;
 import org.hibernate.boot.registry.BootstrapServiceRegistry;
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -53,6 +55,7 @@ import org.hibernate.cfg.Environment;
 import org.hibernate.cfg.JdbcSettings;
 import org.hibernate.context.spi.CurrentSessionContext;
 import org.hibernate.internal.util.config.ConfigurationHelper;
+import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.hibernate.service.ServiceRegistry;
 
 import org.springframework.beans.BeansException;
@@ -69,6 +72,7 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
 import org.springframework.util.ClassUtils;
 
+import org.apache.grails.data.hibernate7.core.querytail.QueryTailStatementInspector;
 import org.grails.datastore.gorm.GormEntity;
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
@@ -114,6 +118,7 @@ public class HibernateMappingContextConfiguration extends Configuration
     private transient ResourcePatternResolver resourcePatternResolver = new PathMatchingResourcePatternResolver();
     private transient NamingStrategyProvider namingStrategyProvider = new NamingStrategyProvider();
     protected GrailsBytecodeProvider bytecodeProvider;
+    private transient File queryTailFile;
 
     public void setBytecodeProvider(GrailsBytecodeProvider bytecodeProvider) {
         this.bytecodeProvider = bytecodeProvider;
@@ -354,18 +359,32 @@ public class HibernateMappingContextConfiguration extends Configuration
         }
 
         standardServiceRegistryBuilder.addService(org.hibernate.bytecode.spi.BytecodeProvider.class, bytecodeProvider);
-
-        StandardServiceRegistry ssr = standardServiceRegistryBuilder.build();
-        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        StatementInspector configuredInspector = getStatementInspector();
+        SessionFactoryObserver configuredObserver = getSessionFactoryObserver();
         try {
-            Thread.currentThread().setContextClassLoader(appClassLoader);
-            sessionFactory = super.buildSessionFactory(ssr);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        } finally {
-            Thread.currentThread().setContextClassLoader(previous);
+            if (queryTailFile != null) {
+                QueryTailStatementInspector queryTail = new QueryTailStatementInspector(dataSourceName, queryTailFile);
+                queryTail.wrap(standardServiceRegistryBuilder, this);
+                queryTail.observe(this);
+            }
+
+            StandardServiceRegistry ssr = standardServiceRegistryBuilder.build();
+            ClassLoader previous = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(appClassLoader);
+                sessionFactory = super.buildSessionFactory(ssr);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
+                Thread.currentThread().setContextClassLoader(previous);
+            }
+            this.serviceRegistry = ssr;
         }
-        this.serviceRegistry = ssr;
+        finally {
+            // the next session factory is given an inspector of its own in front of what the application set
+            setStatementInspector(configuredInspector);
+            setSessionFactoryObserver(configuredObserver);
+        }
 
         return sessionFactory;
     }
@@ -421,5 +440,19 @@ public class HibernateMappingContextConfiguration extends Configuration
 
     public ServiceRegistry getServiceRegistry() {
         return serviceRegistry;
+    }
+
+    /**
+     * Sets the file query-tail capture records the statements of the session factories this
+     * configuration builds to. Each session factory is given an inspector, and a capture, of its own,
+     * which takes the place of the statement inspector the session factory would run, wherever the
+     * application configured that one, and runs it, and of the observer the application set, which it
+     * keeps telling. Once the session factory is built, the configuration holds what the application
+     * set again, so that the next session factory is given its own as well.
+     *
+     * @param queryTailFile the capture file, or null to record nothing
+     */
+    public void setQueryTailFile(File queryTailFile) {
+        this.queryTailFile = queryTailFile;
     }
 }
