@@ -38,6 +38,9 @@ import grails.config.Settings;
  *
  * <p>It is a context initializer, not an environment post-processor, because files named by
  * {@code grails.config.locations} are loaded by {@code ExternalConfigRunListener} after the post-processors run.
+ * It translates from a bean factory post-processor that it adds to the context, because the property source of a
+ * {@code @PropertySource} annotation is only added while the context processes its configuration classes. That
+ * post-processor runs after both, and before any bean binds {@code spring.servlet.encoding}.
  * A translated value is contributed as a Spring Boot default property (lowest precedence), and only when the
  * application does not set the Spring Boot property itself.
  *
@@ -51,9 +54,12 @@ public class GrailsCharacterEncodingInitializer implements ApplicationContextIni
     private static final Logger logger = LoggerFactory.getLogger(GrailsCharacterEncodingInitializer.class);
 
     @Override
-    @SuppressWarnings("removal")
     public void initialize(ConfigurableApplicationContext applicationContext) {
-        var environment = applicationContext.getEnvironment();
+        applicationContext.addBeanFactoryPostProcessor(beanFactory -> translate(applicationContext.getEnvironment()));
+    }
+
+    @SuppressWarnings("removal")
+    private void translate(ConfigurableEnvironment environment) {
         var translated = new LinkedHashMap<String, Object>();
         translate(environment, Settings.FILTER_ENCODING, "spring.servlet.encoding.charset", translated);
         translate(environment, Settings.FILTER_FORCE_ENCODING, "spring.servlet.encoding.force", translated);
