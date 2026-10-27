@@ -282,6 +282,9 @@ project, so two controls limit what runs:
   pull request into a release branch; it runs no build.) Labels are read when a push arrives, so add `run ci` (or
   remove `no ci`) and then push, or mark the draft ready, to get a run. Pushing to a draft still cancels the run in
   flight for it, as every push to a pull request or a branch does.
+* Adding `no ci` to a pull request cancels the runs it has in flight, and merging a pull request cancels the runs
+  started before the merge. A pull request from a fork gets a read-only token, so its runs are cancelled by the next
+  push to a release branch instead of at once when it is labelled.
 * The tests run by default only on the default branch and the release branches above it. Elsewhere, that is on an
   older release branch such as `7.0.x` while `8.0.x` is the default, and on a pull request whose base is a side
   branch rather than a release branch, a push or pull request builds without running the tests unless asked: a
