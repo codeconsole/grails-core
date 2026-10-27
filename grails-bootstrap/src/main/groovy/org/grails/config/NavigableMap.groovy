@@ -204,11 +204,13 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         }
         String name = containerKey.substring(lastDot + 1)
         String written = indexedKey.substring(subscriptStart + 1, subscriptEnd)
+        String writtenField = indexedKey.substring(subscriptEnd + 2)
         if (container instanceof List) {
             List flatList = (List) container
             List held = new HeldList()
             for (int i = 0; i < flatList.size(); i++) {
-                held.add(heldElement(owner, "${name}[${i}]".toString(), flatList.get(i), String.valueOf(i) == written))
+                String index = String.valueOf(i)
+                held.add(heldElement(targetMap, owner, containerKey, name, index, flatList.get(i), index == written ? writtenField : null))
             }
             owner.put(name, held)
             targetMap.put(containerKey, held)
@@ -217,7 +219,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
             for (Map.Entry entry in ((Map) container).entrySet()) {
                 String key = String.valueOf(entry.key)
-                held.put(key, heldElement(owner, "${name}[${key}]".toString(), entry.value, key == written))
+                held.put(key, heldElement(targetMap, owner, containerKey, name, key, entry.value, key == written ? writtenField : null))
             }
             owner.put(name, held)
             targetMap.put(containerKey, held)
@@ -225,24 +227,62 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * The element to hold, which the owner also holds under its indexed name. An element that is a map is held as a
-     * nested map with the entries of the element, built again for the element just written, so that it holds every
-     * field the element holds, such as {@code db.url} beside the {@code db.port} just written below it, and none of an
-     * element the list held before it was replaced. A nested map already held for another element is kept.
+     * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a map
+     * is held as a nested map with the entries of the element, built again for the element just written, so that it
+     * holds every field the element holds, such as {@code db.url} beside the {@code db.port} just written below it,
+     * and none of an element the list held before it was replaced. The field just written takes the value the nested
+     * map built for the element holds, which the merge stored through {@link #mergeMapEntry(NavigableMap, String, Object)},
+     * so a placeholder in it is resolved as in every other entry. The keys of the map the indexed key was merged into
+     * that held the element, or a map inside it, such as {@code a.rows[0]} and {@code a.rows[0].db}, then hold the
+     * rebuilt element and its maps. A nested map already held for another element is kept.
      */
-    private static Object heldElement(NavigableMap owner, String indexedName, Object element, boolean written) {
+    private static Object heldElement(NavigableMap targetMap, NavigableMap owner, String containerKey, String name, String index,
+                                      Object element, String writtenField) {
         if (!(element instanceof Map)) {
             return element
         }
-        NavigableMap held
-        if (element instanceof NavigableMap && !written) {
-            held = (NavigableMap) element
-        } else {
-            held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
-            held.merge((Map) element, true)
+        String indexedName = "${name}[${index}]".toString()
+        if (element instanceof NavigableMap && writtenField == null) {
+            owner.put(indexedName, element)
+            return element
+        }
+        NavigableMap held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
+        held.merge((Map) element, true)
+        if (writtenField != null) {
+            Object stored = valueAt(owner.get(indexedName), writtenField)
+            if (stored != null) {
+                held.merge([(writtenField): stored], true)
+            }
         }
         owner.put(indexedName, held)
+        replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
         held
+    }
+
+    private static Object valueAt(Object map, String field) {
+        Object value = map
+        for (String part in field.tokenize('.')) {
+            if (!(value instanceof Map)) {
+                return null
+            }
+            value = ((Map) value).get(part)
+        }
+        value
+    }
+
+    /**
+     * Makes the keys of the map that hold an element or a map inside it, {@code a.rows[0]} and {@code a.rows[0].db},
+     * hold the rebuilt element and its maps. Only keys the map holds already are written.
+     */
+    private static void replaceKeysOf(NavigableMap map, String key, NavigableMap held) {
+        if (map.containsKey(key)) {
+            map.put(key, held)
+        }
+        for (Map.Entry<String, Object> entry in held.entrySet()) {
+            if (entry.value instanceof NavigableMap) {
+                replaceKeysOf(map, "${key}.${entry.key}".toString(), (NavigableMap) entry.value)
+            }
+        }
     }
 
     /**

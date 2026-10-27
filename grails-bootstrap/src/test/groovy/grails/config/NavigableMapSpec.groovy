@@ -177,6 +177,10 @@ class NavigableMapSpec extends Specification {
         then:
         output.navigate('a', 'rows')[0].db == [url: 'jdbc:new', user: 'me', port: '8080']
         output.get('a.rows')[0].db == [url: 'jdbc:new', user: 'me', port: '8080']
+
+        and: 'the flat keys of the element and of the map inside it hold the maps the list holds'
+        output.get('a.rows[0]').is(output.navigate('a', 'rows')[0])
+        output.get('a.rows[0].db').is(output.navigate('a', 'rows')[0].db)
     }
 
     def "a dotted key inside a nested map is merged under the path of that map"() {
