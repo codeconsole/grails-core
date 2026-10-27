@@ -38,7 +38,7 @@ class CharacterEncodingSpec extends Specification implements HttpClientSupport {
 
     void 'decodes a form post as UTF-8 when a filter ahead of Grails reads its parameters'() {
         when: 'a form is posted without a charset, through a filter that reads one of its parameters'
-        def response = httpPost('/encoding/echo', 'text=Caf%C3%A9+%E2%80%93+%F0%9F%8D%82', 'application/x-www-form-urlencoded')
+        def response = httpPostForm('/encoding/echo', [text: 'Café – 🍂'])
 
         then: 'the filter and the controller both see the text as it was typed'
         response.assertJsonContains(200, [text: 'Café – 🍂', readByFilter: 'Café – 🍂'])
@@ -46,7 +46,7 @@ class CharacterEncodingSpec extends Specification implements HttpClientSupport {
 
     void 'runs a filter registered at HIGHEST_PRECEDENCE through a FilterRegistrationBean ahead of the encoding filter'() {
         when: 'a form is posted without a charset'
-        def response = httpPost('/encoding/echo', 'text=Caf%C3%A9', 'application/x-www-form-urlencoded')
+        def response = httpPostForm('/encoding/echo', [text: 'Café'])
 
         then: 'the filter registered at the encoding filter\'s own order found no request encoding set yet'
         response.assertJsonContains(200, [text: 'Café', encodingAtHighestPrecedence: 'none'])
