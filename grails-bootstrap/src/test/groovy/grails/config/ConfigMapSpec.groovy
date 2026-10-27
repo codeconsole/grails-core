@@ -259,4 +259,21 @@ test.another = true
         'a map written in brackets'     | ['app.routes[api]': [target: 'http://localhost', enabled: 'true']]                                                         | ['app.routes[api].target', 'app.routes[api].enabled']
         'lists written below a bracket' | ['grails.cors.mappings[/api/**].allowedOrigins[0]': 'https://a', 'grails.cors.mappings[/api/**].allowedMethods[0]': 'GET'] | ['grails.cors.mappings[/api/**].allowedOrigins', 'grails.cors.mappings[/api/**].allowedOrigins[0]', 'grails.cors.mappings[/api/**].allowedMethods', 'grails.cors.mappings[/api/**].allowedMethods[0]']
     }
+
+    def "the value written last under a dotted name or in brackets is flattened under the dotted name, #description"() {
+        given:
+        NavigableMap configMap = new NavigableMap()
+
+        when:
+        writes.each { Closure write -> write.call(configMap) }
+
+        then:
+        configMap.toFlatConfig().get('app.routes.k') == 'new'
+        configMap.toProperties().getProperty('app.routes.k') == 'new'
+
+        where:
+        description                                   | writes
+        'a dotted key put after a key in brackets'    | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.put('app.routes.k', 'new') }]
+        'a key in brackets merged after a dotted key' | [{ NavigableMap m -> m.merge(['app.routes.k': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes[k]': 'new'], true) }]
+    }
 }

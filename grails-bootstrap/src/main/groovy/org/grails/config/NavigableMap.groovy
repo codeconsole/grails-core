@@ -401,7 +401,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         List<String> relativePath = path.subList(ownerDepth, path.size())
         currentMap.each { key, value ->
             String stringKey = String.valueOf(key)
-            if (value != null && !isExportedInBrackets(owner, relativePath, stringKey, value)) {
+            if (value != null && !isExportedInBrackets(owner, path, relativePath, stringKey, value)) {
                 if (value instanceof Map) {
                     List<String> newPathList = []
                     newPathList.addAll(path)
@@ -436,20 +436,26 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * Whether a bracketed flat key exports the entry, so that the walk skips its dotted name. Below the map, the entry
-     * {@code /api/**} of {@code routes} is exported by {@code routes[/api/**]} when that key exports every name and value
-     * the entry would, and not when it holds another value, such as one a later dotted write left behind, or a map
-     * missing some of the entry's fields. At the map itself, a flat key such as {@code app.routes./api/**}, which a merge
-     * writes beside the nested entry, is skipped when a bracketed key such as {@code app.routes[/api/**]} splits it at
-     * one of its dots, since the walk of the nested maps exports the entry.
+     * Whether a bracketed flat key exports the entry, so that the walk skips its dotted name. The entry {@code /api/**} of
+     * {@code routes} is exported by {@code routes[/api/**]}, held by the nearest enclosing nested map, when that key
+     * exports every name and value the entry would, and the walked map holds no flat key under the entry's dotted name,
+     * {@code app.routes./api/**}, with another value. A flat key of the map itself, such as {@code app.routes./api/**}, is
+     * exported by the bracketed key that splits it at one of its dots, {@code app.routes[/api/**]}, when that key exports
+     * the same value. Where the bracketed key holds less, or a value a later write replaced, or the dotted names hold
+     * values that differ, the dotted names are exported too, and the one written last is the one exported under them.
      */
-    private static boolean isExportedInBrackets(NavigableMap owner, List<String> relativePath, String key, Object value) {
+    private boolean isExportedInBrackets(NavigableMap owner, List<String> path, List<String> relativePath, String key, Object value) {
         if (relativePath) {
             String bracketedKey = "${relativePath.join('.')}[${key}]".toString()
-            return owner.containsKey(bracketedKey) && exportsAll(owner.get(bracketedKey), value)
+            if (!owner.containsKey(bracketedKey) || !exportsAll(owner.get(bracketedKey), value)) {
+                return false
+            }
+            String dottedName = "${path.join('.')}.${key}".toString()
+            return !containsKey(dottedName) || get(dottedName) == value
         }
         for (int dot = key.indexOf('.'); dot > 0; dot = key.indexOf('.', dot + 1)) {
-            if (owner.containsKey("${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString())) {
+            String bracketedKey = "${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString()
+            if (owner.containsKey(bracketedKey) && exportsAll(owner.get(bracketedKey), value)) {
                 return true
             }
         }
