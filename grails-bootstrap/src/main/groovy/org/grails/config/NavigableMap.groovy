@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory
 class NavigableMap implements Map<String, Object>, Cloneable {
 
     private static final Logger LOG = LoggerFactory.getLogger(NavigableMap)
+    private static final int MAX_DOTTED_BRACKETS = 8
 
     final NavigableMap rootConfig
     final List<String> path
@@ -374,40 +375,113 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     Map<String, Object> toFlatConfig() {
         Map<String, Object> flatConfig = [:]
         flattenKeys(flatConfig, this, [], false)
+        removeDottedDuplicates(flatConfig)
         flatConfig
     }
 
     Properties toProperties() {
         Properties properties = new Properties()
         flattenKeys((Map<Object, Object>) properties, this, [], true)
+        removeDottedDuplicates((Map<Object, Object>) properties)
         properties
     }
 
-    private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings) {
-        flattenKeys(flatConfig, currentMap, path, forceStrings, this, 0)
+    /**
+     * Removes each name that only writes a bracketed name with dots, such as {@code app.routes./api/**} beside
+     * {@code app.routes[/api/**]}, which Spring Boot would bind as the key {@code api}. A map written by map subscripts
+     * holds its entries under their bracketed names and is walked under their dotted ones too, so each entry is
+     * flattened under both. A dotted name is removed only when every bracketed name that it writes with dots holds the
+     * same value; where they differ, as when a later write changed one of them, every name stays, as it was before. A
+     * bracketed key with a dot in it, {@code a[b.c]}, names a key of {@code a}, so the dotted name {@code a.b.c} is
+     * a property of its own, and it stays when the nested maps hold a value under that path.
+     */
+    private void removeDottedDuplicates(Map<? extends Object, Object> flatConfig) {
+        Map<String, List<Object>> bracketedValues = [:]
+        Set<String> pathsToCheck = [] as Set<String>
+        for (Map.Entry<? extends Object, Object> entry in flatConfig.entrySet()) {
+            String name = String.valueOf(entry.key)
+            if (name.indexOf('[') > -1) {
+                for (Map.Entry<String, Boolean> dottedName in dottedNamesOf(name).entrySet()) {
+                    List<Object> values = bracketedValues.get(dottedName.key)
+                    if (values == null) {
+                        values = []
+                        bracketedValues.put(dottedName.key, values)
+                    }
+                    values.add(entry.value)
+                    if (dottedName.value) {
+                        pathsToCheck.add(dottedName.key)
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, List<Object>> candidate in bracketedValues.entrySet()) {
+            if (!flatConfig.containsKey(candidate.key)) {
+                continue
+            }
+            Object value = flatConfig.get(candidate.key)
+            if (!candidate.value.every { Object bracketedValue -> bracketedValue == value }) {
+                continue
+            }
+            if (candidate.key in pathsToCheck && navigate(candidate.key.tokenize('.') as String[]) != null) {
+                continue
+            }
+            flatConfig.remove(candidate.key)
+        }
     }
 
     /**
-     * Writes the entries of a map under their names. An entry of a map written by map subscripts, such as {@code /api/**}
-     * of {@code app.routes[/api/**]}, is written under the bracketed flat key that the nearest enclosing nested map holds
-     * for it, relative to that map, and so is skipped here, where it would be written again under the dotted name
-     * {@code app.routes./api/**}, which Spring Boot binds as {@code api}; so is a dotted flat key of the map itself that
-     * names the same entry, as a merge of a block holding the entry writes {@code app.routes./api/**} at the root.
+     * The names that write some or all of the bracketed map keys of a name with dots, {@code app.routes./api/**} for
+     * {@code app.routes[/api/**]}, each with whether one of the keys it writes so has a dot in it. A list index,
+     * {@code rows[0]}, is not a map key and stays as it is.
      */
-    private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings,
-                             NavigableMap owner, int ownerDepth) {
-        NavigableMap childOwner = currentMap instanceof NavigableMap ? (NavigableMap) currentMap : owner
-        int childOwnerDepth = currentMap instanceof NavigableMap ? path.size() : ownerDepth
-        List<String> relativePath = path.subList(ownerDepth, path.size())
+    private static Map<String, Boolean> dottedNamesOf(String name) {
+        List<int[]> brackets = []
+        int start = name.indexOf('[')
+        while (start > -1 && brackets.size() < MAX_DOTTED_BRACKETS) {
+            int end = name.indexOf(']', start)
+            if (end < 0) {
+                break
+            }
+            if (!name.substring(start + 1, end).isNumber()) {
+                brackets.add([start, end] as int[])
+            }
+            start = name.indexOf('[', end)
+        }
+        Map<String, Boolean> dottedNames = [:]
+        int combinations = 1 << brackets.size()
+        for (int mask = 1; mask < combinations; mask++) {
+            StringBuilder dottedName = new StringBuilder()
+            boolean keyWithDot = false
+            int from = 0
+            for (int i = 0; i < brackets.size(); i++) {
+                if ((mask & (1 << i)) != 0) {
+                    int[] bracket = brackets.get(i)
+                    dottedName.append(name, from, bracket[0])
+                    if (bracket[0] > 0) {
+                        dottedName.append('.')
+                    }
+                    String key = name.substring(bracket[0] + 1, bracket[1])
+                    keyWithDot = keyWithDot || key.indexOf('.') > -1
+                    dottedName.append(key)
+                    from = bracket[1] + 1
+                }
+            }
+            dottedName.append(name, from, name.length())
+            dottedNames.put(dottedName.toString(), keyWithDot)
+        }
+        dottedNames
+    }
+
+    private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings) {
         currentMap.each { key, value ->
             String stringKey = String.valueOf(key)
-            if (value != null && !isExportedInBrackets(owner, path, relativePath, stringKey, value)) {
+            if (value != null) {
                 if (value instanceof Map) {
                     List<String> newPathList = []
                     newPathList.addAll(path)
                     newPathList.add(stringKey)
 
-                    flattenKeys(flatConfig, (Map) value, newPathList.asImmutable(), forceStrings, childOwner, childOwnerDepth)
+                    flattenKeys(flatConfig, (Map) value, newPathList.asImmutable(), forceStrings)
                 } else {
                     String fullKey
                     if (path) {
@@ -433,81 +507,6 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 }
             }
         }
-    }
-
-    /**
-     * Whether a bracketed flat key exports the entry, so that the walk skips its dotted name. The entry {@code /api/**} of
-     * {@code routes} is exported by {@code routes[/api/**]}, held by the nearest enclosing nested map, when that key
-     * exports every name and value the entry would, and the walked map holds no flat key under the entry's dotted name,
-     * {@code app.routes./api/**}, or under the dotted name of a value below the entry, with another value. A flat key of
-     * the map itself, such as {@code app.routes./api/**}, is exported by the bracketed key that splits it at one of its
-     * dots, {@code app.routes[/api/**]}, when that key exports the same value and no flat key below it disagrees. Where the bracketed key holds less, or a value a later write replaced, or the dotted names hold
-     * values that differ, the dotted names are exported too, and the one written last is the one exported under them.
-     */
-    private boolean isExportedInBrackets(NavigableMap owner, List<String> path, List<String> relativePath, String key, Object value) {
-        if (relativePath) {
-            String bracketedKey = "${relativePath.join('.')}[${key}]".toString()
-            if (!owner.containsKey(bracketedKey) || !exportsAll(owner.get(bracketedKey), value)) {
-                return false
-            }
-            return agreesWithFlatKeys("${path.join('.')}.${key}".toString(), value)
-        }
-        for (int dot = key.indexOf('.'); dot > 0; dot = key.indexOf('.', dot + 1)) {
-            String bracketedKey = "${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString()
-            if (owner.containsKey(bracketedKey) && exportsAll(owner.get(bracketedKey), value)) {
-                return agreesWithFlatKeys(key, value)
-            }
-        }
-        false
-    }
-
-    /**
-     * Whether no flat key of the walked map under the dotted name, or under the dotted name of a value below it, such as
-     * {@code a.b.c} below {@code a.b}, holds another value than the entry does, as one a merge left behind does.
-     */
-    private boolean agreesWithFlatKeys(String dottedName, Object value) {
-        if (containsKey(dottedName) && get(dottedName) != value) {
-            return false
-        }
-        if (value instanceof Map) {
-            for (Map.Entry<String, Object> leaf in leavesOf((Map) value, "${dottedName}.".toString(), [:]).entrySet()) {
-                if (containsKey(leaf.key) && get(leaf.key) != leaf.value) {
-                    return false
-                }
-            }
-        }
-        true
-    }
-
-    /**
-     * Whether flattening {@code bracketed} writes every name and value that flattening {@code value} writes.
-     */
-    private static boolean exportsAll(Object bracketed, Object value) {
-        if (!(value instanceof Map)) {
-            return bracketed == value
-        }
-        if (!(bracketed instanceof Map)) {
-            return false
-        }
-        Map<String, Object> exported = leavesOf((Map) bracketed, '', [:])
-        for (Map.Entry<String, Object> leaf in leavesOf((Map) value, '', [:]).entrySet()) {
-            if (!exported.containsKey(leaf.key) || exported.get(leaf.key) != leaf.value) {
-                return false
-            }
-        }
-        true
-    }
-
-    private static Map<String, Object> leavesOf(Map map, String prefix, Map<String, Object> leaves) {
-        for (Map.Entry entry in (Set<Map.Entry>) map.entrySet()) {
-            String name = prefix + String.valueOf(entry.key)
-            if (entry.value instanceof Map) {
-                leavesOf((Map) entry.value, name + '.', leaves)
-            } else if (entry.value != null) {
-                leaves.put(name, entry.value)
-            }
-        }
-        leaves
     }
 
     @Override

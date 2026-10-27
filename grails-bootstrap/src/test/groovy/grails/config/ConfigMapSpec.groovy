@@ -229,22 +229,6 @@ test.another = true
         'from a copy'                        | [['app.routes[/api/**]': 'x']]                              | { NavigableMap map -> map.clone() }         | ['app.routes[/api/**]']
     }
 
-    def "an entry its bracketed key does not hold in full is flattened under its own name, #description"() {
-        given:
-        NavigableMap configMap = new NavigableMap()
-        merges.each { Map merged -> configMap.merge(merged, true) }
-
-        expect: 'every field is flattened with the value the nested maps hold'
-        exported.every { String name, Object value -> configMap.toFlatConfig().get(name) == value }
-        exported.every { String name, Object value -> configMap.toProperties().getProperty(name) == value }
-
-        where:
-        description                                      | merges                                                                         | exported
-        'a field merged after a map written in brackets' | [['routes[api]': [target: 'http://localhost'], 'routes[api].enabled': 'true']] | ['routes.api.target': 'http://localhost', 'routes.api.enabled': 'true']
-        'a dotted key merged after a null in brackets'   | [['app.routes[k]': null], ['app.routes.k': 'new']]                             | ['app.routes.k': 'new']
-        'a dotted key merged after a value in brackets'  | [['app.routes[k]': 'old'], ['app.routes.k': 'new']]                            | ['app.routes.k': 'new']
-    }
-
     def "an entry written in brackets is flattened once when every field is held in brackets, #description"() {
         given:
         NavigableMap configMap = new NavigableMap()
@@ -260,7 +244,7 @@ test.another = true
         'lists written below a bracket' | ['grails.cors.mappings[/api/**].allowedOrigins[0]': 'https://a', 'grails.cors.mappings[/api/**].allowedMethods[0]': 'GET'] | ['grails.cors.mappings[/api/**].allowedOrigins', 'grails.cors.mappings[/api/**].allowedOrigins[0]', 'grails.cors.mappings[/api/**].allowedMethods', 'grails.cors.mappings[/api/**].allowedMethods[0]']
     }
 
-    def "the value written last under a dotted name or in brackets is flattened under the dotted name, #description"() {
+    def "a dotted name is flattened as before, unless every bracketed name it spells holds the same value, #description"() {
         given:
         NavigableMap configMap = new NavigableMap()
 
@@ -268,13 +252,19 @@ test.another = true
         writes.each { Closure write -> write.call(configMap) }
 
         then:
-        configMap.toFlatConfig().get(name) == 'new'
-        configMap.toProperties().getProperty(name) == 'new'
+        configMap.toProperties() == exported
+        configMap.toFlatConfig() == exported
 
         where:
-        description                                            | name           | writes
-        'a dotted key put after a key in brackets'             | 'app.routes.k' | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.put('app.routes.k', 'new') }]
-        'a key in brackets merged after a dotted key'          | 'app.routes.k' | [{ NavigableMap m -> m.merge(['app.routes.k': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes[k]': 'new'], true) }]
-        'a map in brackets merged after a dotted key below it' | 'a.b.c'        | [{ NavigableMap m -> m.merge(['a.b.c': 'old'], true) }, { NavigableMap m -> m.merge(['a[b].c': 'new'], true) }]
+        description                                                     | exported                                                                 | writes
+        'a field merged after a map written in brackets'                | ['routes.api.target': 'http://localhost', 'routes[api].enabled': 'true'] | [{ NavigableMap m -> m.merge(['routes[api]': [target: 'http://localhost'], 'routes[api].enabled': 'true'], true) }]
+        'a dotted key merged after a null in brackets'                  | ['app.routes.k': 'new']                                                  | [{ NavigableMap m -> m.merge(['app.routes[k]': null], true) }, { NavigableMap m -> m.merge(['app.routes.k': 'new'], true) }]
+        'a dotted key merged after a value in brackets'                 | ['app.routes.k': 'new', 'app.routes[k]': 'old']                          | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes.k': 'new'], true) }]
+        'a dotted key put after a key in brackets'                      | ['app.routes.k': 'new', 'app.routes[k]': 'old']                          | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.put('app.routes.k', 'new') }]
+        'a key in brackets merged after a dotted key'                   | ['app.routes[k]': 'new']                                                 | [{ NavigableMap m -> m.merge(['app.routes.k': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes[k]': 'new'], true) }]
+        'a map in brackets merged after a dotted key below it'          | ['a[b].c': 'new']                                                        | [{ NavigableMap m -> m.merge(['a.b.c': 'old'], true) }, { NavigableMap m -> m.merge(['a[b].c': 'new'], true) }]
+        'a dotted key merged after two keys in brackets that differ'    | ['a.b.c': 'new', 'a.b[c]': 'old', 'a[b.c]': 'new']                       | [{ NavigableMap m -> m.merge(['a[b.c]': 'new'], true) }, { NavigableMap m -> m.merge(['a.b[c]': 'old'], true) }, { NavigableMap m -> m.merge(['a.b.c': 'new'], true) }]
+        'a key with a dot in brackets'                                  | ['a[b.c]': 'x']                                                          | [{ NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
+        'a key with a dot in brackets beside the nested path it spells' | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.merge(['a.b.c': 'x'], true) }, { NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
     }
 }
