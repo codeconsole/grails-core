@@ -1234,6 +1234,18 @@ See <<asyncPromises,Promises>> and <<events,Events>>.
 
 In Grails 8, `getProperty` on `grailsApplication.config` answered a dotted key that runs past a value that is not a map with that value: `server.url.port` when `server.url` is a string, `server.ports.0` when `server.ports` is a list, or `grails.gorm.default.constraints.nullable` when `grails.gorm.default.constraints` is a closure from `application.groovy`. `containsProperty` of such a key was `true`. In Grails 9 the key is absent: `getProperty` returns `null` or the default, `containsProperty` returns `false`, and `navigate` answers `null`.
 
+A typed read with a default changes with nothing to point at it, because the default takes over. With the parent set to a boolean as a shorthand for its block:
+
+[source,groovy]
+----
+// x.y: false
+config.getProperty('x.y.enabled', Boolean, true)   // Grails 8: false, Grails 9: true
+----
+
+A property source of lower precedence that sets the deeper key now answers it. With `a.b: x` in one property source and `a.b.c: y` in a source of lower precedence, `getProperty('a.b.c')` answers `y` where Grails 8 answered `x`, as a Spring `Environment` over the same sources does, and `containsProperty('a.b.c')` stays `true`. `navigate('a', 'b', 'c')` answers `null`.
+
 ===== Required Actions
 
-Code that reads a child of a string, a list or a closure and relied on being answered with the parent reads the parent instead.
+* Code that reads a child of a string, a list or a closure and relied on being answered with the parent reads the parent instead.
+* A typed read with a default below such a value, such as `getProperty('x.y.enabled', Boolean, true)` when `x.y` is `false`, reads the parent, or the configuration sets the deeper key.
+* Read an element of a list from the list: `config.getProperty('server.ports', List)[0]`. A list from `application.yml` can also be read by element as `server.ports[0]`, which names the element there; a list from `application.groovy` has no such key.

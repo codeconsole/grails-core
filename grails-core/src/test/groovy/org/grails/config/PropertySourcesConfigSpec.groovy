@@ -20,6 +20,7 @@ package org.grails.config
 
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.env.StandardEnvironment
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -160,5 +161,37 @@ class PropertySourcesConfigSpec extends Specification {
         !config.containsProperty('server.url.port')
         !config.containsProperty('server.ports.0')
         !config.containsProperty('grails.gorm.default.constraints.nullable')
+    }
+
+    void 'a typed read with a default below a value that is not a map gets the default'() {
+        given: "a parent set to a boolean as a shorthand for its block"
+        def config = new PropertySourcesConfig([x: [y: false]])
+
+        expect: "the default, where Grails 8 answered with the parent"
+        config.getProperty('x.y.enabled', Boolean, true)
+        config.getProperty('x.y', Boolean) == false
+    }
+
+    void 'a key below a value that is not a map is answered by a property source of lower precedence that sets it'() {
+        given: "a property source that sets a.b to a value, and one of lower precedence that sets a.b.c"
+        def higher = new MapPropertySource('higher', ['a.b': 'x'])
+        def lower = new MapPropertySource('lower', ['a.b.c': 'y'])
+        def sources = new MutablePropertySources()
+        sources.addLast(higher)
+        sources.addLast(lower)
+        def config = new PropertySourcesConfig(sources)
+
+        and: "a Spring environment over the same two sources"
+        def environment = new StandardEnvironment()
+        environment.propertySources.addLast(higher)
+        environment.propertySources.addLast(lower)
+
+        expect: "getProperty answers with the deeper key, where Grails 8 answered with a.b, as the environment does"
+        config.getProperty('a.b.c') == 'y'
+        config.containsProperty('a.b.c')
+        environment.getProperty('a.b.c') == 'y'
+
+        and: "navigate stops at the value"
+        config.navigate('a', 'b', 'c') == null
     }
 }
