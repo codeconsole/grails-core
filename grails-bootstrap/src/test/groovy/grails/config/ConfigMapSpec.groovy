@@ -268,12 +268,13 @@ test.another = true
         writes.each { Closure write -> write.call(configMap) }
 
         then:
-        configMap.toFlatConfig().get('app.routes.k') == 'new'
-        configMap.toProperties().getProperty('app.routes.k') == 'new'
+        configMap.toFlatConfig().get(name) == 'new'
+        configMap.toProperties().getProperty(name) == 'new'
 
         where:
-        description                                   | writes
-        'a dotted key put after a key in brackets'    | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.put('app.routes.k', 'new') }]
-        'a key in brackets merged after a dotted key' | [{ NavigableMap m -> m.merge(['app.routes.k': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes[k]': 'new'], true) }]
+        description                                            | name           | writes
+        'a dotted key put after a key in brackets'             | 'app.routes.k' | [{ NavigableMap m -> m.merge(['app.routes[k]': 'old'], true) }, { NavigableMap m -> m.put('app.routes.k', 'new') }]
+        'a key in brackets merged after a dotted key'          | 'app.routes.k' | [{ NavigableMap m -> m.merge(['app.routes.k': 'old'], true) }, { NavigableMap m -> m.merge(['app.routes[k]': 'new'], true) }]
+        'a map in brackets merged after a dotted key below it' | 'a.b.c'        | [{ NavigableMap m -> m.merge(['a.b.c': 'old'], true) }, { NavigableMap m -> m.merge(['a[b].c': 'new'], true) }]
     }
 }

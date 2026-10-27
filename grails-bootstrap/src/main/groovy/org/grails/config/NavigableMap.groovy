@@ -439,9 +439,9 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      * Whether a bracketed flat key exports the entry, so that the walk skips its dotted name. The entry {@code /api/**} of
      * {@code routes} is exported by {@code routes[/api/**]}, held by the nearest enclosing nested map, when that key
      * exports every name and value the entry would, and the walked map holds no flat key under the entry's dotted name,
-     * {@code app.routes./api/**}, with another value. A flat key of the map itself, such as {@code app.routes./api/**}, is
-     * exported by the bracketed key that splits it at one of its dots, {@code app.routes[/api/**]}, when that key exports
-     * the same value. Where the bracketed key holds less, or a value a later write replaced, or the dotted names hold
+     * {@code app.routes./api/**}, or under the dotted name of a value below the entry, with another value. A flat key of
+     * the map itself, such as {@code app.routes./api/**}, is exported by the bracketed key that splits it at one of its
+     * dots, {@code app.routes[/api/**]}, when that key exports the same value and no flat key below it disagrees. Where the bracketed key holds less, or a value a later write replaced, or the dotted names hold
      * values that differ, the dotted names are exported too, and the one written last is the one exported under them.
      */
     private boolean isExportedInBrackets(NavigableMap owner, List<String> path, List<String> relativePath, String key, Object value) {
@@ -450,16 +450,33 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             if (!owner.containsKey(bracketedKey) || !exportsAll(owner.get(bracketedKey), value)) {
                 return false
             }
-            String dottedName = "${path.join('.')}.${key}".toString()
-            return !containsKey(dottedName) || get(dottedName) == value
+            return agreesWithFlatKeys("${path.join('.')}.${key}".toString(), value)
         }
         for (int dot = key.indexOf('.'); dot > 0; dot = key.indexOf('.', dot + 1)) {
             String bracketedKey = "${key.substring(0, dot)}[${key.substring(dot + 1)}]".toString()
             if (owner.containsKey(bracketedKey) && exportsAll(owner.get(bracketedKey), value)) {
-                return true
+                return agreesWithFlatKeys(key, value)
             }
         }
         false
+    }
+
+    /**
+     * Whether no flat key of the walked map under the dotted name, or under the dotted name of a value below it, such as
+     * {@code a.b.c} below {@code a.b}, holds another value than the entry does, as one a merge left behind does.
+     */
+    private boolean agreesWithFlatKeys(String dottedName, Object value) {
+        if (containsKey(dottedName) && get(dottedName) != value) {
+            return false
+        }
+        if (value instanceof Map) {
+            for (Map.Entry<String, Object> leaf in leavesOf((Map) value, "${dottedName}.".toString(), [:]).entrySet()) {
+                if (containsKey(leaf.key) && get(leaf.key) != leaf.value) {
+                    return false
+                }
+            }
+        }
+        true
     }
 
     /**
