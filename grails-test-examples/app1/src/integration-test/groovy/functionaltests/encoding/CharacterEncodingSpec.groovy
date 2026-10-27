@@ -23,7 +23,6 @@ import java.net.http.HttpRequest
 import spock.lang.Issue
 import spock.lang.Specification
 import spock.lang.Tag
-import spock.lang.Unroll
 
 import grails.testing.mixin.integration.Integration
 import org.apache.grails.testing.http.client.HttpClientSupport
@@ -42,7 +41,7 @@ class CharacterEncodingSpec extends Specification implements HttpClientSupport {
 
     void 'decodes a form post as UTF-8 when a filter ahead of Grails reads its parameters'() {
         when: 'a form is posted without a charset, through a filter that reads one of its parameters'
-        def response = httpPost('/encoding/echo', 'text=Caf%C3%A9+%E2%80%93+%F0%9F%8D%82', 'application/x-www-form-urlencoded')
+        def response = httpPostForm('/encoding/echo', [text: 'Café – 🍂'])
 
         then: 'the filter and the controller both see the text as it was typed'
         response.assertJsonContains(200, [text: 'Café – 🍂', readByFilter: 'Café – 🍂'])
@@ -64,7 +63,6 @@ class CharacterEncodingSpec extends Specification implements HttpClientSupport {
         response.assertJsonContains(200, [text: 'Café', readByFilter: 'Café'])
     }
 
-    @Unroll
     void 'decodes a #httpMethod form with the charset it declares'() {
         when: 'a form encoded as ISO-8859-1 is sent with ISO-8859-1 declared'
         def response = sendHttpRequest(newHttpRequestWith('/encoding/echo') {

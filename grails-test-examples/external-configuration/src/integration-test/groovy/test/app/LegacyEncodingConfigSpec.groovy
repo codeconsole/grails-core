@@ -19,27 +19,21 @@
 package test.app
 
 import grails.testing.mixin.integration.Integration
-import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.TestPropertySource
 import org.springframework.web.filter.CharacterEncodingFilter
 import spock.lang.Issue
 import spock.lang.Specification
-import spock.util.environment.RestoreSystemProperties
 
 /**
  * {@code grails.config.locations} files are loaded after Spring Boot's environment post-processors run, and the
  * deprecated {@code grails.filter.*} encoding properties in them still configure the encoding filter.
  */
 @Integration
-@RestoreSystemProperties
-@DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_CLASS)
+@TestPropertySource(properties = 'grails.config.locations=classpath:legacyEncodingConfig.yml')
 @Issue('https://github.com/apache/grails-core/issues/15921')
 class LegacyEncodingConfigSpec extends Specification {
 
     CharacterEncodingFilter characterEncodingFilter
-
-    void setupSpec() {
-        System.setProperty('grails.config.locations', 'classpath:legacyEncodingConfig.yml')
-    }
 
     void 'the encoding filter takes the deprecated Grails properties from an external config file'() {
         expect:
