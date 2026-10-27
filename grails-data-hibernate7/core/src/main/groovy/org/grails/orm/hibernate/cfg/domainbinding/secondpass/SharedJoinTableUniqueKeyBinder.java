@@ -50,9 +50,10 @@ import org.hibernate.mapping.Value;
  * the keys of each collection are created and completes what is missing, in the shape the database needs
  * ({@link SharedJoinTableUniqueness}). A collection whose table is its own already has its constraint and is left as
  * Hibernate bound it, and so is a collection without a join table, whose key the other side owns, or whose element is
- * a large object, which cannot be indexed and which Hibernate leaves without a key too. It also restricts
- * each collection of a shared table to its own rows, which Hibernate's removal of all the rows of a collection by its
- * key would otherwise not.</p>
+ * a large object, which cannot be indexed and which Hibernate leaves without a key too. It also restricts a
+ * collection that shares a key column with another on that table to its own rows, which Hibernate's removal of all
+ * the rows of a collection by its key would otherwise not (collections with separate key columns delete only their
+ * own rows by key and need no restriction).</p>
  *
  * <p>Hibernate applies the restriction to the statements that load, count, join and delete the rows of a collection,
  * but loses it in the test of emptiness ({@code is empty}, {@code is not empty}); GORM translates that test as a size
