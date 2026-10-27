@@ -18,6 +18,8 @@
  */
 package org.grails.web.config.http;
 
+import org.springframework.core.Ordered;
+
 /**
  * Stores the default order numbers of all Grails filters for use in configuration.
  * These filters are run prior to the Spring Security Filter Chain which is at DEFAULT_FILTER_ORDER.
@@ -30,15 +32,16 @@ public enum GrailsFilters {
     ASSET_PIPELINE_FILTER,
 
     /**
-     * The order of the character encoding filter Grails registered before 9.0.
+     * The order of the character encoding filter, {@link Ordered#HIGHEST_PRECEDENCE}, ahead of every other filter.
+     * Spring Boot registers its encoding filter at this order. A filter at {@code CHARACTER_ENCODING_FILTER.getOrder() + 1}
+     * runs right after it, with the request encoding set.
      *
-     * @deprecated since 9.0, for removal. Grails no longer registers a character encoding filter; Spring Boot
-     * registers one at {@code Ordered.HIGHEST_PRECEDENCE}, ahead of every other filter. The filters after it
-     * take their orders from their position in this enum, so when it is removed, give them their current orders
-     * explicitly.
+     * @deprecated since 9.0, for removal. Grails no longer registers a character encoding filter of its own; order a
+     * filter after Spring Boot's with {@code Ordered.HIGHEST_PRECEDENCE + 1}. The filters after this one in the enum
+     * take their orders from their position, so when it is removed, give them their current orders explicitly.
      */
     @Deprecated(since = "9.0", forRemoval = true)
-    CHARACTER_ENCODING_FILTER,
+    CHARACTER_ENCODING_FILTER(Ordered.HIGHEST_PRECEDENCE),
 
     HIDDEN_HTTP_METHOD_FILTER,
     SITEMESH_FILTER,
