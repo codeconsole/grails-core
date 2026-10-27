@@ -160,7 +160,9 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                     Map actualTarget = targetMap.navigateSubMap(pathParts as List, true)
                     String indexedKey = sourceKey
                     sourceKey = keyParts[-1]
-                    mergeMapEntry(rootMap, pathParts.join('.'), actualTarget, sourceKey, sourceValue, parseFlatKeys)
+                    // the flat key of the entry is its full path: that of the map holding the dotted key, then the key
+                    String nestedPath = path ? "${path}.${pathParts.join('.')}" : pathParts.join('.')
+                    mergeMapEntry(rootMap, nestedPath, actualTarget, sourceKey, sourceValue, parseFlatKeys)
                     holdIndexedContainer(targetMap, indexedKey)
                 } else {
                     mergeMapEntry(rootMap, path, targetMap, sourceKey, sourceValue, parseFlatKeys)
