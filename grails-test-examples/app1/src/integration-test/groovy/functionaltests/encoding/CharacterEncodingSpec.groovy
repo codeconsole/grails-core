@@ -31,8 +31,9 @@ import org.apache.grails.testing.http.client.HttpClientSupport
 /**
  * A filter registered at {@code Ordered.HIGHEST_PRECEDENCE + 1} reads a request parameter before Grails sees the
  * request. Once a filter reads a parameter, the container has decoded the body, so the encoding filter has to run
- * before it. The other cases check which forms the forced request encoding decodes as UTF-8 when they declare
- * another charset.
+ * before it. A filter registered at {@code Ordered.HIGHEST_PRECEDENCE} through a {@code FilterRegistrationBean}, the
+ * encoding filter's own order, still runs before it. The other cases check which forms the forced request encoding
+ * decodes as UTF-8 when they declare another charset.
  */
 @Integration
 @Tag('http-client')
@@ -45,6 +46,14 @@ class CharacterEncodingSpec extends Specification implements HttpClientSupport {
 
         then: 'the filter and the controller both see the text as it was typed'
         response.assertJsonContains(200, [text: 'Café – 🍂', readByFilter: 'Café – 🍂'])
+    }
+
+    void 'runs a filter registered at HIGHEST_PRECEDENCE through a FilterRegistrationBean ahead of the encoding filter'() {
+        when: 'a form is posted without a charset'
+        def response = httpPostForm('/encoding/echo', [text: 'Café'])
+
+        then: 'the filter registered at the encoding filter\'s own order found no request encoding set yet'
+        response.assertJsonContains(200, [text: 'Café', encodingAtHighestPrecedence: 'none'])
     }
 
     void 'decodes a form post as UTF-8 when it declares another charset'() {

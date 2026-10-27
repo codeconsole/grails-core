@@ -23,6 +23,10 @@ import grails.converters.JSON
 class EncodingController {
 
     def echo() {
-        render([text: params.text, readByFilter: request.getAttribute(ParameterReadingFilter.READ_BY_FILTER)] as JSON)
+        render([
+                text: params.text,
+                readByFilter: request.getAttribute(ParameterReadingFilter.READ_BY_FILTER),
+                encodingAtHighestPrecedence: request.getAttribute(EncodingRecordingFilter.ENCODING_SEEN)
+        ] as JSON)
     }
 }

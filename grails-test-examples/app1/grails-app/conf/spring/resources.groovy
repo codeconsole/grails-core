@@ -17,6 +17,7 @@
  *  under the License.
  */
 
+import functionaltests.encoding.EncodingRecordingFilter
 import functionaltests.encoding.ParameterReadingFilter
 import functionaltests.interceptors.StaticInitFailureFilter
 import org.example.MyBean
@@ -33,5 +34,10 @@ beans = {
 		filter = new ParameterReadingFilter()
 		urlPatterns = ['/encoding/*']
 		order = Ordered.HIGHEST_PRECEDENCE + 1
+	}
+	encodingRecordingFilter(FilterRegistrationBean) {
+		filter = new EncodingRecordingFilter()
+		urlPatterns = ['/encoding/*']
+		order = Ordered.HIGHEST_PRECEDENCE
 	}
 }
