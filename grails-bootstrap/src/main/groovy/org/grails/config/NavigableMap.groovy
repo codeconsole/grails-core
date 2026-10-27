@@ -152,7 +152,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             Object sourceKeyObject = entry.key
             Object sourceValue = entry.value
             String sourceKey = String.valueOf(sourceKeyObject)
-            if (sourceValue instanceof HeldList && !targetMap.is(rootMap)) {
+            if (sourceValue instanceof HeldList && !targetMap.is(rootMap) && holdsIndexedEntries(sourceMap, sourceKey, (List) sourceValue)) {
                 // the indexed entries beside it, rows[0] and on, write the list element by element
                 continue
             }
@@ -283,6 +283,20 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 replaceKeysOf(map, "${key}.${entry.key}".toString(), (NavigableMap) entry.value)
             }
         }
+    }
+
+    /**
+     * Whether the map holds an indexed entry beside the list for each of its elements, {@code rows[0]} and on, which
+     * write the list element by element when the map is merged. A held list merged without them, as the value of a
+     * map built from {@code config.app.rows}, is merged as a list.
+     */
+    private static boolean holdsIndexedEntries(Map map, String key, List list) {
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i) != null && !map.containsKey("${key}[${i}]".toString())) {
+                return false
+            }
+        }
+        true
     }
 
     /**

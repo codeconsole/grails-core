@@ -260,6 +260,21 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('a[b].c.d') == 'resolved'
     }
 
+    void 'a list written by indexed keys is merged into another config as a list'() {
+        given: "a list written by indexed keys"
+        def config = new PropertySourcesConfig()
+        config.merge(['app.rows[0].name': 'first', 'app.rows[1].name': 'second'])
+
+        when: "the list is merged into another config as the value of a nested map"
+        def other = new PropertySourcesConfig()
+        other.merge([app: [rows: config.app.rows]])
+
+        then:
+        other.navigate('app', 'rows')*.name == ['first', 'second']
+        other.getProperty('app.rows', List)*.name == ['first', 'second']
+        other.app.rows[1].name == 'second'
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)
