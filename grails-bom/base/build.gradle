@@ -50,8 +50,17 @@ ext {
     ]
 }
 
+// Platforms that override versions spring-boot-dependencies also manages. Maven, and the Spring dependency
+// management plugin that Grails applications apply by default, keep the first import that manages an artifact,
+// so these are imported before spring-boot-dependencies, as log4j2-bom is. Gradle picks the highest version
+// whatever the order.
+Set<String> springBootOverridePlatforms = ['jackson-bom', 'netty-bom'] as Set
+
 dependencies {
     api platform(gradleBomPlatformDependencies['log4j2-bom'])
+    for (String key : springBootOverridePlatforms) {
+        api platform(bomPlatformDependencies[key])
+    }
     api platform(gradleBomPlatformDependencies['spring-boot-bom']), {
         exclude group: 'org.apache.groovy'
         exclude group: 'org.spockframework'
@@ -64,6 +73,7 @@ dependencies {
     }
 
     for (def entry : bomPlatformDependencies.entrySet()) {
+        if (entry.key in springBootOverridePlatforms) continue
         if (entry.key == 'groovy-bom') {
             // groovy-bom 4.0.x constrains javaparser-core to 3.28. We declare javaparser-core
             // directly in gradleBomDependencies so excluding it here lets per-BOM overrides

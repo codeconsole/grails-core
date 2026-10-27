@@ -23,6 +23,7 @@ import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.env.PropertySource
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
@@ -168,5 +169,59 @@ class PropertySourcesConfigSpec extends Specification {
         description                          | yaml                                                                         | prefix        | bound
         'a plain key before a bracketed one' | "app:\n  routes:\n    default: z\n    '[/api/**]': x\n"                       | 'app.routes'  | [default: 'z', '/api/**': 'x']
         'a subscript after a subscript'      | "app:\n  tenants:\n    '[acme]':\n      routes:\n        '[/api/**]': x\n" | 'app.tenants' | [acme: [routes: ['/api/**': 'x']]]
+    }
+
+    void 'a placeholder in a value merged #description is resolved alike for the flat key and the nested entry'() {
+        given: "a property source that answers a new value each time it is read, and a section the config already holds"
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+        config.merge([app: [name: 'demo']])
+
+        when: "a value holding a placeholder is merged into the section"
+        config.merge(merged)
+
+        then: "the dotted key, the nested map and the export all read one resolved value"
+        String resolved = config.navigate('app', 'url')
+        resolved ==~ /http:\/\/host\d+/
+        config.toProperties().getProperty('app.url') == resolved
+        config['app.url'] == resolved
+        config.getProperty('app.url') == resolved
+
+        where:
+        description       | merged
+        'in a nested map' | [app: [url: 'http://${host}']]
+        'as a dotted key' | ['app.url': 'http://${host}']
+    }
+
+    void 'a placeholder in a value merged in a nested map is resolved once'() {
+        given:
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+
+        when:
+        config.merge([app: [url: 'http://${host}']])
+
+        then:
+        config['app.url'] == 'http://host1'
+        config.navigate('app', 'url') == 'http://host1'
+        counter.readCount() == 1
+    }
+
+    static class CountingPropertySource extends PropertySource<Object> {
+
+        private int reads
+
+        CountingPropertySource() {
+            super('counting', new Object())
+        }
+
+        @Override
+        Object getProperty(String name) {
+            name == 'host' ? "host${++reads}".toString() : null
+        }
+
+        int readCount() {
+            reads
+        }
     }
 }

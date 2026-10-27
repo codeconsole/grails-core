@@ -271,10 +271,12 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 }
                 targetMap.remove(sourceKey)
             } else {
-                if (path) {
-                    rootMap.put("${path}.${sourceKey}".toString(), newValue)
-                }
                 mergeMapEntry(targetMap, sourceKey, newValue)
+                if (path) {
+                    // the flat key holds the value the nested entry holds, as the hook stored it, so a placeholder in it
+                    // is resolved once, for both
+                    rootMap.put("${path}.${sourceKey}".toString(), targetMap.get(sourceKey))
+                }
             }
         }
     }
