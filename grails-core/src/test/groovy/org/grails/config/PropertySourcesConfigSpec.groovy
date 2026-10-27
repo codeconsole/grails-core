@@ -197,6 +197,29 @@ class PropertySourcesConfigSpec extends Specification {
         config.app.rows[0].db.url == 'jdbc:x'
     }
 
+    void 'a list in a source of higher precedence is merged over the list below it as before, also on refresh, #description'() {
+        given: "application-dev.yml over application.yml"
+        def sources = new MutablePropertySources()
+        sources.addLast(new YamlPropertySourceLoader().load('application-dev.yml', new ByteArrayResource(higher.bytes)).first())
+        sources.addLast(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(lower.bytes)).first())
+        def config = new PropertySourcesConfig(sources)
+
+        expect:
+        config.navigate('app', name) == merged
+        config.getProperty("app.${name}".toString(), List) == merged
+
+        when:
+        config.refresh()
+
+        then:
+        config.navigate('app', name) == merged
+
+        where:
+        description        | name   | higher                             | lower                                                     | merged
+        'a list of maps'   | 'rows' | "app:\n  rows:\n    - name: dev\n" | "app:\n  rows:\n    - name: first\n    - name: second\n" | [[name: 'dev'], [name: 'second']]
+        'a list of values' | 'tags' | "app:\n  tags:\n    - dev\n"       | "app:\n  tags:\n    - first\n    - second\n"             | ['dev']
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)

@@ -152,6 +152,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             Object sourceKeyObject = entry.key
             Object sourceValue = entry.value
             String sourceKey = String.valueOf(sourceKeyObject)
+            if (sourceValue instanceof HeldList && !targetMap.is(rootMap)) {
+                // the indexed entries beside it, rows[0] and on, write the list element by element
+                continue
+            }
             if (parseFlatKeys) {
                 String[] keyParts = sourceKey.split(/\./)
                 if (keyParts.length > 1) {
@@ -202,7 +206,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         String written = indexedKey.substring(subscriptStart + 1, subscriptEnd)
         if (container instanceof List) {
             List flatList = (List) container
-            List held = []
+            List held = new HeldList()
             for (int i = 0; i < flatList.size(); i++) {
                 held.add(heldElement(owner, "${name}[${i}]".toString(), flatList.get(i), String.valueOf(i) == written))
             }
@@ -239,6 +243,16 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         }
         owner.put(indexedName, held)
         held
+    }
+
+    /**
+     * A list held for indexed keys in the nested map that owns it, beside the entries the map holds for its elements,
+     * {@code rows[0]} and on. Merging the map writes the list element by element through those entries, as a list of
+     * maps from application.yml always was, so a list that a source of higher precedence holds replaces the elements
+     * it holds and keeps the others, and the held list itself is skipped.
+     */
+    @CompileStatic
+    private static class HeldList extends ArrayList<Object> {
     }
 
     protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey, Object sourceValue, boolean parseFlatKeys, boolean isNestedSet = false) {
