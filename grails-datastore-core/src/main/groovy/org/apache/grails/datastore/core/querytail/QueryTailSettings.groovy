@@ -23,6 +23,9 @@ import groovy.transform.CompileStatic
 import groovy.transform.builder.Builder
 import groovy.transform.builder.SimpleStrategy
 
+import org.springframework.core.env.PropertyResolver
+
+import org.grails.datastore.mapping.config.ConfigurationBuilder
 import org.grails.datastore.mapping.config.Settings
 
 /**
@@ -69,6 +72,18 @@ class QueryTailSettings {
      * command reads it. When unset the file is {@link #DEFAULT_FILE} under the build directory.
      */
     String file
+
+    /**
+     * Binds the query-tail settings alone, from {@link #PREFIX}, as the settings of a connection source bind them,
+     * for a datastore that takes nothing else from {@code grails.gorm}, such as one around a client the application
+     * built: a setting of {@code grails.gorm} that is not of query-tail is never read, so it cannot fail them.
+     *
+     * @param configuration the configuration
+     * @return the settings
+     */
+    static QueryTailSettings of(PropertyResolver configuration) {
+        new Binder(configuration).build()
+    }
 
     /**
      * @return the capture file these settings name: an absolute one as it is, a relative one joined to
@@ -126,5 +141,26 @@ class QueryTailSettings {
     private static File inApplication(String path, File applicationDir) {
         File file = new File(path)
         file.absolute || applicationDir == null ? file : new File(applicationDir, path)
+    }
+
+    /**
+     * Binds the settings from {@link #PREFIX}.
+     */
+    @CompileStatic
+    private static class Binder extends ConfigurationBuilder<QueryTailSettings, QueryTailSettings> {
+
+        Binder(PropertyResolver propertyResolver) {
+            super(propertyResolver, PREFIX)
+        }
+
+        @Override
+        protected QueryTailSettings createBuilder() {
+            new QueryTailSettings()
+        }
+
+        @Override
+        protected QueryTailSettings toConfiguration(QueryTailSettings builder) {
+            builder
+        }
     }
 }

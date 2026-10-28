@@ -331,7 +331,6 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         for (PersistentEntity entity : mappingContext.getPersistentEntities()) {
             registerEntity(entity);
         }
-        bindQueryTail(connectionSources.getAllConnectionSources(), this);
         if (!(connectionSources instanceof SingletonConnectionSources)) {
             final MongoDatastore parent = this;
             Iterable<ConnectionSource<MongoClient, MongoConnectionSourceSettings>> allConnectionSources = connectionSources.getAllConnectionSources();
@@ -352,7 +351,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 public void newConnectionSource(final ConnectionSource<MongoClient, MongoConnectionSourceSettings> connectionSource) {
                     final SingletonConnectionSources<MongoClient, MongoConnectionSourceSettings> singletonConnectionSources = new SingletonConnectionSources<>(connectionSource, connectionSources.getBaseConfiguration());
                     MongoDatastore childDatastore = createChildDatastore(mappingContext, eventPublisher, parent, singletonConnectionSources);
-                    // The child bound the query-tail listener of its connection source as it was built.
+                    // Built, the child leaves the query-tail listener of its connection source to this datastore.
+                    bindQueryTail(singletonConnectionSources.getAllConnectionSources(), childDatastore);
                     datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
                     registerAllEntitiesWithEnhancer();
                     // Decided under the lifecycle monitor, so a connection registered while start() or stop() is
@@ -414,12 +414,24 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.autoTimestampEventListener = new AutoTimestampEventListener(this);
         registerEventListeners(this.eventPublisher);
         this.gormEnhancer = initialize(settings);
+        bindQueryTail();
     }
 
     /**
-     * Gives the query-tail listeners of connection sources the mapping of a datastore, and warns of each whose capture
-     * is enabled but whose client was built without the listener: one the application built itself, or one a connection
-     * source factory built other than through {@link MongoConnectionSource#create}, which registers it.
+     * Binds the query-tail listeners of the connection sources of this datastore, once it is built, so that one that
+     * fails to build leaves every capture file as it was. A child datastore leaves its listener to its parent, which
+     * binds the listeners of all its connection sources once it is built itself, and that of one added at runtime once
+     * the child of it is built.
+     */
+    void bindQueryTail() {
+        bindQueryTail(connectionSources.getAllConnectionSources(), this);
+    }
+
+    /**
+     * Gives the query-tail listeners of connection sources the mapping of a datastore, which opens their captures, and
+     * warns of each whose capture is enabled but whose client was built without the listener: one the application built
+     * itself, or one a connection source factory built other than through {@link MongoConnectionSource#create}, which
+     * registers it.
      */
     private static void bindQueryTail(Iterable<ConnectionSource<MongoClient, MongoConnectionSourceSettings>> connectionSources,
             MongoDatastore datastore) {
@@ -452,6 +464,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             void ensureStarted() {
                 // A child has no lifecycle of its own: starting the parent starts it.
                 parent.ensureStarted();
+            }
+
+            @Override
+            void bindQueryTail() {
+                // The parent binds the listener of a child's connection source, once neither can fail to build.
             }
 
             @Override

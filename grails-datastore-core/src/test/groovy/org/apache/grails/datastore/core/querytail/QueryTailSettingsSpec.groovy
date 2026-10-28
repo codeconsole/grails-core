@@ -21,6 +21,7 @@ package org.apache.grails.datastore.core.querytail
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettingsBuilder
+import org.grails.datastore.mapping.core.exceptions.ConfigurationException
 import spock.lang.Specification
 import spock.util.environment.RestoreSystemProperties
 
@@ -42,6 +43,29 @@ class QueryTailSettingsSpec extends Specification {
         and: 'a copy of the settings carries them as well'
         settings.clone().queryTail.enabled
         settings.clone().queryTail.file == '/tmp/statements.log'
+    }
+
+    void "the query-tail settings alone are bound as every connection source binds them, and nothing else of grails.gorm is read"() {
+        given: 'a setting of grails.gorm that fails to bind, as a class of another datastore that cannot be loaded does'
+        Map<String, Object> config = ['grails.gorm.queryTail.enabled'                : 'true',
+                                      'grails.gorm.queryTail.file'                   : '/tmp/statements.log',
+                                      'grails.gorm.multiTenancy.tenantResolverClass' : 'does.not.Exist']
+
+        when: 'every setting of grails.gorm is bound'
+        new ConnectionSourceSettingsBuilder(DatastoreUtils.createPropertyResolver(config)).build()
+
+        then:
+        thrown(ConfigurationException)
+
+        when: 'only those of query-tail are'
+        QueryTailSettings settings = QueryTailSettings.of(DatastoreUtils.createPropertyResolver(config))
+        QueryTailSettings plain = QueryTailSettings.of(DatastoreUtils.createPropertyResolver([:]))
+
+        then:
+        settings.enabled
+        settings.file == '/tmp/statements.log'
+        !plain.enabled
+        plain.file == null
     }
 
     @RestoreSystemProperties

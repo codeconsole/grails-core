@@ -95,6 +95,36 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         'as it builds the service registry' | RegistryObservingConfiguration | 'on'
     }
 
+    void "a configuration holds the observer the application set even as it builds a session factory, with capture #capture"() {
+        given:
+        def connectionSource = new HibernateConnectionSourceFactory(ObservedConfigurationBook).create(ConnectionSource.DEFAULT,
+                DatastoreUtils.createPropertyResolver([
+                        'dataSource.url'                   : 'jdbc:h2:mem:heldObserverDB;LOCK_TIMEOUT=10000',
+                        'dataSource.dbCreate'              : 'create-drop',
+                        'hibernate.configClass'            : HoldingConfiguration.name,
+                        (QueryTailSettings.SETTING_ENABLED): String.valueOf(capture == 'on'),
+                        (QueryTailSettings.SETTING_FILE)   : new File(tempDir, 'capture.log').path]))
+        SessionFactoryImplementor sessionFactory = connectionSource.source as SessionFactoryImplementor
+        def registry = sessionFactory.serviceRegistry.parentServiceRegistry as AbstractServiceRegistryImpl
+        def observer = sessionFactory.sessionFactoryOptions.sessionFactoryObservers.find { it instanceof QueryTailSessionFactoryObserver }
+
+        expect: 'the configuration held what the application set as the session factory was created'
+        HoldingSessionFactoryObserver.held == [true]
+        (observer != null) == (capture == 'on')
+
+        when:
+        connectionSource.close()
+
+        then: 'and the registry is destroyed with the session factory'
+        !registry.active
+
+        cleanup:
+        HoldingSessionFactoryObserver.held.clear()
+
+        where:
+        capture << ['off', 'on']
+    }
+
     void "setApplicationContext uses the context class loader when DevTools is not active"() {
         given:
         def config = new HibernateMappingContextConfiguration()
@@ -338,6 +368,33 @@ class BuildObservingConfiguration extends HibernateMappingContextConfiguration {
     SessionFactory buildSessionFactory() {
         setSessionFactoryObserver(new RecordingSessionFactoryObserver())
         super.buildSessionFactory()
+    }
+}
+
+class HoldingConfiguration extends HibernateMappingContextConfiguration {
+
+    HoldingConfiguration() {
+        setSessionFactoryObserver(new HoldingSessionFactoryObserver(configuration: this))
+    }
+}
+
+/**
+ * Records whether the configuration it observes holds it as the session factory is created, which is what another
+ * build of the configuration, on another thread, would read.
+ */
+class HoldingSessionFactoryObserver implements SessionFactoryObserver {
+
+    static final List<Boolean> held = [].asSynchronized()
+
+    HibernateMappingContextConfiguration configuration
+
+    @Override
+    void sessionFactoryCreated(SessionFactory factory) {
+        held << configuration.sessionFactoryObserver.is(this)
+    }
+
+    @Override
+    void sessionFactoryClosed(SessionFactory factory) {
     }
 }
 

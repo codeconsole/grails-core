@@ -37,8 +37,11 @@ import org.bson.Document
 import org.bson.types.ObjectId
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.mongo.CapturedLog
+import org.grails.datastore.gorm.mongo.MongoGormEnhancer
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSource
+import org.grails.datastore.mapping.core.connections.ConnectionSources
+import org.grails.datastore.mapping.core.connections.ConnectionSourcesInitializer
 import org.grails.datastore.mapping.core.connections.DefaultConnectionSource
 import org.grails.datastore.mapping.core.connections.InMemoryConnectionSources
 import org.grails.datastore.mapping.core.exceptions.ConfigurationException
@@ -430,6 +433,7 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         def collection = datastore.mongoClient.getDatabase(DATABASE).getCollection('queryTailBatch')
 
         when:
+        collection.insertOne(new Document('title', 'single-1'))
         collection.insertMany((1..2).collect { new Document('title', "small-${it}".toString()) })
         collection.insertMany((1..50).collect { new Document('title', "large-${it}".toString()) })
         List<Document> found = collection.find(new Document('title', new Document('$in', ['small-1', 'large-1', 'large-2']))).into([])
@@ -437,14 +441,14 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         List<String> recorded = records(file)*.sql.findAll { it.contains("${DATABASE}.queryTailBatch ") }
 
         then: 'the database wrote and read every document, and the capture holds one statement for each kind of command'
-        collection.countDocuments() == 52
+        collection.countDocuments() == 53
         found.size() == 3
-        recorded.count { it.startsWith('insert ') } == 2
+        recorded.count { it.startsWith('insert ') } == 3
         recorded.findAll { it.startsWith('insert ') }.unique().size() == 1
-        recorded.find { it.startsWith('insert ') }.contains('"documents": [{?: ?, ?: ?}, ...]')
-        recorded.findAll { it.startsWith('find ') } as Set == [
-                "find ${DATABASE}.queryTailBatch {\"filter\": {\"title\": {\"\$in\": [?, ...]}}}".toString(),
-                "find ${DATABASE}.queryTailBatch {\"filter\": {\"title\": {\"\$in\": [?]}}}".toString()] as Set
+        recorded.find { it.startsWith('insert ') }.contains('"documents": [{?: ?, ?: ?}]')
+        recorded.count { it.startsWith('find ') } == 2
+        recorded.findAll { it.startsWith('find ') }.unique() == [
+                "find ${DATABASE}.queryTailBatch {\"filter\": {\"title\": {\"\$in\": [?]}}}".toString()]
         !file.text.contains('large-')
     }
 
@@ -624,6 +628,41 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         where:
         fromOptions << [true, false]
         source = fromOptions ? 'options' : 'a client factory'
+    }
+
+    void "a datastore that fails to build opens no capture, neither of its own connection nor of another, which the next datastore built on them opens"() {
+        given: 'connection sources built with their listeners, and a datastore built on them that fails as it ends being built'
+        File file = new File(tempDir, 'capture.log')
+        ConnectionSources<MongoClient, MongoConnectionSourceSettings> connectionSources = ConnectionSourcesInitializer.create(
+                new MongoConnectionSourceFactory(), DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_URL): url(DATABASE),
+                (MongoSettings.SETTING_CONNECTIONS): [reporting: [url: url("${DATABASE}Reporting")]]] + enabled(file)))
+
+        when:
+        new MongoDatastore(connectionSources, new MongoMappingContext(DATABASE), new DefaultApplicationEventPublisher()) {
+            @Override
+            protected MongoGormEnhancer initialize(MongoConnectionSourceSettings settings) {
+                throw new IllegalStateException('cannot be built')
+            }
+        }
+
+        then:
+        thrown(IllegalStateException)
+        !file.exists()
+        connectionSources.allConnectionSources.every { ((MongoConnectionSource) it).queryTail.capture == null }
+
+        when: 'the next datastore is built on them'
+        MongoDatastore datastore = new MongoDatastore(connectionSources, new MongoMappingContext(DATABASE), new DefaultApplicationEventPublisher())
+        datastores << datastore
+        probe(datastore.getDatastoreForConnection('reporting'), "${DATABASE}Reporting", 'reporting_probe')
+
+        then: 'it opens the captures of both, in a run of its own'
+        listener(datastore).capture.open
+        listener(datastore.getDatastoreForConnection('reporting')).capture.open
+        runOf(file) != null
+        records(file).find { it.sql.startsWith("find ${DATABASE}Reporting.reporting_probe ") }?.dataSource == 'reporting'
+
+        cleanup:
+        connectionSources?.close()
     }
 
     void "a datastore that closes leaves another writing to the same file"() {

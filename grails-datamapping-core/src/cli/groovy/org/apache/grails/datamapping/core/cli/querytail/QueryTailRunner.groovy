@@ -74,7 +74,7 @@ class QueryTailRunner {
     /**
      * Runs until stopped, or until the summary has been printed once with {@link QueryTailOptions#once}.
      *
-     * @return 0 when it ran, 1 when there was nothing to read
+     * @return 0 when it ran, 1 when there was nothing to read, or what is there cannot be read
      */
     int run() {
         File file = options.file
@@ -82,15 +82,30 @@ class QueryTailRunner {
         if (waited && !awaitFile(file)) {
             return stopped ? 0 : 1
         }
-        // a capture that appeared while waiting is a run that has just started: read it from its first statement
-        QueryTailFileReader reader = new QueryTailFileReader(file, waited || options.all || options.once, chunk)
-        try {
-            follow(reader)
+        String unreadable = QueryTailFileReader.unreadable(file)
+        if (unreadable != null) {
+            return cannotRead(file, unreadable)
         }
-        finally {
-            reader.close()
+        try {
+            // a capture that appeared while waiting is a run that has just started: read it from its first statement
+            QueryTailFileReader reader = new QueryTailFileReader(file, waited || options.all || options.once, chunk)
+            try {
+                follow(reader)
+            }
+            finally {
+                reader.close()
+            }
+        }
+        catch (IOException e) {
+            // the file became one that cannot be read as it was followed
+            return cannotRead(file, e.message)
         }
         0
+    }
+
+    private int cannotRead(File file, String reason) {
+        renderer.out.println("Cannot read the query-tail capture ${file}: ${reason}.")
+        1
     }
 
     private boolean awaitFile(File file) {

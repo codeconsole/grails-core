@@ -19,6 +19,7 @@
 package org.apache.grails.datamapping.core.cli.querytail
 
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
+import spock.lang.Requires
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
@@ -405,6 +406,36 @@ class QueryTailFileReaderSpec extends Specification {
         expect:
         reader.poll().isEmpty()
         reader.position == 0
+    }
+
+    @Requires({ !os.windows })
+    void "a file that is a directory when it is read fails the poll, saying so, rather than read as empty"() {
+        given: 'a reader that has read the file'
+        file.text = header('run-1') + line('r1', 'select 1') + '\n'
+        QueryTailFileReader reader = new QueryTailFileReader(file, true)
+        reader.poll()
+
+        when: 'the file is replaced by a directory, which holds an entry so that it measures longer than none'
+        assert file.delete()
+        assert file.mkdirs()
+        new File(file, 'entry').text = 'x'
+        reader.poll()
+
+        then:
+        IOException e = thrown()
+        e.message == 'it is a directory'
+    }
+
+    void "why a file cannot be read is told for a directory, and nothing for a file or none"() {
+        expect:
+        QueryTailFileReader.unreadable(tempDir) == 'it is a directory'
+        QueryTailFileReader.unreadable(file) == null
+
+        when:
+        file.text = header('run-1')
+
+        then:
+        QueryTailFileReader.unreadable(file) == null
     }
 
     private static String header(String run) {

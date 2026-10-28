@@ -23,6 +23,7 @@ import java.util.function.Supplier
 
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
+import spock.lang.Requires
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Timeout
@@ -87,6 +88,63 @@ class QueryTailRunnerSpec extends Specification {
         expect:
         runner.run() == 1
         output() == "No query-tail capture at ${file}.\n${QueryTailRunner.START_HINT}\n"
+    }
+
+    @Timeout(30)
+    void "a capture file that is a directory is reported, and the run fails rather than show nothing #run"() {
+        given:
+        file.mkdirs()
+        QueryTailRunner runner = new QueryTailRunner(new QueryTailOptions(file: file, once: once), out, false)
+
+        expect:
+        runner.run() == 1
+        output() == "Cannot read the query-tail capture ${file}: it is a directory.\n"
+
+        where:
+        run          | once
+        'once'       | true
+        'as it runs' | false
+    }
+
+    @Requires({ !os.windows && System.getProperty('user.name') != 'root' })
+    void "a capture file that cannot be read is reported, and the run fails rather than show nothing"() {
+        given:
+        file.text = line('r1', 'book/show', 'select 1')
+        file.setReadable(false, false)
+        QueryTailRunner runner = new QueryTailRunner(new QueryTailOptions(file: file, once: true), out, false)
+
+        expect:
+        runner.run() == 1
+        output() == "Cannot read the query-tail capture ${file}: it cannot be read.\n"
+
+        cleanup:
+        file.setReadable(true, false)
+    }
+
+    @Requires({ !os.windows })
+    void "a capture file replaced by a directory as the run follows it is reported, and the run fails"() {
+        given:
+        file.text = line('r1', 'book/show', 'select 1')
+        QueryTailRunner runner = new QueryTailRunner(new QueryTailOptions(file: file), out, false)
+        runner.pollMillis = 20
+        int[] result = new int[] { -1 }
+        Thread thread = Thread.startDaemon('query-tail-runner') { result[0] = runner.run() }
+
+        when:
+        new PollingConditions(timeout: 30).eventually { assert output().contains('query-tail ') }
+        assert file.delete()
+        assert file.mkdirs()
+        // an entry, so that the directory measures longer than none
+        new File(file, 'entry').text = 'x'
+        thread.join(TimeUnit.SECONDS.toMillis(30))
+
+        then:
+        !thread.alive
+        result[0] == 1
+        output().endsWith("Cannot read the query-tail capture ${file}: it is a directory.\n")
+
+        cleanup:
+        runner.stop()
     }
 
     void "once with a page shows the statements of that page"() {

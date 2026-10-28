@@ -125,6 +125,11 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
                         protected GormEnhancer initialize(ConnectionSourceSettings settings) {
                             return null;
                         }
+
+                        @Override
+                        void openQueryTails() {
+                            // The parent opens the capture of a child, once neither can fail to build.
+                        }
                     };
                 }
                 datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
@@ -132,9 +137,7 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
         }
         this.eventPublisher = eventPublisher;
         this.gormEnhancer = initialize(defaultConnectionSource.getSettings());
-        if (queryTail != null) {
-            queryTail.open();
-        }
+        openQueryTails();
     }
 
     public SimpleMapDatastore(ConnectionSources<Map<String, Map>, ConnectionSourceSettings> connectionSources, ConfigurableApplicationEventPublisher eventPublisher, Class... classes) {
@@ -417,6 +420,22 @@ public class SimpleMapDatastore extends AbstractDatastore implements Closeable, 
             closeQueryTails();
         }
         gormEnhancer.close();
+    }
+
+    /**
+     * Opens the query-tail captures of this datastore and of the datastores of its other connection sources, once it
+     * is built, so that one that fails to build leaves every capture file as it was. The datastore of another
+     * connection source it is built with leaves its capture to it, which opens it along with its own.
+     */
+    void openQueryTails() {
+        for (SimpleMapDatastore child : datastoresByConnectionSource.values()) {
+            if (child != this && child.queryTail != null) {
+                child.queryTail.open();
+            }
+        }
+        if (queryTail != null) {
+            queryTail.open();
+        }
     }
 
     /**

@@ -62,7 +62,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         HmccRecordingInspector.seen.clear()
     }
 
-    def "setQueryTailFile gives a session factory a capture of its own in front of the observer the application set, which the configuration holds again once it is built, and leaves its inspector alone"() {
+    def "setQueryTailFile gives a session factory a capture of its own next to the observer the application set, which the configuration goes on holding, and leaves its inspector alone"() {
         given:
         File file = new File(tempDir, 'capture.log')
         HibernateConnectionSourceFactory factory = new HibernateConnectionSourceFactory(HmccTestBook, HmccTestAuthor)
@@ -86,7 +86,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         HmccRecordingObserver.events == ['created']
         file.readLines().collect { QueryTailRecord.parse(it) }.findAll()*.sql.count('select ? as probed') == 1
 
-        and: 'the configuration holds what the application set again'
+        and: 'the configuration holds what the application set'
         configuration.statementInspector.is(inspector)
         configuration.sessionFactoryObserver.is(observer)
 
@@ -107,6 +107,29 @@ class HibernateMappingContextConfigurationSpec extends Specification {
 
         cleanup:
         uncaptured?.close()
+        dataSource?.close()
+    }
+
+    def "a configuration holds the observer the application set even as it builds a session factory with a capture"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        HibernateConnectionSourceFactory factory = new HibernateConnectionSourceFactory(HmccTestBook, HmccTestAuthor)
+        ConnectionSource<DataSource, DataSourceSettings> dataSource
+        HibernateMappingContextConfiguration configuration = configurationOf(factory, 'hmccHeldObserver', [:]) { dataSource = it }
+        HmccHoldingObserver observer = new HmccHoldingObserver(configuration: configuration)
+        configuration.sessionFactoryObserver = observer
+        configuration.queryTailFile = file
+
+        when:
+        SessionFactoryImplementor sessionFactory = configuration.buildSessionFactory() as SessionFactoryImplementor
+
+        then: 'the session factory was created with a capture, and the configuration held what the application set throughout'
+        capturingObserver(sessionFactory).capture.open
+        observer.held.is(observer)
+        configuration.sessionFactoryObserver.is(observer)
+
+        cleanup:
+        sessionFactory?.close()
         dataSource?.close()
     }
 
@@ -835,6 +858,25 @@ class HmccBuildObservingConfiguration extends HibernateMappingContextConfigurati
     SessionFactory buildSessionFactory() {
         setSessionFactoryObserver(new HmccRecordingObserver())
         super.buildSessionFactory()
+    }
+}
+
+/**
+ * Records the observer the configuration it observes holds as the session factory is created, which is what another
+ * build of the configuration, on another thread, would read.
+ */
+class HmccHoldingObserver implements SessionFactoryObserver {
+
+    HibernateMappingContextConfiguration configuration
+    SessionFactoryObserver held
+
+    @Override
+    void sessionFactoryCreated(SessionFactory factory) {
+        held = configuration.sessionFactoryObserver
+    }
+
+    @Override
+    void sessionFactoryClosed(SessionFactory factory) {
     }
 }
 

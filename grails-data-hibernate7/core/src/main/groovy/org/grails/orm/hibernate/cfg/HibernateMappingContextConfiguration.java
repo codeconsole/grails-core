@@ -40,7 +40,6 @@ import jakarta.persistence.MappedSuperclass;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.SessionFactory;
-import org.hibernate.SessionFactoryObserver;
 import org.hibernate.boot.registry.BootstrapServiceRegistry;
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -48,6 +47,7 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.boot.registry.classloading.internal.ClassLoaderServiceImpl;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.boot.spi.AdditionalMappingContributor;
+import org.hibernate.boot.spi.SessionFactoryBuilderFactory;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.BytecodeSettings;
 import org.hibernate.cfg.Configuration;
@@ -321,6 +321,8 @@ public class HibernateMappingContextConfiguration extends Configuration
 
         addAnnotatedClasses(annotatedClasses.toArray(new Class[0]));
 
+        QueryTailSessionFactoryObserver queryTail = queryTailFile != null ?
+                new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile) : null;
         ClassLoaderService classLoaderService = new ClassLoaderServiceImpl(appClassLoader) {
             @Override
             public <S> Collection<S> loadJavaServices(Class<S> serviceContract) {
@@ -337,6 +339,12 @@ public class HibernateMappingContextConfiguration extends Configuration
                     allContributors.add(grailsBinder);
                     allContributors.addAll(parentContributors);
                     return allContributors;
+                }
+                if (queryTail != null && SessionFactoryBuilderFactory.class.isAssignableFrom(serviceContract)) {
+                    // The capture observes the session factory being built, whatever observer the configuration holds.
+                    List<S> factories = new ArrayList<>(super.loadJavaServices(serviceContract));
+                    factories.add(serviceContract.cast(queryTail.getSessionFactoryBuilderFactory()));
+                    return factories;
                 }
                 return super.loadJavaServices(serviceContract);
             }
@@ -358,30 +366,24 @@ public class HibernateMappingContextConfiguration extends Configuration
         }
 
         standardServiceRegistryBuilder.addService(org.hibernate.bytecode.spi.BytecodeProvider.class, bytecodeProvider);
-        SessionFactoryObserver configuredObserver = getSessionFactoryObserver();
-        try {
-            if (queryTailFile != null) {
-                QueryTailSessionFactoryObserver queryTail = new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile);
-                queryTail.recordConnections(standardServiceRegistryBuilder);
-                queryTail.observe(this);
-            }
+        if (queryTail != null) {
+            queryTail.recordConnections(standardServiceRegistryBuilder);
+        }
 
-            StandardServiceRegistry ssr = standardServiceRegistryBuilder.build();
-            ClassLoader previous = Thread.currentThread().getContextClassLoader();
-            try {
-                Thread.currentThread().setContextClassLoader(appClassLoader);
-                sessionFactory = super.buildSessionFactory(ssr);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            } finally {
-                Thread.currentThread().setContextClassLoader(previous);
-            }
-            this.serviceRegistry = ssr;
+        StandardServiceRegistry ssr = standardServiceRegistryBuilder.build();
+        if (queryTail != null) {
+            queryTail.recordProvidedConnections(ssr);
         }
-        finally {
-            // the next session factory is given an observer of its own in front of the one the application set
-            setSessionFactoryObserver(configuredObserver);
+        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(appClassLoader);
+            sessionFactory = super.buildSessionFactory(ssr);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previous);
         }
+        this.serviceRegistry = ssr;
 
         return sessionFactory;
     }
@@ -442,10 +444,9 @@ public class HibernateMappingContextConfiguration extends Configuration
     /**
      * Sets the file query-tail capture records the statements of the session factories this
      * configuration builds to. Each session factory is given an observer, and a capture, of its own,
-     * which records the statements run on the connections of its service registry and takes the
-     * place of the observer the application set, which it keeps telling. Once the session factory is
-     * built, the configuration holds what the application set again, so that the next session
-     * factory is given its own as well.
+     * which records the statements run on the connections of its service registry. The observer is
+     * added to the session factory as Hibernate builds it, next to the observer the configuration
+     * holds, which is left as the application set it.
      *
      * @param queryTailFile the capture file, or null to record nothing
      */

@@ -26,9 +26,12 @@ import java.sql.Connection
 
 import groovy.transform.CompileStatic
 import org.hibernate.boot.registry.StandardServiceInitiator
+import org.hibernate.boot.registry.StandardServiceRegistry
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.engine.jdbc.connections.internal.ConnectionProviderInitiator
 import org.hibernate.engine.jdbc.connections.internal.MultiTenantConnectionProviderInitiator
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider
+import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider
 import org.hibernate.service.Service
 import org.hibernate.service.spi.Configurable
 import org.hibernate.service.spi.ServiceBinding
@@ -41,8 +44,9 @@ import org.apache.grails.datamapping.core.querytail.QueryTailJdbcConnection
 import org.apache.grails.datamapping.core.querytail.QueryTailRecorder
 
 /**
- * Decorates the provider Hibernate selects, preserving its configuration and service lifecycle.
- * Connections are captured at execution and returned to their provider as the original instances.
+ * Decorates the provider Hibernate selects, or the one the service registry was given as a service,
+ * preserving its configuration and service lifecycle. Connections are captured at execution and
+ * returned to their provider as the original instances.
  *
  * @since 9.0
  */
@@ -62,6 +66,26 @@ final class QueryTailConnectionProvider<S extends Service> implements StandardSe
         builder.addInitiator(new QueryTailConnectionProvider<>(MultiTenantConnectionProviderInitiator.INSTANCE, recorder))
     }
 
+    /**
+     * Decorates the providers a built service registry was given as services, which take the place of
+     * those the initiators {@link #install} decorates would select. A provided service is bound with the
+     * registry, before anything has asked for it, so it is replaced on its binding before it is handed out.
+     */
+    static void installProvided(StandardServiceRegistry registry, QueryTailRecorder recorder) {
+        decorateProvided((ServiceRegistryImplementor) registry, ConnectionProvider, recorder)
+        decorateProvided((ServiceRegistryImplementor) registry, MultiTenantConnectionProvider, recorder)
+    }
+
+    private static <S extends Service> void decorateProvided(ServiceRegistryImplementor registry, Class<S> role,
+            QueryTailRecorder recorder) {
+        ServiceBinding<S> binding = registry.locateServiceBinding(role)
+        // only a provided service is there before anything has asked for one, which an initiator creates then
+        S provided = binding?.service
+        if (provided != null) {
+            binding.service = decorate(role, provided, binding.lifecycleOwner, recorder)
+        }
+    }
+
     @Override
     Class<S> getServiceInitiated() {
         delegate.serviceInitiated
@@ -70,19 +94,23 @@ final class QueryTailConnectionProvider<S extends Service> implements StandardSe
     @Override
     S initiateService(Map<String, Object> settings, ServiceRegistryImplementor registry) {
         S provider = delegate.initiateService(settings, registry)
-        if (provider == null) {
-            return null
-        }
-        List<Class<?>> interfaces = [serviceInitiated, ServiceRegistryAwareService]
+        provider == null ? null : decorate(serviceInitiated, provider, registry.locateServiceBinding(serviceInitiated).lifecycleOwner, recorder)
+    }
+
+    /**
+     * @return the provider decorated, keeping every lifecycle interface it has, which the registry calls through the
+     * decoration as it would on the provider
+     */
+    private static <S extends Service> S decorate(Class<S> role, S provider, ServiceBinding.ServiceLifecycleOwner owner,
+            QueryTailRecorder recorder) {
+        List<Class<?>> interfaces = [role, ServiceRegistryAwareService]
         for (Class<?> lifecycle in [Configurable, Startable, Stoppable]) {
             if (lifecycle.isInstance(provider)) {
                 interfaces.add(lifecycle)
             }
         }
-        ServiceBinding.ServiceLifecycleOwner owner = registry.locateServiceBinding(serviceInitiated).lifecycleOwner
-        ServiceBinding<S> binding = new ServiceBinding<>(owner, serviceInitiated, provider)
-        serviceInitiated.cast(Proxy.newProxyInstance(serviceInitiated.classLoader, interfaces as Class<?>[],
-                new Connections(provider, binding, recorder)))
+        ServiceBinding<S> binding = new ServiceBinding<>(owner, role, provider)
+        role.cast(Proxy.newProxyInstance(role.classLoader, interfaces as Class<?>[], new Connections(provider, binding, recorder)))
     }
 
     @CompileStatic

@@ -48,7 +48,7 @@ class QueryTailCaptureSpec extends Specification {
 
     List<QueryTailCapture> captures = []
 
-    List<OtherJvm> otherJvms = []
+    List<QueryTailOtherJvm> otherJvms = []
 
     void cleanup() {
         captures*.close()
@@ -585,8 +585,7 @@ class QueryTailCaptureSpec extends Specification {
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n' +
                 new QueryTailRecord(timestamp: 1L, dataSource: 'DEFAULT', sql: 'select a from t').toLine() + '\n'
-        FileChannel other = lockFile(file)
-        FileLock writing = other.lock(1L, 1L, true)
+        QueryTailOtherJvm writer = writingJvm(file)
 
         when:
         QueryTailCapture capture = open(file)
@@ -602,8 +601,7 @@ class QueryTailCaptureSpec extends Specification {
 
         when: 'the other JVM is done, and the next one starts'
         capture.close()
-        writing.release()
-        other.close()
+        writer.tell('unshare')
         open(file)
 
         then: 'the file holds a new run'
@@ -615,8 +613,7 @@ class QueryTailCaptureSpec extends Specification {
         given: 'a file another JVM is writing, which holds the lock every writer holds while it writes'
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n'
-        FileChannel other = lockFile(file)
-        FileLock writing = other.lock(1L, 1L, true)
+        writingJvm(file)
 
         when: 'this JVM joins the run, serves a request and closes its capture, twice'
         2.times {
@@ -631,10 +628,6 @@ class QueryTailCaptureSpec extends Specification {
         ids.every { it ==~ /${ProcessHandle.current().pid()}-r\d+/ }
         ids[0] != ids[1]
         QueryTailRecord.parseHeader(file.readLines().first()) == 'other-jvm'
-
-        cleanup:
-        writing?.release()
-        other?.close()
     }
 
     void "a writer holds the lock file while it writes, and lets it go when its last capture closes"() {
@@ -777,6 +770,59 @@ class QueryTailCaptureSpec extends Specification {
         checkpoint?.afterRestore(null)
     }
 
+    void "a capture that finds another application of this JVM writing its file is stopped, and leaves the file and that application as they were"() {
+        given: 'another application that runs in this JVM, with a capture class of its own, writing the file'
+        File file = new File(tempDir, 'capture.log')
+        Class<?> otherApplication = new CracHidingClassLoader(QueryTailCapture.classLoader).loadClass(QueryTailCapture.name)
+        Closeable other = (Closeable) otherApplication.getMethod('open', File).invoke(null, file)
+        other.record('DEFAULT', 'select a from t')
+        String run = QueryTailRecord.parseHeader(file.readLines().first())
+
+        when:
+        QueryTailCapture capture = open(file)
+        capture.record('DEFAULT', 'select b from t')
+        other.record('DEFAULT', 'select c from t')
+
+        then: 'this application records nothing, and the other one goes on writing its run'
+        !capture.open
+        other.open
+        QueryTailRecord.parseHeader(file.readLines().first()) == run
+        records(file)*.sql == ['select a from t', 'select c from t']
+
+        when: 'the other application is done'
+        other.close()
+        QueryTailCapture next = open(file)
+
+        then: 'the next capture starts a run of its own'
+        next.open
+        QueryTailRecord.parseHeader(file.readLines().first()) != run
+
+        cleanup:
+        other?.close()
+    }
+
+    void "a capture that finds another application of this JVM starting a capture of its file is stopped at once, and leaves the file as it was"() {
+        given: 'a run, and another application that runs in this JVM in the middle of starting a capture of it'
+        File file = new File(tempDir, 'capture.log')
+        file.text = QueryTailRecord.header('other-application') + '\n'
+        FileChannel other = lockFile(file)
+        FileLock starting = other.lock(0L, 1L, false)
+
+        when:
+        long started = System.nanoTime()
+        QueryTailCapture capture = open(file)
+        long waited = System.nanoTime() - started
+
+        then: 'it did not wait for the other application as it waits for another JVM, nor touch the file'
+        !capture.open
+        waited < QueryTailCapture.STARTING_WAIT.toNanos()
+        file.readLines() == [QueryTailRecord.header('other-application')]
+
+        cleanup:
+        starting?.release()
+        other?.close()
+    }
+
     void "a capture opens without org.crac on the classpath, which a process never checkpointed need not have"() {
         given:
         File file = new File(tempDir, 'capture.log')
@@ -913,7 +959,7 @@ class QueryTailCaptureSpec extends Specification {
     void "a file whose write failed is appended to in the run it was writing once another capture opens it, rather than truncated"() {
         given: 'another JVM that can write a file no longer than a block, and has written a run into one'
         File file = new File(tempDir, 'capture.log')
-        OtherJvm other = otherJvm(1)
+        QueryTailOtherJvm other = otherJvm(1)
         assert other.tell("open ${file.path}")
         assert other.tell('record select a from one')
         String run = QueryTailRecord.parseHeader(file.readLines().first())
@@ -946,7 +992,7 @@ class QueryTailCaptureSpec extends Specification {
         given: 'a run another JVM wrote, and another JVM in the middle of starting a capture of it, which it does not finish'
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n'
-        OtherJvm starter = otherJvm()
+        QueryTailOtherJvm starter = otherJvm()
         starter.tell("hold ${file.path}.lock")
 
         when:
@@ -991,8 +1037,7 @@ class QueryTailCaptureSpec extends Specification {
         given: 'a file another JVM is writing, which holds the lock every writer holds while it writes'
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n'
-        FileChannel other = lockFile(file)
-        FileLock writing = other.lock(1L, 1L, true)
+        writingJvm(file)
 
         when:
         Thread.currentThread().interrupt()
@@ -1008,8 +1053,6 @@ class QueryTailCaptureSpec extends Specification {
 
         cleanup:
         Thread.interrupted()
-        writing?.release()
-        other?.close()
     }
 
     @Requires({ !os.windows })
@@ -1018,9 +1061,8 @@ class QueryTailCaptureSpec extends Specification {
         given: 'a file another JVM writes, and another JVM in the middle of starting a capture of it'
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n'
-        FileChannel other = lockFile(file)
-        FileLock writing = other.lock(1L, 1L, true)
-        OtherJvm starter = otherJvm()
+        writingJvm(file)
+        QueryTailOtherJvm starter = otherJvm()
         starter.tell("hold ${file.path}.lock")
         BlockingQueue<QueryTailCapture> opened = new ArrayBlockingQueue<>(1)
         BlockingQueue<Boolean> interrupts = new ArrayBlockingQueue<>(1)
@@ -1052,8 +1094,6 @@ class QueryTailCaptureSpec extends Specification {
         cleanup:
         starter?.close()
         opener?.join(10000)
-        writing?.release()
-        other?.close()
     }
 
     @Requires({ new File('/dev/full').canWrite() })
@@ -1075,7 +1115,7 @@ class QueryTailCaptureSpec extends Specification {
         given: 'another JVM, which can create files but write nothing into them'
         File file = new File(tempDir, 'capture.log')
         File lock = new File(tempDir, 'capture.log.lock')
-        OtherJvm other = otherJvm(false)
+        QueryTailOtherJvm other = otherJvm(false)
 
         when: 'the header of the run cannot be written'
         boolean opened = other.tell("open ${file.path}")
@@ -1151,7 +1191,7 @@ class QueryTailCaptureSpec extends Specification {
         String run = QueryTailRecord.parseHeader(file.readLines().first())
 
         when: 'another JVM opens it by the other name and records while this one still writes'
-        OtherJvm other = otherJvm()
+        QueryTailOtherJvm other = otherJvm()
         boolean joined = other.tell("open ${names[childName].path}")
         other.tell('record select b from child')
         capture.record('DEFAULT', 'select c from parent_after')
@@ -1306,8 +1346,8 @@ class QueryTailCaptureSpec extends Specification {
      *
      * @param writable whether the files it creates can be written to; when not, every write into one fails
      */
-    private OtherJvm otherJvm(boolean writable = true) {
-        OtherJvm other = new OtherJvm(writable ? null : 0)
+    private QueryTailOtherJvm otherJvm(boolean writable = true) {
+        QueryTailOtherJvm other = new QueryTailOtherJvm(writable ? null : 0)
         otherJvms << other
         other
     }
@@ -1318,10 +1358,20 @@ class QueryTailCaptureSpec extends Specification {
      * @param blocks how many blocks of the shell's {@code ulimit -f} a file it writes may grow to, past which a write
      * into one fails
      */
-    private OtherJvm otherJvm(int blocks) {
-        OtherJvm other = new OtherJvm(blocks)
+    private QueryTailOtherJvm otherJvm(int blocks) {
+        QueryTailOtherJvm other = new QueryTailOtherJvm(blocks)
         otherJvms << other
         other
+    }
+
+    /**
+     * Starts another JVM that writes a file, as far as the JVMs that capture to it can tell: it holds the lock every
+     * writer holds while it writes, until it is told to {@code unshare} it.
+     */
+    private QueryTailOtherJvm writingJvm(File file) {
+        QueryTailOtherJvm writer = otherJvm()
+        writer.tell("share ${file.path}.lock")
+        writer
     }
 
     private static List<QueryTailRecord> records(File file) {
@@ -1343,53 +1393,53 @@ class QueryTailCaptureSpec extends Specification {
             RequestContextHolder.resetRequestAttributes()
         }
     }
+}
 
-    /** Another JVM, which opens and writes captures, and holds lock files, as {@link QueryTailCaptureWriter} is told to. */
-    private static class OtherJvm implements Closeable {
+/** Another JVM, which opens and writes captures, and holds lock files, as {@link QueryTailCaptureWriter} is told to. */
+class QueryTailOtherJvm implements Closeable {
 
-        private final Process process
-        private final BufferedReader output
-        private final Writer input
+    private final Process process
+    private final BufferedReader output
+    private final Writer input
 
-        /**
-         * @param blocks how many blocks a file the JVM writes may grow to, or null for no limit
-         */
-        OtherJvm(Integer blocks) {
-            List<String> java = [new File(System.getProperty('java.home'), 'bin/java').path, '-XX:-UsePerfData',
-                    '-cp', System.getProperty('java.class.path'), QueryTailCaptureWriter.name]
-            // a file size limit lets the JVM create a file but fails every write past it, of nothing every write
-            List<String> command = blocks == null ? java : ['sh', '-c', "ulimit -f ${blocks} && exec \"\$@\"".toString(), 'sh'] + java
-            process = new ProcessBuilder(command).redirectErrorStream(true).start()
-            output = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
-            input = new OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
-        }
+    /**
+     * @param blocks how many blocks a file the JVM writes may grow to, or null for no limit
+     */
+    QueryTailOtherJvm(Integer blocks) {
+        List<String> java = [new File(System.getProperty('java.home'), 'bin/java').path, '-XX:-UsePerfData',
+                '-cp', System.getProperty('java.class.path'), QueryTailCaptureWriter.name]
+        // a file size limit lets the JVM create a file but fails every write past it, of nothing every write
+        List<String> command = blocks == null ? java : ['sh', '-c', "ulimit -f ${blocks} && exec \"\$@\"".toString(), 'sh'] + java
+        process = new ProcessBuilder(command).redirectErrorStream(true).start()
+        output = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
+        input = new OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
+    }
 
-        /**
-         * Tells the JVM to do something, and waits until it has.
-         *
-         * @param command {@code open <file>}, {@code record <statement>}, {@code record-first <statement>},
-         * {@code close}, {@code hold <lock file>} or {@code release}
-         * @return whether the capture it opened last is open
-         */
-        boolean tell(String command) {
-            input.write(command + '\n')
-            input.flush()
-            List<String> said = []
-            for (String line = output.readLine(); line != null; line = output.readLine()) {
-                if (line.startsWith(QueryTailCaptureWriter.ANSWER)) {
-                    return Boolean.parseBoolean(line.substring(QueryTailCaptureWriter.ANSWER.length()))
-                }
-                said << line
+    /**
+     * Tells the JVM to do something, and waits until it has.
+     *
+     * @param command {@code open <file>}, {@code record <statement>}, {@code record-first <statement>},
+     * {@code close}, {@code hold <lock file>}, {@code release}, {@code share <lock file>} or {@code unshare}
+     * @return whether the capture it opened last is open
+     */
+    boolean tell(String command) {
+        input.write(command + '\n')
+        input.flush()
+        List<String> said = []
+        for (String line = output.readLine(); line != null; line = output.readLine()) {
+            if (line.startsWith(QueryTailCaptureWriter.ANSWER)) {
+                return Boolean.parseBoolean(line.substring(QueryTailCaptureWriter.ANSWER.length()))
             }
-            throw new IllegalStateException("The other JVM ended before it did '${command}':\n${said.join('\n')}")
+            said << line
         }
+        throw new IllegalStateException("The other JVM ended before it did '${command}':\n${said.join('\n')}")
+    }
 
-        @Override
-        void close() {
-            input.close()
-            if (!process.waitFor(10, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-            }
+    @Override
+    void close() {
+        input.close()
+        if (!process.waitFor(10, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
         }
     }
 }
@@ -1433,8 +1483,9 @@ class CracHidingClassLoader extends ClassLoader {
  * standard input, one command a line: {@code open <file>}, then {@code record <statement>} and
  * {@code close} on the capture it opened last, and {@code record-first <statement>} on the one it opened
  * first. {@code hold <lock file>} takes the byte of a lock file a
- * starting writer holds, as a JVM in the middle of starting a capture does, until {@code release}. It
- * answers each with whether the capture it opened last is open.
+ * starting writer holds, as a JVM in the middle of starting a capture does, until {@code release}, and
+ * {@code share <lock file>} the byte every writer holds while it writes, as a JVM that writes the file
+ * does, until {@code unshare}. It answers each with whether the capture it opened last is open.
  */
 class QueryTailCaptureWriter {
 
@@ -1443,6 +1494,7 @@ class QueryTailCaptureWriter {
     static void main(String[] args) {
         List<QueryTailCapture> captures = []
         FileChannel held = null
+        FileChannel shared = null
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))
         try {
             for (String line = input.readLine(); line != null; line = input.readLine()) {
@@ -1469,6 +1521,14 @@ class QueryTailCaptureWriter {
                 else if (command == 'release') {
                     held.close()
                 }
+                else if (command == 'share') {
+                    shared = FileChannel.open(new File(argument).toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
+                            StandardOpenOption.WRITE)
+                    shared.lock(1L, 1L, true)
+                }
+                else if (command == 'unshare') {
+                    shared.close()
+                }
                 System.out.println(ANSWER + (captures ? captures.last().open : false))
                 System.out.flush()
             }
@@ -1476,6 +1536,7 @@ class QueryTailCaptureWriter {
         finally {
             captures*.close()
             held?.close()
+            shared?.close()
         }
     }
 }

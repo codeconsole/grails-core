@@ -41,6 +41,7 @@ import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.SessionFactory;
 import org.hibernate.SessionFactoryObserver;
+import org.hibernate.boot.SessionFactoryBuilder;
 import org.hibernate.boot.registry.BootstrapServiceRegistry;
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -49,6 +50,9 @@ import org.hibernate.boot.registry.classloading.internal.ClassLoaderServiceImpl;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
 import org.hibernate.boot.spi.MetadataContributor;
+import org.hibernate.boot.spi.MetadataImplementor;
+import org.hibernate.boot.spi.SessionFactoryBuilderFactory;
+import org.hibernate.boot.spi.SessionFactoryBuilderImplementor;
 import org.hibernate.bytecode.spi.ProxyFactoryFactory;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
@@ -277,6 +281,9 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
 
         addAnnotatedClasses(annotatedClasses.toArray(new Class[annotatedClasses.size()]));
 
+        ServiceRegistryClosingObserver closing = new ServiceRegistryClosingObserver();
+        QueryTailSessionFactoryObserver queryTail = queryTailFile != null ?
+                new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile) : null;
         ClassLoaderService classLoaderService = new ClassLoaderServiceImpl(appClassLoader) {
             @Override
             public <S> Collection<S> loadJavaServices(Class<S> serviceContract) {
@@ -287,6 +294,15 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
                     else {
                         return Collections.singletonList((S) domainBinder);
                     }
+                }
+                else if (SessionFactoryBuilderFactory.class.isAssignableFrom(serviceContract)) {
+                    // These observe the session factory being built, whatever observer the configuration holds.
+                    List<S> factories = new ArrayList<>(super.loadJavaServices(serviceContract));
+                    factories.add(serviceContract.cast(closing));
+                    if (queryTail != null) {
+                        factories.add(serviceContract.cast(queryTail.getSessionFactoryBuilderFactory()));
+                    }
+                    return factories;
                 }
                 else {
                     return super.loadJavaServices(serviceContract);
@@ -305,43 +321,33 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
                 PropertyAccessStrategy.class, "traitProperty", TraitPropertyAccessStrategy.class
         );
 
-        SessionFactoryObserver configuredObserver = getSessionFactoryObserver();
+        StandardServiceRegistryBuilder standardServiceRegistryBuilder = createStandardServiceRegistryBuilder(bootstrapServiceRegistry)
+                                                                                    .applySettings(getProperties());
+
+        // Groovy-aware entity proxies: without this, any Groovy MOP dispatch through a proxy
+        // (proxy.id, getMetaClass(), truthy checks) initializes it. PojoEntityTuplizer resolves
+        // the ProxyFactoryFactory from the service registry, so a provided service wins over the
+        // default initiator. Hibernate 7 gets the same behavior via GrailsBytecodeProvider.
+        standardServiceRegistryBuilder.addService(ProxyFactoryFactory.class,
+                new GrailsBytecodeProvider().getProxyFactoryFactory());
+        if (queryTail != null) {
+            queryTail.recordConnections(standardServiceRegistryBuilder);
+        }
+
+        StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
+        closing.registry = serviceRegistry;
+        if (queryTail != null) {
+            queryTail.recordProvidedConnections(serviceRegistry);
+        }
+        ClassLoader previous = Thread.currentThread().getContextClassLoader();
         try {
-            StandardServiceRegistryBuilder standardServiceRegistryBuilder = createStandardServiceRegistryBuilder(bootstrapServiceRegistry)
-                                                                                        .applySettings(getProperties());
-
-            // Groovy-aware entity proxies: without this, any Groovy MOP dispatch through a proxy
-            // (proxy.id, getMetaClass(), truthy checks) initializes it. PojoEntityTuplizer resolves
-            // the ProxyFactoryFactory from the service registry, so a provided service wins over the
-            // default initiator. Hibernate 7 gets the same behavior via GrailsBytecodeProvider.
-            standardServiceRegistryBuilder.addService(ProxyFactoryFactory.class,
-                    new GrailsBytecodeProvider().getProxyFactoryFactory());
-
-            // Only now, after a subclass's registry builder may have set an observer of its own, which these tell first.
-            ServiceRegistryClosingObserver closing = new ServiceRegistryClosingObserver(getSessionFactoryObserver());
-            setSessionFactoryObserver(closing);
-            if (queryTailFile != null) {
-                QueryTailSessionFactoryObserver queryTail = new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile);
-                queryTail.recordConnections(standardServiceRegistryBuilder);
-                queryTail.observe(this);
-            }
-
-            StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
-            closing.registry = serviceRegistry;
-            ClassLoader previous = Thread.currentThread().getContextClassLoader();
-            try {
-                Thread.currentThread().setContextClassLoader(appClassLoader);
-                sessionFactory = super.buildSessionFactory(serviceRegistry);
-            }
-            finally {
-                Thread.currentThread().setContextClassLoader(previous);
-            }
-            this.serviceRegistry = serviceRegistry;
+            Thread.currentThread().setContextClassLoader(appClassLoader);
+            sessionFactory = super.buildSessionFactory(serviceRegistry);
         }
         finally {
-            // the next session factory is given observers of its own in front of the one the application set
-            setSessionFactoryObserver(configuredObserver);
+            Thread.currentThread().setContextClassLoader(previous);
         }
+        this.serviceRegistry = serviceRegistry;
 
         return sessionFactory;
     }
@@ -413,10 +419,9 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
     /**
      * Sets the file query-tail capture records the statements of the session factories this
      * configuration builds to. Each session factory is given an observer, and a capture, of its own,
-     * which records the statements run on the connections of its service registry and takes the
-     * place of the observer the application set, which it keeps telling. Once the session factory is
-     * built, the configuration holds what the application set again, so that the next session
-     * factory is given its own as well.
+     * which records the statements run on the connections of its service registry. The observer is
+     * added to the session factory as Hibernate builds it, next to the observer the configuration
+     * holds, which is left as the application set it.
      *
      * @param queryTailFile the capture file, or null to record nothing
      */
@@ -426,48 +431,33 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
 
     /**
      * Destroys the service registry of a session factory once it has closed, so that a session factory
-     * closed while another of the configuration runs leaves the registry of the other alone. The
-     * observer the configuration holds once the registry builder is created, the one the application
-     * set, even as the build began, is told first; a query-tail capture observes in front of both.
+     * closed while another of the configuration runs leaves the registry of the other alone. It is
+     * added to the session factory as Hibernate builds it, by the class loader service of its registry,
+     * so that it observes whatever observer the configuration holds, which it leaves as the application
+     * set it; Hibernate tells that one of the closing first.
      */
-    private static class ServiceRegistryClosingObserver implements SessionFactoryObserver {
+    private static class ServiceRegistryClosingObserver implements SessionFactoryObserver, SessionFactoryBuilderFactory {
 
         private static final long serialVersionUID = 1;
-
-        private final SessionFactoryObserver configured;
 
         /** The registry of the session factory, set once it is built. */
         private transient StandardServiceRegistry registry;
 
-        ServiceRegistryClosingObserver(SessionFactoryObserver configured) {
-            this.configured = configured;
+        @Override
+        public SessionFactoryBuilder getSessionFactoryBuilder(MetadataImplementor metadata, SessionFactoryBuilderImplementor defaultBuilder) {
+            defaultBuilder.addSessionFactoryObservers(this);
+            // none, so that Hibernate builds with its own builder, or that of another factory, which adds to it
+            return null;
         }
 
         @Override
         public void sessionFactoryCreated(SessionFactory factory) {
-            if (configured != null) {
-                configured.sessionFactoryCreated(factory);
-            }
-        }
-
-        @Override
-        public void sessionFactoryClosing(SessionFactory factory) {
-            if (configured != null) {
-                configured.sessionFactoryClosing(factory);
-            }
         }
 
         @Override
         public void sessionFactoryClosed(SessionFactory factory) {
-            try {
-                if (configured != null) {
-                    configured.sessionFactoryClosed(factory);
-                }
-            }
-            finally {
-                if (registry != null) {
-                    ((ServiceRegistryImplementor) registry).destroy();
-                }
+            if (registry != null) {
+                ((ServiceRegistryImplementor) registry).destroy();
             }
         }
     }

@@ -52,7 +52,8 @@ author/show        3      1.0      1       3  1× select ... from author a1_0 wh
 
 Statements are shown without their column lists, so the same query counts as one statement wherever
 it is run from. A select whose list calls a function, such as the `count(*)` of a paginated list, is
-shown whole, so it never counts as a repeat of the select that lists the rows it counts. The common
+shown whole, so it never counts as a repeat of the select that lists the rows it counts, and so is a
+select whose list reads a subquery, such as one a formula property adds. The common
 table expressions a statement opens with are kept, and so is every space
 in a quoted name, so statements that read different tables never count as one. `--statements` ranks the statements themselves, `--page=book/show` shows the
 statements of one page, and `--stream` prints each statement as it runs with a header for each
@@ -189,10 +190,10 @@ collection it runs against, and the document of its entries with every value rep
 taken only from a command that runs against one, such as `find`, `insert`, `aggregate` or
 `createIndexes`. The first value of any other command is an argument, so it is replaced like any
 other value: `{"dropUser": "alice"}` is recorded as `dropUser admin {"dropUser": ?}`. An array is
-recorded with each of its elements once: an element recorded as one before it in the array is left
-out, and the array then ends with `...`, so that an `insertMany` of two documents and one of fifty,
-or an `$in` of three values and one of seven, are recorded as the one statement each is:
-`insert shop.book {"documents": [{"title": ?}, ...]}`, `{"$in": [?, ...]}`. The command is kept and
+recorded with each of its different elements once: an element recorded as one before it in the array
+is left out, so that an `insertOne` and an `insertMany` of fifty documents, or an `$in` of one value
+and one of seven, are recorded as the one statement each is:
+`insert shop.book {"documents": [{"title": ?}]}`, `{"$in": [?]}`. An empty array is recorded as `[]`. The command is kept and
 shown exactly as it was recorded, its names quoted as JSON quotes them, so two field or collection
 names that differ only in their spaces or quotes stay apart, and nothing in a name is read as SQL. Its keys are kept, as
 they name the command's options, its operators and the fields of the collection, except where a key
@@ -260,11 +261,16 @@ development environment, and `grails.gorm.queryTail.file` moves the capture away
 `build/query-tail/capture.log`, where the command looks for it. A relative file is read against the
 application directory, where the command reads it too, when the application is started by Gradle or
 `grails run-app`; started another way, such as with `java -jar`, against the working directory. The file is written fresh each time
-the application starts, and data sources added at runtime record to it like the others. JVMs that
+the application starts, and data sources added at runtime record to it like the others. The
+statements Hibernate runs to create the schema as a session factory starts, and to drop it as the
+session factory closes, as `dbCreate: create-drop` has it, are not recorded. JVMs that
 run at the same time with the flag, such as the parallel forks of a test task, share the file: the
 first to start truncates it, the others append to its run with their requests numbered apart, and a
 lock file beside the capture coordinates them, beside the file itself even when a JVM names it
-through a symbolic link, so JVMs that name it differently still share one run. It is
+through a symbolic link, so JVMs that name it differently still share one run. Two applications
+that run in one JVM, such as two web applications deployed to one servlet container, cannot share a
+file, since the locks of a file belong to the process: the second to open it is reported with a
+warning and records nothing, so give each its own `grails.gorm.queryTail.file`. It is
 closed when the application's session factories, Neo4j drivers, MongoDB connections and simple
 datastores close, so a
 restart in the same JVM, such as a DevTools restart, starts a new capture, and the command starts

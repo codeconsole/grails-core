@@ -21,8 +21,12 @@ package org.apache.grails.data.hibernate7.core.querytail
 import groovy.transform.CompileStatic
 import org.hibernate.SessionFactory
 import org.hibernate.SessionFactoryObserver
+import org.hibernate.boot.SessionFactoryBuilder
+import org.hibernate.boot.registry.StandardServiceRegistry
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
-import org.hibernate.cfg.Configuration
+import org.hibernate.boot.spi.MetadataImplementor
+import org.hibernate.boot.spi.SessionFactoryBuilderFactory
+import org.hibernate.boot.spi.SessionFactoryBuilderImplementor
 import org.hibernate.engine.spi.SessionFactoryImplementor
 
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
@@ -43,10 +47,15 @@ import org.grails.orm.hibernate.cfg.HibernateMappingContextConfiguration
  * observer, and a capture, of its own, so a configuration that builds several leaves each of them
  * recording until it closes. Its {@link QueryTailRecorder} opens the capture when the session
  * factory is created, and takes from the dialect, as {@link QueryTailDialects} tells it, how the
- * database quotes values; it closes the capture when the session factory closes, so a session
- * factory that fails to start leaves no capture open either. An observer the application set on
- * the configuration keeps being called, even one it sets as the configuration builds the session
- * factory.</p>
+ * database quotes values; it closes the capture as the session factory starts to close, so that the
+ * schema Hibernate drops as it closes, as {@code create-drop} has it, is no more recorded than the
+ * schema it created as it started, and a session factory that fails to start leaves no capture open
+ * either.</p>
+ *
+ * <p>The observer is added to the session factory as Hibernate builds it, through the
+ * {@linkplain #getSessionFactoryBuilderFactory() factory} the configuration hands Hibernate, next to
+ * the observers of the configuration, which it leaves as they are, wherever the application sets
+ * them.</p>
  *
  * <p>Nothing of this is installed unless {@link QueryTailSettings#SETTING_ENABLED} is set, so an
  * application that does not capture pays nothing per statement.</p>
@@ -60,7 +69,6 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
     private static final long serialVersionUID = 1L
 
     private final QueryTailRecorder recorder
-    private SessionFactoryObserver observer
 
     /**
      * @param dataSourceName the connection source the observed session factory belongs to
@@ -99,9 +107,9 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
     }
 
     /**
-     * Wraps the connection providers of the service registry the session factory is built with, so
-     * that the statements run on the connections they hand out are recorded. The configuration calls
-     * this as it builds the session factory.
+     * Wraps the connection providers Hibernate selects for the service registry the session factory is
+     * built with, so that the statements run on the connections they hand out are recorded. The
+     * configuration calls this before it builds the registry.
      *
      * @param registry the builder of the service registry the session factory is built with
      */
@@ -110,15 +118,24 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
     }
 
     /**
-     * Takes the place of the session factory observer the configuration holds, and tells that one
-     * of every event first. The configuration calls this as it builds the session factory, after the
-     * application had every chance to set its own, even as the build began.
+     * Wraps the connection providers the service registry was given as services, as a configuration
+     * class gives one with {@code addService}, which take the place of those Hibernate would select.
+     * The configuration calls this once it has built the registry, before anything uses it.
      *
-     * @param configuration the configuration the session factory is built from
+     * @param registry the service registry the session factory is built with
      */
-    void observe(Configuration configuration) {
-        observer = configuration.sessionFactoryObserver
-        configuration.sessionFactoryObserver = this
+    void recordProvidedConnections(StandardServiceRegistry registry) {
+        QueryTailConnectionProvider.installProvided(registry, recorder)
+    }
+
+    /**
+     * @return what adds this observer to the session factory Hibernate builds, as Hibernate finds it
+     * through the class loader service of the service registry: it adds the observer to the builder
+     * Hibernate hands it and builds nothing itself, so that the session factory is built as it is
+     * without it, with the observers of the configuration
+     */
+    SessionFactoryBuilderFactory getSessionFactoryBuilderFactory() {
+        new Observing(this)
     }
 
     /**
@@ -126,33 +143,25 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
      */
     @Override
     void sessionFactoryCreated(SessionFactory factory) {
-        if (observer != null) {
-            observer.sessionFactoryCreated(factory)
-        }
         Class<?> dialect = factory instanceof SessionFactoryImplementor ? factory.jdbcServices.dialect.getClass() : null
         recorder.open(QueryTailDialects.syntaxOf(dialect))
     }
 
+    /**
+     * Closes the capture as the session factory starts to close, so that what Hibernate runs as it
+     * closes, such as the statements that drop the schema it created, is not recorded.
+     */
     @Override
     void sessionFactoryClosing(SessionFactory factory) {
-        if (observer != null) {
-            observer.sessionFactoryClosing(factory)
-        }
+        close()
     }
 
     /**
-     * Closes the capture.
+     * Closes the capture, unless it closed as the session factory started to close.
      */
     @Override
     void sessionFactoryClosed(SessionFactory factory) {
-        try {
-            if (observer != null) {
-                observer.sessionFactoryClosed(factory)
-            }
-        }
-        finally {
-            close()
-        }
+        close()
     }
 
     /**
@@ -167,5 +176,25 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
      */
     QueryTailCapture getCapture() {
         recorder.capture
+    }
+
+    /**
+     * Adds an observer to the builder of the session factory Hibernate builds, and builds nothing of its own.
+     */
+    @CompileStatic
+    private static final class Observing implements SessionFactoryBuilderFactory {
+
+        private final SessionFactoryObserver observer
+
+        Observing(SessionFactoryObserver observer) {
+            this.observer = observer
+        }
+
+        @Override
+        SessionFactoryBuilder getSessionFactoryBuilder(MetadataImplementor metadata, SessionFactoryBuilderImplementor defaultBuilder) {
+            defaultBuilder.addSessionFactoryObservers(observer)
+            // none, so that Hibernate builds with its own builder, or that of another factory, which adds to it
+            null
+        }
     }
 }

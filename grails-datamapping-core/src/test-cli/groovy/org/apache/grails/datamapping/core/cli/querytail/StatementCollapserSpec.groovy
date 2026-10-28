@@ -33,7 +33,7 @@ class StatementCollapserSpec extends Specification {
         sql                                                                                              | collapsed
         'select b1_0.id,b1_0.title,b1_0.version from book b1_0 where b1_0.id=?'                         | 'select ... from book b1_0 where b1_0.id=?'
         'select b1_0.id, a1_0.name from book b1_0 join author a1_0 on a1_0.id=b1_0.author_id'          | 'select ... from book b1_0 join author a1_0 on a1_0.id=b1_0.author_id'
-        'select (select count(*) from review r where r.book_id=b1_0.id) as c, b1_0.id from book b1_0'  | 'select ... from book b1_0'
+        'select (b1_0.pages * 2) as p, b1_0.id from book b1_0'                                          | 'select ... from book b1_0'
         "select b1_0.id from book b1_0 where b1_0.title=' from nowhere '"                               | "select ... from book b1_0 where b1_0.title=' from nowhere '"
         'with recent as (select id from book) select id from recent'                                     | 'with recent as (select id from book) select ... from recent'
         'select 1'                                                                                       | 'select 1'
@@ -53,6 +53,31 @@ class StatementCollapserSpec extends Specification {
                 'select b1_0.author_id, sum(b1_0.pages) from book b1_0 group by b1_0.author_id',
                 'with recent as (select id from book) select count(*) from recent',
                 'select upper(b1_0.title) from book b1_0']
+    }
+
+    void "a select whose list reads a subquery, as a formula property does, is kept whole: #sql"() {
+        expect:
+        StatementCollapser.collapse(sql) == sql
+
+        where:
+        sql << ['select (select count(*) from review r where r.book_id=b1_0.id) as c, b1_0.id from book b1_0',
+                'select b1_0.id, (select max(r.stars) from rating r where r.book_id=b1_0.id) from book b1_0',
+                'select b1_0.id, b1_0.pages + ( SELECT count(*) from review r) from book b1_0',
+                'select b1_0.id, ((select max(r.stars) from rating r)) from book b1_0',
+                'SELECT b1_0.id, (SELECT\tmax(r.stars) FROM rating r) FROM book b1_0']
+    }
+
+    void "selects of one table whose lists read subqueries of different tables stay two statements"() {
+        expect:
+        StatementCollapser.collapse('select b1_0.id, (select count(*) from review r where r.book_id=b1_0.id) from book b1_0') !=
+                StatementCollapser.collapse('select b1_0.id, (select max(t.stars) from rating t where t.book_id=b1_0.id) from book b1_0')
+    }
+
+    void "a parenthesis that does not open a select is no subquery"() {
+        expect:
+        StatementCollapser.collapse('select b1_0.id, (b1_0.selected) from book b1_0') == 'select ... from book b1_0'
+        StatementCollapser.collapse('select b1_0.id, (selection.x) from book b1_0') == 'select ... from book b1_0'
+        StatementCollapser.collapse("select b1_0.id, '(select 1)' from book b1_0") == 'select ... from book b1_0'
     }
 
     void "a count and the list it counts stay two statements"() {

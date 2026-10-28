@@ -39,7 +39,8 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRecord
  * being measured and being read, so that the read comes up short, is a restart too: it is read again
  * from the beginning in the same poll. Every poll reads the first line, so a restart is noticed even
  * when the new capture is as long as the one the reader had read; a poll that finds the same run and
- * the file as long as it left it reads nothing more.
+ * the file as long as it left it reads nothing more. A file that is there but cannot be read, as a
+ * directory or a file the reader may not read cannot, fails the poll rather than read as one removed.
  *
  * @since 9.0
  */
@@ -94,8 +95,9 @@ class QueryTailFileReader implements Closeable {
 
     /**
      * @return the records written since the last poll, or since the reader was opened, up to a chunk of the file
+     * @throws IOException when the file is there but cannot be read, saying why
      */
-    List<QueryTailRecord> poll() {
+    List<QueryTailRecord> poll() throws IOException {
         restarted = false
         behind = false
         // a read that comes up short is retried once, from the start; the next poll takes it from there
@@ -248,6 +250,14 @@ class QueryTailFileReader implements Closeable {
         record
     }
 
+    /**
+     * @param file a capture file
+     * @return why the file cannot be read though it is there, or null when it can be, or is not there
+     */
+    static String unreadable(File file) {
+        file.isDirectory() ? 'it is a directory' : file.exists() && !file.canRead() ? 'it cannot be read' : null
+    }
+
     private static boolean endsLine(byte[] bytes) {
         bytes.length > 0 && bytes[bytes.length - 1] == NEWLINE
     }
@@ -273,14 +283,20 @@ class QueryTailFileReader implements Closeable {
     /**
      * @return the bytes between the offsets, or fewer when the file ends before the second one or is
      * gone: it was truncated, or removed, after it was measured
+     * @throws IOException when the file is there but cannot be read, saying why
      */
-    private byte[] readFrom(long from, long to) {
+    private byte[] readFrom(long from, long to) throws IOException {
         byte[] bytes = new byte[(int) Math.max(0L, to - from)]
         RandomAccessFile input
         try {
             input = new RandomAccessFile(file, 'r')
         }
-        catch (FileNotFoundException ignored) {
+        catch (FileNotFoundException e) {
+            // only a file that is gone is read as one that is empty, which the next run writes again
+            String unreadable = unreadable(file)
+            if (unreadable != null) {
+                throw new IOException(unreadable, e)
+            }
             return new byte[0]
         }
         try {

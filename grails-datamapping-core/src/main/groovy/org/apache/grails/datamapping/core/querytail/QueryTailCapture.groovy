@@ -42,6 +42,8 @@ import groovy.util.logging.Slf4j
 
 import org.springframework.util.ClassUtils
 
+import org.apache.grails.datastore.core.querytail.QueryTailSettings
+
 /**
  * Writes the statements an application runs to the capture file the {@code query-tail} command
  * tails. Each session factory, Neo4j driver, MongoDB client or simple datastore that captures opens its own capture
@@ -60,6 +62,13 @@ import org.springframework.util.ClassUtils
  * does for the test tasks of one invocation: a capture that finds the file headed by that run
  * appends to it, so that the datastores a test JVM opens and closes one after another, and the test
  * tasks that run one after another, all add to the one run.</p>
+ *
+ * <p>Two applications that run in one JVM, each with this class of its own, as two web applications
+ * of one servlet container do, cannot share a file: the locks of a file are held by the process, so
+ * neither could hold one apart from the other, nor keep the other's when it closes the file. The
+ * capture that finds the other application's lock on the file is reported and stopped before it
+ * writes anything, and the other goes on; each application is given a file of its own with
+ * {@link QueryTailSettings#SETTING_FILE}.</p>
  *
  * <p>Recording never fails the statement it records: a statement that cannot be written, or whose
  * request cannot be told, is left out, and a capture that has stopped does no work at all. A file
@@ -89,7 +98,7 @@ import org.springframework.util.ClassUtils
  * through {@link #recordRedacted}.</p>
  *
  * <p>A capture is only opened when
- * {@link org.apache.grails.datastore.core.querytail.QueryTailSettings#SETTING_ENABLED} is set; an
+ * {@link QueryTailSettings#SETTING_ENABLED} is set; an
  * application started without it never reaches this class.</p>
  *
  * @since 9.0
@@ -710,6 +719,9 @@ class QueryTailCapture implements Closeable {
                     // the file system can lock it; the opening thread was interrupted as it asked
                     throw e
                 }
+                catch (OverlappingFileLockException ignored) {
+                    throw sharedInProcess()
+                }
                 catch (IOException e) {
                     log.debug('The lock file of the query-tail capture {} cannot be locked: {}', file, e.message)
                     closeQuietly(lockChannel)
@@ -924,16 +936,27 @@ class QueryTailCapture implements Closeable {
          *
          * @param shared whether the lock is shared, as a writer's, rather than exclusive, as the probe of a starter
          * @param probe whether to give up at once when another JVM holds the byte, rather than wait for it
-         * @return the lock, or null when it is not to be had: another JVM holds the byte and the lock was a probe,
-         * or this JVM holds it through another channel already
+         * @return the lock, or null when another JVM holds the byte and the lock was a probe
+         * @throws IOException when this JVM holds the byte through another channel, as another application
+         * that runs in it does once it writes the file
          */
-        private static FileLock lock(FileChannel channel, boolean shared, boolean probe) {
+        private static FileLock lock(FileChannel channel, boolean shared, boolean probe) throws IOException {
             try {
                 probe ? channel.tryLock(WRITING, 1L, shared) : channel.lock(WRITING, 1L, shared)
             }
             catch (OverlappingFileLockException ignored) {
-                null
+                throw sharedInProcess()
             }
+        }
+
+        /**
+         * @return why a capture cannot open a file whose lock file this JVM has locked through another channel than
+         * its own: only another application that runs in this JVM, with this class of its own, opens one, since the
+         * captures of an application share the one channel of each file
+         */
+        private static IOException sharedInProcess() {
+            new IOException('another application that runs in this JVM captures to it; give each application a file ' +
+                    "of its own with ${QueryTailSettings.SETTING_FILE}")
         }
     }
 }

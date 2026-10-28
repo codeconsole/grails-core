@@ -176,14 +176,15 @@ class QueryTailDriverSpec extends Specification {
     }
 
     void "a driver the application hands the datastore takes only its query-tail settings from grails.gorm"() {
-        given: 'an application whose grails.gorm settings are those of its other datastores'
+        given: 'an application whose grails.gorm settings are those of its other datastores, one of which only they can load'
         File file = new File(tempDir, 'capture.log')
         File own = new File(tempDir, 'neo4j-capture.log')
         Driver supplied = GraphDatabase.driver(boltUrl, Config.builder().withoutEncryption().build())
         Map<String, Object> config = enabled(file) + [
-                'grails.gorm.multiTenancy.mode': 'DISCRIMINATOR',
-                'grails.gorm.failOnError'      : 'true',
-                'grails.gorm.autoFlush'        : 'true',
+                'grails.gorm.multiTenancy.mode'               : 'DISCRIMINATOR',
+                'grails.gorm.multiTenancy.tenantResolverClass': 'com.example.OtherDatastoreTenantResolver',
+                'grails.gorm.failOnError'                     : 'true',
+                'grails.gorm.autoFlush'                       : 'true',
         ]
 
         when:
@@ -191,7 +192,7 @@ class QueryTailDriverSpec extends Specification {
         datastores << datastore
         Neo4jConnectionSourceSettings settings = datastore.connectionSources.defaultConnectionSource.settings
 
-        then: 'it captures, and its other settings are its own, as they were before query-tail'
+        then: 'it is built, it captures, and its other settings are its own, as they were before query-tail'
         settings.queryTail.enabled
         settings.queryTail.file == file.path
         settings.multiTenancy.mode == MultiTenancySettings.MultiTenancyMode.NONE

@@ -18,12 +18,10 @@
  */
 package org.apache.grails.datamapping.core.cli.querytail
 
-import java.nio.channels.FileChannel
-import java.nio.channels.FileLock
-import java.nio.file.StandardOpenOption
 import java.util.function.Supplier
 
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
+import org.apache.grails.datamapping.core.querytail.QueryTailOtherJvm
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
 import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
 import org.apache.grails.datamapping.core.querytail.QueryTailStubRequestReader
@@ -343,9 +341,8 @@ class QueryTailSummarySpec extends Specification {
         given: 'a capture file another JVM is writing, which holds the lock every writer holds while it writes'
         File file = new File(tempDir, 'capture.log')
         file.text = QueryTailRecord.header('other-jvm') + '\n'
-        FileChannel other = FileChannel.open(new File(file.path + '.lock').toPath(), StandardOpenOption.CREATE,
-                StandardOpenOption.READ, StandardOpenOption.WRITE)
-        FileLock writing = other.lock(1L, 1L, true)
+        QueryTailOtherJvm writer = new QueryTailOtherJvm(null)
+        writer.tell("share ${file.path}.lock")
 
         when: 'this JVM joins the run, serves a request for book/index and closes its capture, twice'
         2.times {
@@ -367,8 +364,7 @@ class QueryTailSummarySpec extends Specification {
         }
 
         cleanup:
-        writing?.release()
-        other?.close()
+        writer?.close()
     }
 
     void "captured statements that read different tables stay apart, #what"() {

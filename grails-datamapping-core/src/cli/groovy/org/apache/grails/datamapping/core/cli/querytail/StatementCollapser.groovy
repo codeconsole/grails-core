@@ -31,7 +31,9 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRecord
  * and say nothing about which code ran the statement, and dropping them lets the same query count
  * as one statement wherever it is run from. A select whose list calls a function, as a count or
  * another aggregate does, is kept whole, since what it computes is what tells it from the select
- * that lists the rows it counts, and so is the {@code distinct} of one that has it. A Cypher statement is shown whole: its pattern names
+ * that lists the rows it counts, and so is one whose list reads a subquery, as a formula property
+ * does, since the tables the subquery reads tell it from another select of the same table; the
+ * {@code distinct} of a select is kept too. A Cypher statement is shown whole: its pattern names
  * what it reads or writes, and GORM generates nothing long in it. So is a MongoDB command, which is
  * recorded as its name, its collection and the document that shapes it, and is shown as it was
  * recorded: its names are quoted as JSON quotes them, so nothing in them is read as SQL. So is a
@@ -91,7 +93,7 @@ class StatementCollapser {
 
     /**
      * Drops the column list of the select at the index: the one a statement opens with, or the one its
-     * common table expressions are written for, unless the list calls a function.
+     * common table expressions are written for, unless the list computes what it selects.
      */
     private static String collapseSelect(String text, int select) {
         int from = topLevelIndexOf(text, ' from ')
@@ -99,7 +101,7 @@ class StatementCollapser {
             return text
         }
         String list = text.substring(select + SELECT.length(), from)
-        if (callsFunction(list)) {
+        if (computes(list)) {
             return text
         }
         String distinct = DISTINCT.matcher(list).lookingAt() ? 'distinct ' : ''
@@ -107,10 +109,11 @@ class StatementCollapser {
     }
 
     /**
-     * @return whether a select list calls a function outside its subqueries: a parenthesis that follows a name,
-     * as that of a count or another aggregate does, rather than one that opens a subquery or an expression
+     * @return whether a select list computes what it selects: calls a function outside its subqueries, which a
+     * parenthesis that follows a name does, as that of a count or another aggregate, or reads a subquery, at any
+     * depth, which a parenthesis that opens a select does
      */
-    private static boolean callsFunction(String list) {
+    private static boolean computes(String list) {
         int depth = 0
         int i = 0
         while (i < list.length()) {
@@ -121,7 +124,7 @@ class StatementCollapser {
             }
             char c = list.charAt(i)
             if (c == ('(' as char)) {
-                if (depth == 0 && followsName(list, i)) {
+                if ((depth == 0 && followsName(list, i)) || opensSelect(list, i)) {
                     return true
                 }
                 depth++
@@ -132,6 +135,17 @@ class StatementCollapser {
             i++
         }
         false
+    }
+
+    /** @return whether the parenthesis at the index opens a select, whitespace aside, as a subquery does */
+    private static boolean opensSelect(String text, int index) {
+        int after = index + 1
+        while (after < text.length() && Character.isWhitespace(text.charAt(after))) {
+            after++
+        }
+        int end = after + SELECT.length()
+        text.regionMatches(true, after, SELECT, 0, SELECT.length()) &&
+                (end == text.length() || !(Character.isLetterOrDigit(text.charAt(end)) || text.charAt(end) == ('_' as char)))
     }
 
     /** @return whether the parenthesis at the index follows a name, whitespace aside */

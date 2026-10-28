@@ -44,6 +44,7 @@ import org.springframework.core.env.PropertyResolver;
 
 import grails.neo4j.Relationship;
 import org.apache.grails.data.neo4j.core.querytail.QueryTailDriver;
+import org.apache.grails.datastore.core.querytail.QueryTailSettings;
 import org.grails.datastore.gorm.GormEnhancer;
 import org.grails.datastore.gorm.events.AutoTimestampEventListener;
 import org.grails.datastore.gorm.events.ConfigurableApplicationEventPublisher;
@@ -66,7 +67,6 @@ import org.grails.datastore.mapping.core.DatastoreUtils;
 import org.grails.datastore.mapping.core.StatelessDatastore;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings;
-import org.grails.datastore.mapping.core.connections.ConnectionSourceSettingsBuilder;
 import org.grails.datastore.mapping.core.connections.ConnectionSources;
 import org.grails.datastore.mapping.core.connections.ConnectionSourcesInitializer;
 import org.grails.datastore.mapping.core.connections.DefaultConnectionSource;
@@ -359,9 +359,9 @@ public class Neo4jDatastore extends AbstractDatastore implements Closeable, Stat
      */
     protected static ConnectionSources<Driver, Neo4jConnectionSourceSettings> createDefaultConnectionSources(Driver driver, PropertyResolver configuration) {
         // Only query-tail, which grails.gorm sets for every datastore of the application; the GORM settings of
-        // another datastore, such as its multi-tenancy mode, are not this driver's.
+        // another datastore, such as its multi-tenancy mode, are not this driver's, and are not even read.
         ConnectionSourceSettings fallback = new ConnectionSourceSettings();
-        fallback.setQueryTail(new ConnectionSourceSettingsBuilder(configuration).build().getQueryTail());
+        fallback.setQueryTail(QueryTailSettings.of(configuration));
         Neo4jConnectionSourceSettingsBuilder builder = new Neo4jConnectionSourceSettingsBuilder(configuration,
                 org.grails.datastore.gorm.neo4j.config.Settings.PREFIX, fallback);
         Neo4jConnectionSourceSettings settings = builder.build();

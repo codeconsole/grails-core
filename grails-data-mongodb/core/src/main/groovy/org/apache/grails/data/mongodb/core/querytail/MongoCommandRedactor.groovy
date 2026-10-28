@@ -56,10 +56,10 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
  * kept. The entries the driver adds for its
  * session, the cluster time and the transaction, which say nothing about the command, are left out.
  *
- * <p>An array is recorded with each of its elements once: an element recorded as one before it in
- * the array is left out, and the array then ends with {@code ...}, so that the documents of a batch
- * and the values of an {@code $in} are recorded the same whatever their number, and a command is
- * counted as the one statement it is: {@code {"$in": [?, ...]}}.</p>
+ * <p>An array is recorded with each of its different elements once: an element recorded as one before
+ * it in the array is left out, so that the documents of a batch and the values of an {@code $in} are
+ * recorded the same whatever their number, one or many, and a command is counted as the one statement
+ * it is: {@code {"$in": [?]}}. An empty array is recorded as {@code []}.</p>
  *
  * <p>A command is recorded as its name, the database and collection it runs against, and the
  * document of its remaining entries: {@code find shop.book {"filter": {"title": ?}, "limit": ?}}.
@@ -73,9 +73,6 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
 final class MongoCommandRedactor {
 
     private static final String PLACEHOLDER = QueryTailRedactor.PLACEHOLDER
-
-    /** Ends an array that held an element recorded as one before it, which is left out. */
-    private static final String REPEATED = '...'
 
     private static final String DATABASE = '$db'
 
@@ -246,24 +243,36 @@ final class MongoCommandRedactor {
         else if (value.isArray()) {
             out.append('[')
             Scope element = scope.element()
-            Set<String> written = new HashSet<>()
-            boolean repeated = false
+            // a value is recorded as the placeholder whatever it is, so only a document or an array is rendered
+            // to be told apart from the elements before it, and a list of values costs no more than a look at each
+            boolean placeholder = false
+            Set<String> written = null
+            boolean first = true
             for (BsonValue item in value.asArray()) {
-                StringBuilder text = new StringBuilder()
-                appendValue(text, item, element)
-                String recorded = text.toString()
-                if (written.add(recorded)) {
-                    if (written.size() > 1) {
-                        out.append(', ')
+                String recorded
+                if (item.isDocument() || item.isArray()) {
+                    StringBuilder text = new StringBuilder()
+                    appendValue(text, item, element)
+                    recorded = text.toString()
+                    if (written == null) {
+                        written = new HashSet<>()
                     }
-                    out.append(recorded)
+                    if (!written.add(recorded)) {
+                        continue
+                    }
+                }
+                else if (placeholder) {
+                    continue
                 }
                 else {
-                    repeated = true
+                    placeholder = true
+                    recorded = PLACEHOLDER
                 }
-            }
-            if (repeated) {
-                out.append(', ').append(REPEATED)
+                if (!first) {
+                    out.append(', ')
+                }
+                first = false
+                out.append(recorded)
             }
             out.append(']')
         }

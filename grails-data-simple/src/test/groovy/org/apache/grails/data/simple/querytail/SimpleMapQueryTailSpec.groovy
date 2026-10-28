@@ -22,10 +22,12 @@ import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
 import org.apache.grails.datastore.core.querytail.QueryTailSettings
+import org.grails.datastore.gorm.GormEnhancer
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.Session
 import org.grails.datastore.mapping.core.connections.ConnectionSource
+import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.query.Query
 import org.grails.datastore.mapping.simple.SimpleMapDatastore
 import org.springframework.dao.InvalidDataAccessResourceUsageException
@@ -117,6 +119,33 @@ class SimpleMapQueryTailSpec extends Specification {
         then:
         !secondary.queryTail.capture.open
         !datastore.queryTail.capture.open
+    }
+
+    void "a datastore that fails to build opens no capture, neither its own nor that of another of its connection sources"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+
+        when:
+        new SimpleMapDatastore(DatastoreUtils.createPropertyResolver(enabled(file)), ['secondary'], QueryTailShelfBook) {
+            @Override
+            protected GormEnhancer initialize(ConnectionSourceSettings settings) {
+                throw new IllegalStateException('cannot be built')
+            }
+        }
+
+        then:
+        thrown(IllegalStateException)
+        !file.exists()
+
+        when: 'the next datastore is built'
+        SimpleMapDatastore datastore = new SimpleMapDatastore(DatastoreUtils.createPropertyResolver(enabled(file)), ['secondary'],
+                QueryTailShelfBook)
+        datastores << datastore
+
+        then: 'it opens the captures of both, in a run of its own'
+        datastore.queryTail.capture.open
+        ((SimpleMapDatastore) datastore.getDatastoreForConnection('secondary')).queryTail.capture.open
+        QueryTailRecord.parseHeader(file.readLines().first()) != null
     }
 
     void "a dynamic finder is one statement with its criteria, order and paging, and none of its values"() {

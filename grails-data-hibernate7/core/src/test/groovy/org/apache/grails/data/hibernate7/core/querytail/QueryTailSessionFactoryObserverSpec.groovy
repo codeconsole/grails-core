@@ -22,6 +22,8 @@ import java.lang.reflect.Proxy
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.SQLException
+import java.util.concurrent.atomic.AtomicInteger
+import javax.sql.DataSource
 
 import grails.gorm.annotation.Entity
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
@@ -97,6 +99,7 @@ class QueryTailSessionFactoryObserverSpec extends Specification {
         QueryTailRewritingInspector.seen.clear()
         QueryTailNamedInspector.seen.clear()
         QueryTailRecordingObserver.events.clear()
+        QueryTailProvidedConfiguration.provided.clear()
     }
 
     void "an application started without the setting carries no capture, and its connection provider is Hibernate's own"() {
@@ -434,6 +437,35 @@ class QueryTailSessionFactoryObserverSpec extends Specification {
         QueryTailRecord.parseHeader(file.readLines().first()) != firstRun
         records(file)*.sql.contains('select ? as second_run')
         !records(file)*.sql.contains('select ? as first_run')
+    }
+
+    void "the schema create-drop drops as the session factory closes is not recorded, as the schema it creates is not"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        HibernateDatastore datastore = open(enabled(file))
+        runNative(datastore, 'select 1 as before_close')
+
+        when:
+        close(datastore)
+
+        then: 'what the application ran is recorded, and neither the creation nor the drop of the schema'
+        records(file)*.sql.contains('select ? as before_close')
+        !records(file).any { it.sql =~ /(?i)^(create|drop|alter) / }
+    }
+
+    void "a connection provider a configuration class provides as a service hands out the connections that run the statements recorded"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        HibernateDatastore datastore = open(enabled(file) + [(CONFIG_CLASS): QueryTailProvidedConfiguration.name])
+
+        when:
+        List selected = runNative(datastore, 'select 1 as provided_probe')
+
+        then:
+        selected == [1]
+        QueryTailProvidedConfiguration.provided.size() == 1
+        QueryTailProvidedConfiguration.provided.first().handed.get() > 0
+        records(file)*.sql.count('select ? as provided_probe') == 1
     }
 
     void "a datastore that closes leaves another writing to the same file"() {
@@ -783,6 +815,61 @@ class QueryTailObservedConfiguration extends HibernateMappingContextConfiguratio
 
     QueryTailObservedConfiguration() {
         setSessionFactoryObserver(new QueryTailRecordingObserver())
+    }
+}
+
+/**
+ * Gives the service registry a connection provider of its own as a service, which takes the place of the one
+ * Hibernate would select.
+ */
+class QueryTailProvidedConfiguration extends HibernateMappingContextConfiguration {
+
+    static final List<QueryTailProvidedProvider> provided = [].asSynchronized()
+
+    @Override
+    protected StandardServiceRegistryBuilder createStandardServiceRegistryBuilder(BootstrapServiceRegistry bootstrapServiceRegistry) {
+        QueryTailProvidedProvider provider = new QueryTailProvidedProvider((DataSource) properties.values().find { it instanceof DataSource })
+        provided << provider
+        super.createStandardServiceRegistryBuilder(bootstrapServiceRegistry).addService(ConnectionProvider, provider)
+    }
+}
+
+/**
+ * Hands out the connections of a data source, counting them.
+ */
+class QueryTailProvidedProvider implements ConnectionProvider {
+
+    final DataSource dataSource
+    final AtomicInteger handed = new AtomicInteger()
+
+    QueryTailProvidedProvider(DataSource dataSource) {
+        this.dataSource = dataSource
+    }
+
+    @Override
+    Connection getConnection() {
+        handed.incrementAndGet()
+        dataSource.connection
+    }
+
+    @Override
+    void closeConnection(Connection connection) {
+        connection.close()
+    }
+
+    @Override
+    boolean supportsAggressiveRelease() {
+        false
+    }
+
+    @Override
+    boolean isUnwrappableAs(Class<?> type) {
+        type.isInstance(this) || type.isInstance(dataSource)
+    }
+
+    @Override
+    <T> T unwrap(Class<T> type) {
+        type.isInstance(this) ? type.cast(this) : type.cast(dataSource)
     }
 }
 
