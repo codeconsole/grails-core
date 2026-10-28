@@ -179,11 +179,13 @@ class NavigableMap implements Map<String, Object>, Cloneable {
 
     /**
      * Holds the list or map that an indexed key with a property after the index, such as {@code a.rows[0].name}, writes
-     * under its flat key, {@code a.rows}, in the nested map that owns it too, so that {@code navigate('a', 'rows')} and
-     * {@code config.a.rows} read it. Each element that is a map is held as a nested map, which the owner also holds
-     * under the indexed name, {@code rows[0]}, and which holds the element as application.yml gives it. The flat key
-     * {@code a.rows} then holds the same list or map, as the flat key of a nested map holds that map, so a dotted key
-     * merged into it later is read through both.
+     * in the nested map that owns it, so that {@code navigate('a', 'rows')} and {@code config.a.rows} read it. The list
+     * the owner already holds is the one held, as written element by element from application.yml or by a profile's
+     * list over it; only when it holds none is it built from the list under the flat key. An element that is a map is
+     * held as a nested map, which the owner also holds under the indexed name, {@code rows[0]}, and which holds the
+     * element as application.yml gives it. Only the element just written is updated, so each indexed key costs the same
+     * however long the list is. The flat keys are left as they are, so the environment presents the same names and
+     * values as before.
      */
     private void holdIndexedContainer(NavigableMap targetMap, String indexedKey) {
         int subscriptStart = indexedKey.indexOf('[')
@@ -198,50 +200,84 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             return
         }
         NavigableMap owner = targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false)
-        Object container = targetMap.get(containerKey)
         if (owner == null) {
             return
         }
         String name = containerKey.substring(lastDot + 1)
         String written = indexedKey.substring(subscriptStart + 1, subscriptEnd)
         String writtenField = indexedKey.substring(subscriptEnd + 2)
+        Object container = targetMap.get(containerKey)
+        Object current = owner.get(name)
         if (container instanceof List) {
-            List flatList = (List) container
-            List held = new HeldList()
-            for (int i = 0; i < flatList.size(); i++) {
-                String index = String.valueOf(i)
-                held.add(heldElement(targetMap, owner, containerKey, name, index, flatList.get(i), index == written ? writtenField : null))
+            if (!written.isInteger()) {
+                return
             }
+            HeldList held
+            if (current instanceof HeldList) {
+                held = (HeldList) current
+            } else {
+                boolean fromFlatKey = !(current instanceof List)
+                List source = fromFlatKey ? (List) container : (List) current
+                held = new HeldList()
+                for (int i = 0; i < source.size(); i++) {
+                    String index = String.valueOf(i)
+                    Object element = fromFlatKey ? nestedOrElement(owner, "${name}[${index}]".toString(), source.get(i)) : source.get(i)
+                    held.add(index == written ? element : heldElement(targetMap, owner, containerKey, name, index, element, null))
+                }
+            }
+            int index = written.toInteger()
+            Object element = index < held.size() ? held.get(index) : null
+            if (element == null && index < ((List) container).size()) {
+                element = ((List) container).get(index)
+            }
+            fill(held, index, null)
+            held.set(index, heldElement(targetMap, owner, containerKey, name, written, element, writtenField))
             owner.put(name, held)
-            targetMap.put(containerKey, held)
         } else if (container instanceof Map) {
-            Object current = owner.get(name)
-            NavigableMap held = current instanceof NavigableMap ? (NavigableMap) current : new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
-            for (Map.Entry entry in ((Map) container).entrySet()) {
-                String key = String.valueOf(entry.key)
-                held.put(key, heldElement(targetMap, owner, containerKey, name, key, entry.value, key == written ? writtenField : null))
+            NavigableMap held
+            if (current instanceof NavigableMap) {
+                held = (NavigableMap) current
+            } else {
+                boolean fromFlatKey = !(current instanceof Map)
+                Map source = fromFlatKey ? (Map) container : (Map) current
+                held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [name]).asImmutable())
+                for (Map.Entry entry in ((Map) source).entrySet()) {
+                    String key = String.valueOf(entry.key)
+                    Object element = fromFlatKey ? nestedOrElement(owner, "${name}[${key}]".toString(), entry.value) : entry.value
+                    held.put(key, key == written ? element : heldElement(targetMap, owner, containerKey, name, key, element, null))
+                }
             }
+            Object element = held.containsKey(written) ? held.get(written) : ((Map) container).get(written)
+            held.put(written, heldElement(targetMap, owner, containerKey, name, written, element, writtenField))
             owner.put(name, held)
-            targetMap.put(containerKey, held)
         }
     }
 
     /**
-     * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a map
-     * is held as a nested map with the entries of the element, built again for the element just written, so that it
-     * holds every field the element holds, such as {@code db.url} beside the {@code db.port} just written below it,
-     * and none of an element the list held before it was replaced. The field just written takes the value the nested
-     * map built for the element holds, which the merge stored through {@link #mergeMapEntry(NavigableMap, String, Object)},
-     * so a placeholder in it is resolved as in every other entry. The keys of the map the indexed key was merged into
-     * that held the element, or a map inside it, such as {@code a.rows[0]} and {@code a.rows[0].db}, then hold the
-     * rebuilt element and its maps. A nested map already held for another element is kept.
+     * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a
+     * nested map is kept, and so is the nested map the owner holds for the element just written when it is that same
+     * map, since the merge has written the field into it. Otherwise an element that is a map is held as a nested map
+     * built from it, so that it holds every field the element holds, such as {@code db.url} beside the {@code db.port}
+     * just written below it, and none of an element the list held before it was replaced. The field just written then
+     * takes the value the owner's nested map holds for it, which the merge stored through
+     * {@link #mergeMapEntry(NavigableMap, String, Object)}, so a placeholder in it is resolved as in every other entry,
+     * and the keys of the map the indexed key was merged into that held the element, or a map inside it, such as
+     * {@code a.rows[0]} and {@code a.rows[0].db}, then hold the rebuilt element and its maps.
      */
     private static Object heldElement(NavigableMap targetMap, NavigableMap owner, String containerKey, String name, String index,
                                       Object element, String writtenField) {
+        String indexedName = "${name}[${index}]".toString()
+        Object written = writtenField != null ? owner.get(indexedName) : null
+        if (written instanceof NavigableMap && (element == null || element.is(written))) {
+            Object stored = valueAt(written, writtenField)
+            if (stored != null && writtenField.indexOf('.') > -1) {
+                ((NavigableMap) written).merge([(writtenField): stored], true)
+            }
+            return written
+        }
         if (!(element instanceof Map)) {
             return element
         }
-        String indexedName = "${name}[${index}]".toString()
         if (element instanceof NavigableMap && writtenField == null) {
             owner.put(indexedName, element)
             return element
@@ -249,7 +285,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         NavigableMap held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
         held.merge((Map) element, true)
         if (writtenField != null) {
-            Object stored = valueAt(owner.get(indexedName), writtenField)
+            Object stored = valueAt(written, writtenField)
             if (stored != null) {
                 held.merge([(writtenField): stored], true)
             }
@@ -257,6 +293,16 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         owner.put(indexedName, held)
         replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
         held
+    }
+
+    /**
+     * The nested map the owner holds for an element under its indexed name, which the merge wrote through
+     * {@link #mergeMapEntry(NavigableMap, String, Object)}, or else the element of the list under the flat key, whose
+     * values the subscript wrote as they were given.
+     */
+    private static Object nestedOrElement(NavigableMap owner, String indexedName, Object element) {
+        Object nested = owner.get(indexedName)
+        nested instanceof NavigableMap ? nested : element
     }
 
     private static Object valueAt(Object map, String field) {

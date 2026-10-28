@@ -164,9 +164,8 @@ class PropertySourcesConfigSpec extends Specification {
         when: "a dotted key under the same map is merged after it"
         config.merge(['app.mappings.bar': 'y'])
 
-        then: "the map holds both, read through the nested maps or the flat key"
+        then: "the map holds both"
         config.navigate('app', 'mappings') == [foo: [name: 'x'], bar: 'y']
-        config['app.mappings'] == [foo: [name: 'x'], bar: 'y']
     }
 
     void 'a list replaced after an indexed key wrote it keeps none of its old elements'() {
@@ -275,6 +274,28 @@ class PropertySourcesConfigSpec extends Specification {
         other.app.rows[1].name == 'second'
     }
 
+    void 'an indexed key over a list that a profile replaced keeps the rows below it'() {
+        given: "application-dev.yml over application.yml, and an indexed key from a source above them"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("app:\n  rows:\n    - name: first\n    - name: second\n".bytes)).first())
+        sources.addFirst(new YamlPropertySourceLoader().load('application-dev.yml', new ByteArrayResource("app:\n  rows:\n    - name: dev\n".bytes)).first())
+        sources.addFirst(new MapPropertySource('commandLineArgs', ['app.rows[0].port': '9']))
+
+        when:
+        def config = new PropertySourcesConfig(sources)
+
+        then: "the list keeps the row the profile does not replace, as before"
+        config.navigate('app', 'rows') == [[name: 'dev', port: '9'], [name: 'second']]
+        config.getProperty('app.rows', List) == [[name: 'dev', port: '9'], [name: 'second']]
+        config.getProperty('app.rows[1].name') == 'second'
+
+        when:
+        config.refresh()
+
+        then:
+        config.navigate('app', 'rows') == [[name: 'dev', port: '9'], [name: 'second']]
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)
@@ -306,7 +327,6 @@ class PropertySourcesConfigSpec extends Specification {
         fromKeys.getProperty('app.rows', List) == fromYaml.getProperty('app.rows', List)
         fromKeys.getProperty('app.rows', List)[0] == [name: 'first', db: [url: 'jdbc:x'], 'db.url': 'jdbc:x']
         fromKeys.navigate('app', 'rows') == fromYaml.navigate('app', 'rows')
-        fromKeys['app.rows'] == fromYaml['app.rows']
     }
 
     void 'a placeholder in a value merged #description is resolved alike for the flat key and the nested entry'() {
