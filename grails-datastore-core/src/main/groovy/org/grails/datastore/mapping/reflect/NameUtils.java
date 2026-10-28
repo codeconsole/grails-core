@@ -98,12 +98,14 @@ public class NameUtils {
     }
 
     /**
-     * Get the class name, taking into account proxies
+     * Get the class name, taking into account proxies.
+     * A {@code $} in the simple name is taken to mean a generated subclass,
+     * which is also how a nested class has always been treated.
      *
      * @param clazz The class
      * @return The class name
      */
-    public static String getClassName(Class clazz) {
+    public static String getClassName(Class<?> clazz) {
         while (clazz.getSimpleName().contains(DOLLAR_SEPARATOR) && clazz.getSuperclass() != null) {
             clazz = clazz.getSuperclass();
         }

@@ -156,7 +156,8 @@ class GormApiResolver {
 
     PersistentEntity findEntity(Class entity, String qualifier = null) {
         String resolvedQualifier = qualifier ?: findTenantId(entity)
-        return findDatastore(entity, resolvedQualifier)?.mappingContext?.getPersistentEntity(entity.name)
+        String className = entity != null ? NameUtils.getClassName(entity) : null
+        return findDatastore(entity, resolvedQualifier)?.mappingContext?.getPersistentEntity(className)
     }
 
     private String findTenantId(Class entity) {

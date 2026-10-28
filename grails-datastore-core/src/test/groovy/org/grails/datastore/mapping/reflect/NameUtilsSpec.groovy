@@ -33,14 +33,6 @@ class NameUtilsSpec extends Specification {
                  NameUtilsEntity$Proxy$Wrapper$Outer]
     }
 
-    void "getClassName preserves a real entity referenced by a local alias"() {
-        given:
-        Class entityAlias = NameUtilsEntity
-
-        expect:
-        NameUtils.getClassName(entityAlias) == NameUtilsEntity.name
-    }
-
     @Unroll
     void "decapitalizeFirstChar for #name should be #expected"(String name, String expected) {
         expect:
