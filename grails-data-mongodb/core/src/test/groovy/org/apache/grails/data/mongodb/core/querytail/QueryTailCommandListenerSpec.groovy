@@ -267,6 +267,28 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         'array'    | 'attributes' | '[{"$example-secret":"v"}]'                | '"attributes": [{?: ?}]'
     }
 
+    void "an element match in a projection records no dollar-prefixed key of the document it compares with"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        MongoDatastore datastore = open(enabled(file))
+        def database = datastore.mongoClient.getDatabase(DATABASE)
+        database.runCommand(Document.parse('''{"insert":"queryTailBook","documents":[{"title":"Projected",
+                "attributes":[{"nested":{"a":2}},{"nested":{"a":1,"$example-secret":"v"}}]}]}'''))
+
+        when: 'a projection returns the first element that matches'
+        Document found = database.runCommand(Document.parse('''{"find":"queryTailBook","filter":{"title":"Projected"},
+                "projection":{"attributes":{"$elemMatch":{"nested":{"a":1,"$example-secret":"v"}}}}}'''))
+        Document projected = found.get('cursor', Document).getList('firstBatch', Document).first()
+
+        then: 'the database matched the element the condition describes'
+        projected.getList('attributes', Document)*.get('nested', Document)*.getInteger('a') == [1]
+
+        and: 'the capture kept the operator but no key of the document the element is compared with'
+        records(file).any { it.sql.startsWith("find ${DATABASE}.queryTailBook ") &&
+                it.sql.contains('"projection": {"attributes": {"$elemMatch": {?: {?: ?, ?: ?}}}}') }
+        !file.text.contains('example-secret')
+    }
+
     void "a connection source added at runtime records as the application does"() {
         given:
         File file = new File(tempDir, 'capture.log')

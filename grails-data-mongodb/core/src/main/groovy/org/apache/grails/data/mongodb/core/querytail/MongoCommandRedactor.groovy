@@ -44,7 +44,8 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
  * it is data. A {@code $} key is kept as an operator only where operators go, in a condition, a
  * pipeline and the operators of an update, and in a condition only when it is one of MongoDB's query
  * operators: any other, such as a key beside the geometry of {@code $near}, is recorded as the
- * placeholder, and so is everything under it; in stored data, the documents an insert writes, a
+ * placeholder, and so is everything under it. The operand of {@code $elemMatch} is a condition wherever
+ * it is, in a projection as in a filter; in stored data, the documents an insert writes, a
  * replacement document and the values an update operator writes, it is a field name, which MongoDB
  * allows to start with {@code $}, and is recorded as the placeholder unless the mapping knows it.
  * So is a {@code $} key in the operand of a comparison in a condition, such as {@code $eq} or
@@ -134,6 +135,12 @@ final class MongoCommandRedactor {
 
     /** The operator of a condition that may hold any document, none of whose keys say what the command does. */
     private static final String COMMENT = '$comment'
+
+    /**
+     * The operator that selects the elements of an array by a condition, in a condition and in a projection alike,
+     * where it selects the first element that matches.
+     */
+    private static final String ELEM_MATCH = '$elemMatch'
 
     /** The option whose values are aggregation expressions. */
     private static final String LET = 'let'
@@ -431,7 +438,9 @@ final class MongoCommandRedactor {
                 }
                 // an operator on an array, such as $elemMatch, describes its elements
                 int operandDepth = indexed(path, depth) ? depth + 1 : depth
-                Kind operandKind = LITERAL_OPERATORS.contains(key) || VALUE_OPERATORS.contains(key) ? Kind.DATA : kind
+                // the operand of $elemMatch is a condition on those elements, in a projection as in a condition
+                Kind operandKind = LITERAL_OPERATORS.contains(key) || VALUE_OPERATORS.contains(key) ? Kind.DATA :
+                        key == ELEM_MATCH ? Kind.CONDITION : kind
                 return child(operandKind, null, path, operandDepth, quote(key))
             }
             if (kind == Kind.CONDITION) {

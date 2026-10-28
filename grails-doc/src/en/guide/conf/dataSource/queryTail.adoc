@@ -222,7 +222,9 @@ kept as an operator only where operators go: in a condition, a pipeline and the 
 update, and in a condition only when it is one of MongoDB's query operators, among them `$within`,
 which GORM writes for a box, a polygon or a circle. Any other `$` key in a
 condition, such as one beside the `$geometry` of a `$near`, is recorded as `?`, with everything under
-it, since the server rejects it after the capture has recorded the command. In stored data, the documents an insert writes, a replacement document and the values an
+it, since the server rejects it after the capture has recorded the command. The operand of an
+`$elemMatch` is a condition wherever it is, so one in a projection, which returns the first element
+that matches, is read as the same `$elemMatch` in a filter is. In stored data, the documents an insert writes, a replacement document and the values an
 update operator writes, MongoDB allows a field name to start with `$`, so such a key is recorded as
 `?` unless the mapping knows it. So is a `$` key in the operand of a comparison in a condition, such
 as `$eq`, `$in` or `$all`, which is the value the field is compared with. A document or array

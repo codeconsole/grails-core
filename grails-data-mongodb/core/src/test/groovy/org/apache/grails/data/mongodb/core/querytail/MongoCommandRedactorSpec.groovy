@@ -349,6 +349,8 @@ class MongoCommandRedactorSpec extends Specification {
                 '{"update":"books","updates":[{"q":{},"u":{"$set":{"attributes.$[entry].k":1}},"arrayFilters":[{"entry.attrs":{"nested":{"$example-secret":"v"}}}]}]}',
                 '{"createIndexes":"books","indexes":[{"key":{"ttl":1},"partialFilterExpression":{"attrs":{"nested":{"$example-secret":"v"}}}}]}',
                 '{"collMod":"books","validator":{"attrs":{"nested":{"$example-secret":"v"}}}}',
+                '{"find":"books","projection":{"attributes":{"$elemMatch":{"nested":{"a":1,"$example-secret":"v"}}}}}',
+                '{"findAndModify":"books","query":{},"fields":{"stops":{"$elemMatch":{"notes":{"nested":{"$example-secret":"v"}}}}},"update":{"$set":{"ttl":"x"}}}',
         ]
     }
 
@@ -427,6 +429,7 @@ class MongoCommandRedactorSpec extends Specification {
         'beside the field operators'  | '{"find": "books", "filter": {"pages": {"$gt": 1, "$example-secret": 2}}, "$db": "shop"}'                                               || 'find shop.books {"filter": {"pages": {"$gt": ?, ?: ?}}}'
         'at the top of the condition' | '{"find": "books", "filter": {"ttl": "x", "$example-secret": {"k": 1}}, "$db": "shop"}'                                                 || 'find shop.books {"filter": {"ttl": ?, ?: {?: ?}}}'
         'in an element match'         | '{"find": "books", "filter": {"tags": {"$elemMatch": {"$example-secret": 1}}}, "$db": "shop"}'                                          || 'find shop.books {"filter": {"tags": {"$elemMatch": {?: ?}}}}'
+        'in an element match of a projection' | '{"find": "books", "projection": {"tags": {"$elemMatch": {"$example-secret": 1}}}, "$db": "shop"}'                       || 'find shop.books {"projection": {"tags": {"$elemMatch": {?: ?}}}}'
         'in a match stage'            | '{"aggregate": "books", "pipeline": [{"$match": {"$example-secret": 1}}], "cursor": {}, "$db": "shop"}'                                  || 'aggregate shop.books {"pipeline": [{"$match": {?: ?}}], "cursor": {}}'
         'a stage name in a condition' | '{"find": "books", "filter": {"$project": {"ttl": 1}}, "$db": "shop"}'                                                                  || 'find shop.books {"filter": {?: {?: ?}}}'
     }
@@ -445,6 +448,17 @@ class MongoCommandRedactorSpec extends Specification {
         '{"find": "books", "filter": {"location": {"$within": {"$polygon": [[0, 0], [1, 0], [1, 1]]}}}, "$db": "shop"}'                                       || 'find shop.books {"filter": {"location": {"$within": {"$polygon": [[?]]}}}}'
         '{"find": "books", "filter": {"location": {"$within": {"$center": [[0, 0], 1]}}}, "$db": "shop"}'                                                      || 'find shop.books {"filter": {"location": {"$within": {"$center": [[?], ?]}}}}'
         '{"find": "books", "filter": {"location": {"$within": {"$box": [[0, 0], [1, 1]], "$example-secret": {"k": 1}}}}, "$db": "shop"}'                       || 'find shop.books {"filter": {"location": {"$within": {"$box": [[?]], ?: {?: ?}}}}}'
+    }
+
+    @Unroll
+    void "the operand of an element match is a condition, in a projection as in a filter: #option"() {
+        expect:
+        redact("""{"find": "books", "${option}": {"stops": {"\$elemMatch": {"city": "x", "notes": {"a": 1, "\$example-secret": "v"},
+                "\$or": [{"city": {"\$gt": "y"}}], "\$example-secret": 1}}}, "\$db": "shop"}""") ==
+                """find shop.books {"${option}": {"stops": {"\$elemMatch": {"city": ?, "notes": {?: ?, ?: ?}, "\$or": [{"city": {"\$gt": ?}}], ?: ?}}}}""".toString()
+
+        where:
+        option << ['filter', 'projection']
     }
 
     @Unroll
