@@ -148,6 +148,65 @@ class SimpleMapQueryTailSpec extends Specification {
         QueryTailRecord.parseHeader(file.readLines().first()) != null
     }
 
+    void "a connection source added at runtime captures as the application does, and closes its capture with the datastore"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        SimpleMapDatastore datastore = open(enabled(file))
+
+        when:
+        datastore.addTenantForSchema('added')
+        SimpleMapDatastore added = (SimpleMapDatastore) datastore.getDatastoreForConnection('added')
+        Session session = added.connect()
+        try {
+            session.retrieve(QueryTailShelfBook, 1L)
+        }
+        finally {
+            session.disconnect()
+        }
+
+        then:
+        added.queryTail.file == file
+        added.queryTail.capture.open
+        records(file).find { it.sql == "select * from ${BOOK} where id = ?".toString() }?.dataSource == 'added'
+
+        when:
+        datastore.close()
+
+        then:
+        !added.queryTail.capture.open
+    }
+
+    void "a connection source added at runtime with query-tail settings of its own takes those"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        File own = new File(tempDir, 'own-capture.log')
+        SimpleMapDatastore datastore = open(enabled(file))
+
+        when:
+        ConnectionSource<Map<String, Map>, ConnectionSourceSettings> off = datastore.connectionSources.addConnectionSource('off',
+                [(QueryTailSettings.SETTING_ENABLED): 'false'])
+        ConnectionSource<Map<String, Map>, ConnectionSourceSettings> elsewhere = datastore.connectionSources.addConnectionSource('elsewhere',
+                [(QueryTailSettings.SETTING_ENABLED): 'true', (QueryTailSettings.SETTING_FILE): own.path])
+
+        then:
+        !off.settings.queryTail.enabled
+        elsewhere.settings.queryTail.enabled
+        elsewhere.settings.queryTail.file == own.path
+    }
+
+    void "a datastore built without the setting adds connection sources at runtime that capture nothing"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        SimpleMapDatastore datastore = open([(QueryTailSettings.SETTING_FILE): file.path])
+
+        when:
+        datastore.addTenantForSchema('added')
+
+        then:
+        ((SimpleMapDatastore) datastore.getDatastoreForConnection('added')).queryTail == null
+        !file.exists()
+    }
+
     void "a dynamic finder is one statement with its criteria, order and paging, and none of its values"() {
         given:
         File file = new File(tempDir, 'capture.log')
