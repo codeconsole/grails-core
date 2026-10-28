@@ -188,7 +188,11 @@ collection it runs against, and the document of its entries with every value rep
 `find shop.book {"filter": {"title": ?}, "sort": {"title": ?}, "limit": ?}`. The collection is
 taken only from a command that runs against one, such as `find`, `insert`, `aggregate` or
 `createIndexes`. The first value of any other command is an argument, so it is replaced like any
-other value: `{"dropUser": "alice"}` is recorded as `dropUser admin {"dropUser": ?}`. The command is kept and
+other value: `{"dropUser": "alice"}` is recorded as `dropUser admin {"dropUser": ?}`. An array is
+recorded with each of its elements once: an element recorded as one before it in the array is left
+out, and the array then ends with `...`, so that an `insertMany` of two documents and one of fifty,
+or an `$in` of three values and one of seven, are recorded as the one statement each is:
+`insert shop.book {"documents": [{"title": ?}, ...]}`, `{"$in": [?, ...]}`. The command is kept and
 shown exactly as it was recorded, its names quoted as JSON quotes them, so two field or collection
 names that differ only in their spaces or quotes stay apart, and nothing in a name is read as SQL. Its keys are kept, as
 they name the command's options, its operators and the fields of the collection, except where a key
@@ -249,7 +253,7 @@ for it, and an association loaded when it is first used, as a lazy one is, is a 
 which is how an N+1 shows up.
 
 Capture is off unless the application is started with it. An application started without the
-flag carries no statement inspector, driver wrapper, command listener or capture of the simple
+flag carries no connection wrapper, driver wrapper, command listener or capture of the simple
 datastore, so it costs nothing in production or in development. The
 flag sets `grails.gorm.queryTail.enabled`, which can also be kept in `application.yml` for the
 development environment, and `grails.gorm.queryTail.file` moves the capture away from
@@ -310,12 +314,14 @@ statements as one GORM builds does, reading the capture settings from `grails.go
 `grails.neo4j.queryTail` sets them; it takes no other `grails.gorm` setting, which the application's
 other datastores may be configured with.
 An application started by Gradle writes under the build directory the
-build configures, even one moved with `layout.buildDirectory`, but the `grails` command runs
-outside Gradle and looks under `build` unless told otherwise: with a moved build directory set
-`grails.gorm.queryTail.file`, which both sides read, or pass `--file`. An application that configures its own Hibernate `StatementInspector`,
+build configures, even one moved with `layout.buildDirectory`, which the Grails Gradle plugin hands
+the application as `grails.project.target.dir`. The `grails` command runs outside Gradle, so it
+looks under `build` unless it is started with the same property, as with
+`JAVA_OPTS=-Dgrails.project.target.dir=out grails query-tail`; with a moved build directory, pass that
+property, set `grails.gorm.queryTail.file`, which both sides read, or pass `--file`. An application that configures its own Hibernate `StatementInspector`,
 with `hibernate.session_factory.statement_inspector`, by its class or by a name registered with
-Hibernate's strategy selector, or in a `hibernate.configClass`, keeps it: the capture runs after it
-and records the statement it returns, without its values. SQL is counted at JDBC execution: a
+Hibernate's strategy selector, or in a `hibernate.configClass`, keeps it: Hibernate runs it as it
+does without the capture, and the capture records the statement it returns, without its values. SQL is counted at JDBC execution: a
 statement reused for multiple executions is counted each time, and each entry submitted by
 `executeBatch` is counted separately. For example, 50 inserts count as 50 with or without JDBC
 batching; this measures statements submitted, not network round trips or committed rows. An unused

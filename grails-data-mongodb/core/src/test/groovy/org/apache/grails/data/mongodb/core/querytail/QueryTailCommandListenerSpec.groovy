@@ -423,6 +423,31 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         'in an element match'         | '"refs":[{"$id":{"nested":{"$example-secret":"v"}},"$ref":"other"}]' | '{"refs":{"$elemMatch":{"$id":{"nested":{"$example-secret":"v"}},"$ref":"other"}}}' || '{"refs": {"$elemMatch": {?: {?: {?: ?}}, ?: ?}}}'
     }
 
+    void "batches of every size, and lists of values of every length, are recorded as the one statement each is"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        MongoDatastore datastore = open(enabled(file))
+        def collection = datastore.mongoClient.getDatabase(DATABASE).getCollection('queryTailBatch')
+
+        when:
+        collection.insertMany((1..2).collect { new Document('title', "small-${it}".toString()) })
+        collection.insertMany((1..50).collect { new Document('title', "large-${it}".toString()) })
+        List<Document> found = collection.find(new Document('title', new Document('$in', ['small-1', 'large-1', 'large-2']))).into([])
+        collection.find(new Document('title', new Document('$in', ['small-2']))).into([])
+        List<String> recorded = records(file)*.sql.findAll { it.contains("${DATABASE}.queryTailBatch ") }
+
+        then: 'the database wrote and read every document, and the capture holds one statement for each kind of command'
+        collection.countDocuments() == 52
+        found.size() == 3
+        recorded.count { it.startsWith('insert ') } == 2
+        recorded.findAll { it.startsWith('insert ') }.unique().size() == 1
+        recorded.find { it.startsWith('insert ') }.contains('"documents": [{?: ?, ?: ?}, ...]')
+        recorded.findAll { it.startsWith('find ') } as Set == [
+                "find ${DATABASE}.queryTailBatch {\"filter\": {\"title\": {\"\$in\": [?, ...]}}}".toString(),
+                "find ${DATABASE}.queryTailBatch {\"filter\": {\"title\": {\"\$in\": [?]}}}".toString()] as Set
+        !file.text.contains('large-')
+    }
+
     void "field names that differ only in the spaces after a quote stay apart in the capture, in a collection named #collectionName"() {
         given: 'documents in a collection no domain class maps, whose field names hold a quote and differ in the spaces after it'
         File file = new File(tempDir, 'capture.log')

@@ -415,6 +415,32 @@ class QueryTailCaptureSpec extends Specification {
         records(file).last().sql == 'select a from t0'
     }
 
+    void "a statement recorded again and again among more statements than a capture keeps stays kept, and the one recorded least recently is let go"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        QueryTailCapture capture = open(file)
+        CountingSyntax counting = new CountingSyntax()
+        capture.syntax = counting
+
+        when: 'one statement runs between each of twice as many others as the capture keeps'
+        capture.record('DEFAULT', 'select a from hot')
+        (QueryTailCapture.REMEMBERED_REDACTIONS * 2).times { int i ->
+            capture.record('DEFAULT', "select a from t${i}".toString())
+            capture.record('DEFAULT', 'select a from hot')
+        }
+
+        then: 'it was read once, and every other statement once'
+        counting.read == 1 + QueryTailCapture.REMEMBERED_REDACTIONS * 2
+
+        when: 'the statement kept longest without being recorded again is recorded again'
+        int before = counting.read
+        capture.record('DEFAULT', 'select a from t0')
+
+        then:
+        counting.read == before + 1
+        records(file).last().sql == 'select a from t0'
+    }
+
     void "a setting a statement gives a bare value is not recorded, as PostgreSQL takes a bare word for its value"() {
         given:
         File file = new File(tempDir, 'capture.log')

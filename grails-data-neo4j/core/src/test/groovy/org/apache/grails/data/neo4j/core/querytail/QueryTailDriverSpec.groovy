@@ -87,17 +87,52 @@ class QueryTailDriverSpec extends Specification {
         File blocker = new File(tempDir, 'blocker')
         blocker.text = 'not a directory'
         QueryTailSettings settings = new QueryTailSettings(enabled: true, file: new File(blocker, 'capture.log').path)
-        Driver delegate = Mock(Driver)
+        Session delegateSession = Mock(Session)
+        Driver delegate = Mock(Driver) {
+            session() >> delegateSession
+        }
 
         when:
         Driver driver = QueryTailDriver.install(ConnectionSource.DEFAULT, settings, delegate)
 
-        then:
-        notThrown(Exception)
-        0 * delegate.close()
+        then: 'nothing is opened before the first statement'
         driver instanceof QueryTailDriver
         ((QueryTailDriver) driver).delegate.is(delegate)
+        ((QueryTailDriver) driver).capture == null
+
+        when:
+        driver.session().run('RETURN 1')
+
+        then: 'the statement runs, and the capture it opened records nothing'
+        notThrown(Exception)
+        1 * delegateSession.run('RETURN 1')
+        0 * delegate.close()
         !((QueryTailDriver) driver).capture.open
+    }
+
+    void "a driver the application hands the datastore opens no capture when another connection source cannot be created"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        Driver supplied = GraphDatabase.driver(boltUrl, Config.builder().withoutEncryption().build())
+
+        when:
+        new Neo4jDatastore(supplied, DatastoreUtils.createPropertyResolver(enabled(file) +
+                [(Settings.SETTING_CONNECTIONS): [broken: [url: 'unsupported://localhost']]]), QueryTailBook)
+
+        then: 'the datastore fails before any statement, and leaves no capture behind to join'
+        thrown(Exception)
+        !file.exists()
+
+        when: 'the application starts again'
+        Neo4jDatastore datastore = open(enabled(file))
+        run(datastore, 'RETURN 1 AS restarted')
+
+        then: 'it starts a run of its own'
+        QueryTailRecord.readRun(file) != null
+        records(file)*.sql.contains('RETURN ? AS restarted')
+
+        cleanup:
+        supplied?.close()
     }
 
     void "a driver the application hands the datastore records as one GORM builds, until the datastore closes"() {
@@ -210,6 +245,13 @@ class QueryTailDriverSpec extends Specification {
             protected ConnectionSource<Driver, Neo4jConnectionSourceSettings> createEmbeddedConnectionSource(String name, Driver driver,
                     Neo4jConnectionSourceSettings connectionSettings, ServerControls serverControls) {
                 opened << driver << serverControls.boltURI()
+                Session session = driver.session()
+                try {
+                    session.run('RETURN 1 AS before_failure').consume()
+                }
+                finally {
+                    session.close()
+                }
                 throw new IllegalStateException('cannot create the connection source')
             }
         }
@@ -360,8 +402,10 @@ class QueryTailDriverSpec extends Specification {
         given:
         File file = new File(tempDir, 'capture.log')
         Neo4jDatastore first = open(enabled(file) + [(Settings.SETTING_CONNECTIONS): [reporting: [url: boltUrl]]])
+        Neo4jDatastore reporting = first.getDatastoreForConnection('reporting') as Neo4jDatastore
         run(first, 'RETURN 1 AS first_run')
-        List<QueryTailCapture> captures = [driver(first).capture, driver(first.getDatastoreForConnection('reporting') as Neo4jDatastore).capture]
+        run(reporting, 'RETURN 1 AS reporting_run')
+        List<QueryTailCapture> captures = [driver(first).capture, driver(reporting).capture]
         String firstRun = QueryTailRecord.parseHeader(file.readLines().first())
 
         expect:
@@ -389,6 +433,7 @@ class QueryTailDriverSpec extends Specification {
         Neo4jDatastore first = open(enabled(file))
         Neo4jDatastore second = open(enabled(file))
         run(first, 'RETURN 1 AS first_probe')
+        run(second, 'RETURN 1 AS second_opened')
 
         when:
         close(first)
@@ -396,7 +441,7 @@ class QueryTailDriverSpec extends Specification {
 
         then:
         driver(second).capture.open
-        records(file)*.sql.containsAll(['RETURN ? AS first_probe', 'RETURN ? AS second_probe'])
+        records(file)*.sql.containsAll(['RETURN ? AS first_probe', 'RETURN ? AS second_opened', 'RETURN ? AS second_probe'])
         file.readLines().count { QueryTailRecord.parseHeader(it) } == 1
     }
 

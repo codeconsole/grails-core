@@ -31,10 +31,10 @@ try {
 
     arguments.addAll commandLine.remainingArgs
 
-    // The Grails Gradle plugin hands every grails.* system property of the build to the forked application
-    // without the grails. prefix, so this reaches the application as grails.gorm.queryTail.enabled.
+    // The Grails Gradle plugin hands the grails.gorm.queryTail.* Gradle properties to the forked application
+    // under their own names, as it does for ./gradlew bootRun -Pgrails.gorm.queryTail.enabled.
     if(flag('query-tail')) {
-        arguments << '-Dgrails.grails.gorm.queryTail.enabled=true'
+        arguments << '-Pgrails.gorm.queryTail.enabled'
     }
 
     Integer port = flag('port')?.toInteger() ?: config.getProperty('server.port', Integer)

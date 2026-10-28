@@ -21,7 +21,7 @@ package org.grails.orm.hibernate.cfg
 import javax.sql.DataSource
 
 import grails.gorm.annotation.Entity
-import org.apache.grails.data.hibernate5.core.querytail.QueryTailStatementInspector
+import org.apache.grails.data.hibernate5.core.querytail.QueryTailSessionFactoryObserver
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
 import org.apache.grails.datastore.core.querytail.QueryTailSettings
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings
@@ -67,14 +67,15 @@ class HibernateMappingContextConfigurationSpec extends Specification {
                         (QueryTailSettings.SETTING_FILE)   : new File(tempDir, 'capture.log').path]))
         SessionFactoryImplementor sessionFactory = connectionSource.source as SessionFactoryImplementor
         def registry = sessionFactory.serviceRegistry.parentServiceRegistry as AbstractServiceRegistryImpl
-        def inspector = sessionFactory.sessionFactoryOptions.statementInspector
+        def observer = sessionFactory.sessionFactoryOptions.sessionFactoryObservers.find { it instanceof QueryTailSessionFactoryObserver }
         sessionFactory.openSession().withCloseable { session -> session.createNativeQuery('select 1 as probed').list() }
 
         expect: 'the capture, when there is one, opened with the session factory'
         RecordingSessionFactoryObserver.events == ['created']
         registry.active
-        capture == 'off' || (inspector instanceof QueryTailStatementInspector && inspector.capture.open)
-        capture == 'off' || inspector.file.readLines().collect { QueryTailRecord.parse(it) }.findAll()*.sql.count('select ? as probed') == 1
+        (observer != null) == (capture == 'on')
+        capture == 'off' || observer.capture.open
+        capture == 'off' || observer.file.readLines().collect { QueryTailRecord.parse(it) }.findAll()*.sql.count('select ? as probed') == 1
 
         when:
         connectionSource.close()
@@ -82,7 +83,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         then: 'and closed with it'
         RecordingSessionFactoryObserver.events == ['created', 'closing', 'closed']
         !registry.active
-        capture == 'off' || !inspector.capture.open
+        capture == 'off' || !observer.capture.open
 
         where:
         set                                 | configuration                  | capture

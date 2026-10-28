@@ -56,6 +56,11 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
  * kept. The entries the driver adds for its
  * session, the cluster time and the transaction, which say nothing about the command, are left out.
  *
+ * <p>An array is recorded with each of its elements once: an element recorded as one before it in
+ * the array is left out, and the array then ends with {@code ...}, so that the documents of a batch
+ * and the values of an {@code $in} are recorded the same whatever their number, and a command is
+ * counted as the one statement it is: {@code {"$in": [?, ...]}}.</p>
+ *
  * <p>A command is recorded as its name, the database and collection it runs against, and the
  * document of its remaining entries: {@code find shop.book {"filter": {"title": ?}, "limit": ?}}.
  * The collection is taken only from a command that runs against one; the first value of any other
@@ -68,6 +73,9 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
 final class MongoCommandRedactor {
 
     private static final String PLACEHOLDER = QueryTailRedactor.PLACEHOLDER
+
+    /** Ends an array that held an element recorded as one before it, which is left out. */
+    private static final String REPEATED = '...'
 
     private static final String DATABASE = '$db'
 
@@ -237,14 +245,25 @@ final class MongoCommandRedactor {
         }
         else if (value.isArray()) {
             out.append('[')
-            boolean first = true
             Scope element = scope.element()
+            Set<String> written = new HashSet<>()
+            boolean repeated = false
             for (BsonValue item in value.asArray()) {
-                if (!first) {
-                    out.append(', ')
+                StringBuilder text = new StringBuilder()
+                appendValue(text, item, element)
+                String recorded = text.toString()
+                if (written.add(recorded)) {
+                    if (written.size() > 1) {
+                        out.append(', ')
+                    }
+                    out.append(recorded)
                 }
-                first = false
-                appendValue(out, item, element)
+                else {
+                    repeated = true
+                }
+            }
+            if (repeated) {
+                out.append(', ').append(REPEATED)
             }
             out.append(']')
         }

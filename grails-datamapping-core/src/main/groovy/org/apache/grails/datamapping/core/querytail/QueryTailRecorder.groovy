@@ -34,8 +34,8 @@ import groovy.transform.CompileStatic
  * owns it. A recorder closed before it opened never opens, so one that is built and let go unused
  * leaves the capture file as it found it.
  *
- * <p>The recorder travels with what owns it, which may be serialized, as a Hibernate statement
- * inspector is; the capture does not. A recorder read back in the JVM that wrote it is the recorder
+ * <p>The recorder travels with what owns it, which may be serialized, as a Hibernate session
+ * factory observer is; the capture does not. A recorder read back in the JVM that wrote it is the recorder
  * written, so that what is recorded through either goes to the one capture its owner closes; read
  * back anywhere else, or once the recorder written has closed, it records nothing, since nothing
  * would close a capture it opened.</p>
@@ -63,6 +63,9 @@ class QueryTailRecorder implements Serializable {
     /** Tells this recorder from every other, in any JVM, once it is read back. */
     private final String id = UUID.randomUUID().toString()
 
+    /** The syntax of the database the statements run on, known up front, or null when the owner tells it on opening. */
+    private final transient QueryTailSyntax syntax
+
     private transient volatile QueryTailCapture capture
     private transient boolean closed
 
@@ -71,8 +74,19 @@ class QueryTailRecorder implements Serializable {
      * @param file the capture file statements are recorded to
      */
     QueryTailRecorder(String dataSourceName, File file) {
+        this(dataSourceName, file, null)
+    }
+
+    /**
+     * @param dataSourceName the connection source the statements run against
+     * @param file the capture file statements are recorded to
+     * @param syntax the syntax of the database the statements run on, which the capture redacts them in from the
+     * first, or null when it is told on {@linkplain #open(QueryTailSyntax) opening}
+     */
+    QueryTailRecorder(String dataSourceName, File file, QueryTailSyntax syntax) {
         this.dataSourceName = dataSourceName
         this.file = file
+        this.syntax = syntax
         // one that is let go without closing leaves an entry whose recorder is collected
         forgetCollected()
         RECORDERS.put(id, new Registration(this, id, COLLECTED))
@@ -86,21 +100,6 @@ class QueryTailRecorder implements Serializable {
      */
     void record(String statement) {
         open()?.record(dataSourceName, statement)
-    }
-
-    /**
-     * Records a statement once the inspector the application configured has seen it, which is the
-     * statement that runs: the one that inspector returned, or the statement itself when it returned
-     * none or there is none.
-     *
-     * @param statement the statement about to run
-     * @param inspected what the inspector the application configured returned for it, or null
-     * @return the statement that runs, which was recorded
-     */
-    String recordInspected(String statement, String inspected) {
-        String executed = inspected != null ? inspected : statement
-        record(executed)
-        executed
     }
 
     /**
@@ -125,7 +124,11 @@ class QueryTailRecorder implements Serializable {
         }
         synchronized (this) {
             if (capture == null && !closed) {
-                capture = QueryTailCapture.open(file)
+                QueryTailCapture opened = QueryTailCapture.open(file)
+                if (syntax != null) {
+                    opened.syntax = syntax
+                }
+                capture = opened
             }
             return capture
         }

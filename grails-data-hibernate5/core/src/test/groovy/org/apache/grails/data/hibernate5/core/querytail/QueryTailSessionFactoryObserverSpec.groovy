@@ -16,8 +16,9 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.apache.grails.data.hibernate7.core.querytail
+package org.apache.grails.data.hibernate5.core.querytail
 
+import java.lang.reflect.Proxy
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.SQLException
@@ -39,26 +40,26 @@ import org.hibernate.boot.registry.BootstrapServiceRegistry
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService
-import org.hibernate.community.dialect.InformixDialect
-import org.hibernate.community.dialect.SybaseAnywhereDialect
-import org.hibernate.dialect.CockroachDialect
+import org.hibernate.dialect.CockroachDB201Dialect
 import org.hibernate.dialect.DB2Dialect
-import org.hibernate.dialect.DB2iDialect
+import org.hibernate.dialect.DerbyTenSevenDialect
 import org.hibernate.dialect.Dialect
 import org.hibernate.dialect.H2Dialect
-import org.hibernate.dialect.HANADialect
+import org.hibernate.dialect.HANAColumnStoreDialect
 import org.hibernate.dialect.HSQLDialect
-import org.hibernate.dialect.MariaDBDialect
-import org.hibernate.dialect.MySQLDialect
+import org.hibernate.dialect.InformixDialect
+import org.hibernate.dialect.MariaDB103Dialect
+import org.hibernate.dialect.MySQL8Dialect
+import org.hibernate.dialect.Oracle12cDialect
 import org.hibernate.dialect.OracleDialect
-import org.hibernate.dialect.PostgreSQLDialect
-import org.hibernate.dialect.PostgresPlusDialect
-import org.hibernate.dialect.SQLServerDialect
-import org.hibernate.dialect.SpannerDialect
-import org.hibernate.dialect.SpannerPostgreSQLDialect
-import org.hibernate.dialect.SybaseASEDialect
+import org.hibernate.dialect.PostgreSQL10Dialect
+import org.hibernate.dialect.SQLServer2012Dialect
+import org.hibernate.dialect.SybaseASE15Dialect
+import org.hibernate.dialect.SybaseAnywhereDialect
+import org.hibernate.dialect.TeradataDialect
 import org.hibernate.engine.spi.SessionFactoryImplementor
-import org.hibernate.engine.jdbc.connections.internal.DataSourceConnectionProvider
+import org.hibernate.engine.jdbc.connections.internal.DatasourceConnectionProviderImpl
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider
 import org.hibernate.resource.jdbc.spi.StatementInspector
 import org.hibernate.service.spi.InjectService
 import org.hibernate.service.spi.ServiceRegistryAwareService
@@ -69,7 +70,6 @@ import spock.lang.TempDir
 
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.COCKROACH
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.DB2
-import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.GOOGLE_SQL
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.H2
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.HANA
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.HSQLDB
@@ -80,7 +80,7 @@ import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.POSTG
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.TRANSACT_SQL
 import static org.apache.grails.datamapping.core.querytail.QueryTailSyntax.UNKNOWN
 
-class QueryTailStatementInspectorSpec extends Specification {
+class QueryTailSessionFactoryObserverSpec extends Specification {
 
     private static final String INSPECTOR = 'hibernate.session_factory.statement_inspector'
     private static final String CONFIG_CLASS = 'hibernate.configClass'
@@ -97,11 +97,14 @@ class QueryTailStatementInspectorSpec extends Specification {
         QueryTailRecordingObserver.events.clear()
     }
 
-    void "an application started without the setting carries no statement inspector"() {
+    void "an application started without the setting carries no capture, and its connection provider is Hibernate's own"() {
         when:
         HibernateDatastore datastore = open([:])
+        runNative(datastore, 'select 1 as uncaptured')
 
         then:
+        observer(datastore) == null
+        !Proxy.isProxyClass(connectionProvider(datastore).getClass())
         statementInspector(datastore) == null
         tempDir.list().length == 0
     }
@@ -118,11 +121,36 @@ class QueryTailStatementInspectorSpec extends Specification {
         }
         List<QueryTailRecord> records = records(file)
 
-        then:
-        statementInspector(datastore) instanceof QueryTailStatementInspector
+        then: 'the session factory runs no inspector of the capture'
+        observer(datastore) != null
+        statementInspector(datastore) == null
         records.find { it.sql.contains('insert into query_tail_book') }?.dataSource == ConnectionSource.DEFAULT
         records.find { it.sql.startsWith('select') && it.sql.contains('query_tail_book') }?.dataSource == ConnectionSource.DEFAULT
         records.every { it.page == "thread:${Thread.currentThread().name}" && !it.webRequest }
+    }
+
+    void "a new session opened with capture enabled runs and is recorded, within a transaction and outside one"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        open(enabled(file))
+
+        when: 'a new session runs outside a transaction'
+        String saved = QueryTailBook.withNewSession {
+            QueryTailBook.withTransaction { new QueryTailBook(title: 'Grails').save(flush: true) }
+            QueryTailBook.findByTitle('Grails')?.title
+        }
+
+        and: 'and within one, beside the session of the transaction'
+        Long counted = QueryTailBook.withTransaction {
+            QueryTailBook.withNewSession { QueryTailBook.count() }
+        }
+
+        then:
+        saved == 'Grails'
+        counted == 1L
+        records(file).any { it.sql.contains('insert into query_tail_book') }
+        records(file).count { it.sql.startsWith('select count(') && it.sql.contains('query_tail_book') } == 1
+        !file.text.contains('Grails')
     }
 
     void "every inserted updated and deleted row is counted with batch size #batchSize and session override #sessionBatchSize"() {
@@ -316,7 +344,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         HibernateDatastore datastore = open(enabled(new File(tempDir, 'capture.log')))
 
         expect:
-        inspector(datastore).capture.syntax == H2
+        observer(datastore).capture.syntax == H2
     }
 
     void "the statements of a #dialect.class.simpleName session factory are redacted as #syntax"() {
@@ -324,26 +352,24 @@ class QueryTailStatementInspectorSpec extends Specification {
         QueryTailDialects.syntaxOf(dialect.class) == syntax
 
         where:
-        dialect                        || syntax
-        new H2Dialect()                || H2
-        new PostgreSQLDialect()        || POSTGRESQL
-        new PostgresPlusDialect()      || POSTGRESQL
-        new SpannerPostgreSQLDialect() || UNKNOWN
-        new CockroachDialect()         || COCKROACH
-        new OracleDialect()            || ORACLE
-        new DB2Dialect()               || DB2
-        new DB2iDialect()              || DB2
-        new HSQLDialect()              || HSQLDB
-        new HANADialect()              || HANA
-        new MySQLDialect()             || MYSQL
-        new MariaDBDialect()           || MYSQL
-        new SpannerDialect()           || GOOGLE_SQL
-        new SQLServerDialect()         || TRANSACT_SQL
-        new SybaseASEDialect()         || TRANSACT_SQL
-        new SybaseAnywhereDialect()    || UNKNOWN
-        new InformixDialect()          || INFORMIX
-        new QueryTailCommunityDialect()  || UNKNOWN
-        new QueryTailBacktickDialect()   || UNKNOWN
+        dialect                      || syntax
+        new H2Dialect()              || H2
+        new PostgreSQL10Dialect()    || POSTGRESQL
+        new CockroachDB201Dialect()  || COCKROACH
+        new Oracle12cDialect()       || ORACLE
+        new OracleDialect()          || ORACLE
+        new DB2Dialect()             || DB2
+        new DerbyTenSevenDialect()   || DB2
+        new HSQLDialect()            || HSQLDB
+        new HANAColumnStoreDialect() || HANA
+        new MySQL8Dialect()          || MYSQL
+        new MariaDB103Dialect()      || MYSQL
+        new SQLServer2012Dialect()   || TRANSACT_SQL
+        new SybaseASE15Dialect()     || TRANSACT_SQL
+        new SybaseAnywhereDialect()  || UNKNOWN
+        new InformixDialect()        || INFORMIX
+        new TeradataDialect()        || UNKNOWN
+        new QueryTailSpannerDialect()  || UNKNOWN
     }
 
     void "every data source of the application records to the one capture"() {
@@ -374,7 +400,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         runNative(runtime, 'select 7 as runtime_probe')
 
         then:
-        inspector(runtime).file == file
+        observer(runtime).file == file
         records(file).find { it.sql == 'select ? as runtime_probe' }?.dataSource == 'runtime'
     }
 
@@ -384,7 +410,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         HibernateDatastore first = open(enabled(file) +
                 ['dataSources.reporting': [url: 'jdbc:h2:mem:queryTailClosing;LOCK_TIMEOUT=10000']])
         runNative(first, 'select 1 as first_run')
-        List<QueryTailCapture> captures = [inspector(first).capture, inspector(first.getDatastoreForConnection('reporting')).capture]
+        List<QueryTailCapture> captures = [observer(first).capture, observer(first.getDatastoreForConnection('reporting')).capture]
         String firstRun = QueryTailRecord.parseHeader(file.readLines().first())
 
         expect:
@@ -418,7 +444,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         runNative(second, 'select 2 as second_probe')
 
         then:
-        inspector(second).capture.open
+        observer(second).capture.open
         records(file)*.sql.containsAll(['select ? as first_probe', 'select ? as second_probe'])
         file.readLines().count { QueryTailRecord.parseHeader(it) } == 1
     }
@@ -433,9 +459,8 @@ class QueryTailStatementInspectorSpec extends Specification {
         List selected = runNative(datastore, 'select 3')
 
         then:
-        QueryTailStatementInspector inspector = inspector(datastore)
-        inspector.delegate instanceof QueryTailRewritingInspector
-        inspector.dataSourceName == ConnectionSource.DEFAULT
+        statementInspector(datastore) instanceof QueryTailRewritingInspector
+        observer(datastore).dataSourceName == ConnectionSource.DEFAULT
         QueryTailRewritingInspector.seen.contains('select 3')
         selected == [3]
         records(file)*.sql.contains('select ? as rewritten')
@@ -453,23 +478,28 @@ class QueryTailStatementInspectorSpec extends Specification {
         List selected = runNative(datastore, 'select 3')
 
         then:
-        inspector(datastore).delegate instanceof QueryTailRewritingInspector
+        statementInspector(datastore) instanceof QueryTailRewritingInspector
         selected == uncapturedSelected
         QueryTailRewritingInspector.seen.count('select 3') == 2
         records(file)*.sql.contains('select ? as rewritten')
     }
 
-    void "an inspector the application configured as an instance is the delegate"() {
+    void "an inspector the application configured as an instance is the one the session factory runs"() {
         given:
         File file = new File(tempDir, 'capture.log')
         QueryTailRewritingInspector configured = new QueryTailRewritingInspector()
         HibernateDatastore datastore = open(enabled(file) + ['hibernate.session_factory.statement_inspector': configured])
 
-        expect:
-        inspector(datastore).delegate.is(configured)
+        when:
+        List selected = runNative(datastore, 'select 3')
+
+        then:
+        statementInspector(datastore).is(configured)
+        selected == [3]
+        records(file)*.sql.contains('select ? as rewritten')
     }
 
-    void "an inspector a configClass sets on the configuration keeps running and the statement it returns is recorded"() {
+    void "an inspector a configClass sets in the properties of the configuration, which has no setter for one, keeps running"() {
         given:
         File file = new File(tempDir, 'capture.log')
         HibernateDatastore datastore = open(enabled(file) + ['hibernate.configClass': QueryTailInspectedConfiguration.name])
@@ -478,7 +508,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         List selected = runNative(datastore, 'select 3')
 
         then:
-        inspector(datastore).delegate instanceof QueryTailRewritingInspector
+        statementInspector(datastore) instanceof QueryTailRewritingInspector
         QueryTailRewritingInspector.seen.contains('select 3')
         selected == [3]
         records(file)*.sql.contains('select ? as rewritten')
@@ -487,19 +517,19 @@ class QueryTailStatementInspectorSpec extends Specification {
     void "an inspector a configClass sets in the settings of the service registry keeps running and the statement it returns is recorded"() {
         given:
         File file = new File(tempDir, 'capture.log')
-        HibernateDatastore datastore = open(enabled(file) + ['hibernate.configClass': QueryTailRegistryConfiguration.name])
+        HibernateDatastore datastore = open(enabled(file) + [(CONFIG_CLASS): QueryTailRegistryConfiguration.name])
 
         when:
         List selected = runNative(datastore, 'select 3')
 
         then:
-        inspector(datastore).delegate instanceof QueryTailRewritingInspector
+        statementInspector(datastore) instanceof QueryTailRewritingInspector
         QueryTailRewritingInspector.seen.contains('select 3')
         selected == [3]
         records(file)*.sql.contains('select ? as rewritten')
     }
 
-    void "the inspector the capture runs is the one the session factory runs without it, set #place"() {
+    void "the session factory runs the inspector it runs without the capture, set #place"() {
         given:
         HibernateDatastore uncaptured = open(config)
         Class<?> runs = statementInspector(uncaptured)?.getClass()
@@ -510,30 +540,27 @@ class QueryTailStatementInspectorSpec extends Specification {
 
         then:
         runs == type
-        inspector(captured).delegate?.getClass() == type
+        statementInspector(captured)?.getClass() == type
 
         where:
-        place                                                      | config                                                                                            || type
-        'nowhere'                                                  | [:]                                                                                               || null
-        'with the property'                                        | [(INSPECTOR): QueryTailRewritingInspector.name]                                                   || QueryTailRewritingInspector
-        'in the settings of the service registry'                  | [(CONFIG_CLASS): QueryTailRegistryConfiguration.name]                                             || QueryTailRewritingInspector
-        'in the settings of the service registry and the property' | [(CONFIG_CLASS): QueryTailRegistryConfiguration.name, (INSPECTOR): QueryTailNamedInspector.name]  || QueryTailNamedInspector
-        'under a name registered with the strategy selector'       | [(CONFIG_CLASS): QueryTailAliasConfiguration.name]                                                || QueryTailRewritingInspector
-        'on the configuration'                                     | [(CONFIG_CLASS): QueryTailInspectedConfiguration.name]                                            || QueryTailRewritingInspector
-        'on the configuration and with the property'               | [(CONFIG_CLASS): QueryTailInspectedConfiguration.name, (INSPECTOR): QueryTailNamedInspector.name] || QueryTailRewritingInspector
-        'on the configuration as it builds the session factory'    | [(CONFIG_CLASS): QueryTailBuildInspectedConfiguration.name]                                       || QueryTailRewritingInspector
+        place                                                      | config                                                                                           || type
+        'nowhere'                                                  | [:]                                                                                              || null
+        'with the property'                                        | [(INSPECTOR): QueryTailRewritingInspector.name]                                                  || QueryTailRewritingInspector
+        'in the properties of the configuration'                   | [(CONFIG_CLASS): QueryTailInspectedConfiguration.name]                                           || QueryTailRewritingInspector
+        'in the settings of the service registry'                  | [(CONFIG_CLASS): QueryTailRegistryConfiguration.name]                                            || QueryTailRewritingInspector
+        'in the settings of the service registry and the property' | [(CONFIG_CLASS): QueryTailRegistryConfiguration.name, (INSPECTOR): QueryTailNamedInspector.name] || QueryTailNamedInspector
+        'under a name registered with the strategy selector'       | [(CONFIG_CLASS): QueryTailAliasConfiguration.name]                                               || QueryTailRewritingInspector
     }
 
     void "an observer the application set on the configuration #set keeps being told, and the capture still closes with the session factory"() {
         given:
         File file = new File(tempDir, 'capture.log')
         HibernateDatastore datastore = open(enabled(file) + [(CONFIG_CLASS): configuration.name])
-        QueryTailStatementInspector inspector = inspector(datastore)
+        QueryTailSessionFactoryObserver observer = observer(datastore)
         runNative(datastore, 'select 1 as first_run')
         String firstRun = QueryTailRecord.parseHeader(file.readLines().first())
 
         expect:
-        inspector.observer instanceof QueryTailRecordingObserver
         QueryTailRecordingObserver.events == ['created']
 
         when:
@@ -541,7 +568,7 @@ class QueryTailStatementInspectorSpec extends Specification {
 
         then:
         QueryTailRecordingObserver.events == ['created', 'closing', 'closed']
-        !inspector.capture.open
+        !observer.capture.open
 
         when: 'the file is captured again'
         runNative(open(enabled(file)), 'select 2 as second_run')
@@ -557,7 +584,7 @@ class QueryTailStatementInspectorSpec extends Specification {
         'as it builds the session factory' | QueryTailBuildObservedConfiguration
     }
 
-    void "a configured inspector that cannot be loaded fails the configuration, as it does without the capture, and opens no capture: [#configured]"() {
+    void "a configured inspector that cannot be loaded or is not one fails the configuration as it does without the capture, and opens no capture: [#configured]"() {
         given:
         File file = new File(tempDir, 'capture.log')
 
@@ -565,34 +592,19 @@ class QueryTailStatementInspectorSpec extends Specification {
         open([(INSPECTOR): configured])
 
         then:
-        thrown(Exception)
+        Exception uncaptured = thrown()
 
         when:
         open(enabled(file) + [(INSPECTOR): configured])
 
         then:
-        Exception e = thrown()
-        messages(e).any { it.contains("Cannot load the statement inspector [${configured}]") }
+        Exception captured = thrown()
+        rootCause(captured).getClass() == rootCause(uncaptured).getClass()
+        rootCause(captured).message == rootCause(uncaptured).message
         !file.exists()
 
         where:
-        configured << ['does.not.Exist', '', " ${QueryTailRewritingInspector.name} "]
-    }
-
-    void "a configured class that is not a statement inspector fails the configuration and opens no capture"() {
-        given:
-        File file = new File(tempDir, 'capture.log')
-
-        when:
-        open(enabled(file) + [(INSPECTOR): configured])
-
-        then:
-        Exception e = thrown()
-        messages(e).any { it.contains("The statement inspector [${QueryTailBook.name}] configured with ${INSPECTOR} does not implement") }
-        !file.exists()
-
-        where:
-        configured << [QueryTailBook.name, QueryTailBook]
+        configured << ['does.not.Exist', '', " ${QueryTailRewritingInspector.name} ", QueryTailBook.name, QueryTailBook]
     }
 
     private HibernateDatastore open(Map config, Class... entities) {
@@ -616,8 +628,13 @@ class QueryTailStatementInspectorSpec extends Specification {
         ((SessionFactoryImplementor) datastore.sessionFactory).sessionFactoryOptions.statementInspector
     }
 
-    private static QueryTailStatementInspector inspector(HibernateDatastore datastore) {
-        statementInspector(datastore) as QueryTailStatementInspector
+    private static QueryTailSessionFactoryObserver observer(HibernateDatastore datastore) {
+        ((SessionFactoryImplementor) datastore.sessionFactory).sessionFactoryOptions.sessionFactoryObservers
+                .find { it instanceof QueryTailSessionFactoryObserver } as QueryTailSessionFactoryObserver
+    }
+
+    private static ConnectionProvider connectionProvider(HibernateDatastore datastore) {
+        ((SessionFactoryImplementor) datastore.sessionFactory).serviceRegistry.getService(ConnectionProvider)
     }
 
     private static List runNative(HibernateDatastore datastore, String sql) {
@@ -634,12 +651,12 @@ class QueryTailStatementInspectorSpec extends Specification {
         file.readLines().collect { QueryTailRecord.parse(it) }.findAll { it != null }
     }
 
-    private static List<String> messages(Throwable e) {
-        List<String> messages = []
-        for (Throwable t = e; t != null && !messages.contains(String.valueOf(t.message)); t = t.cause) {
-            messages << String.valueOf(t.message)
+    private static Throwable rootCause(Throwable e) {
+        Throwable root = e
+        while (root.cause != null && !root.cause.is(root)) {
+            root = root.cause
         }
-        messages
+        root
     }
 }
 
@@ -661,7 +678,7 @@ class QueryTailBatchBook {
     }
 }
 
-class QueryTailLifecycleProvider extends DataSourceConnectionProvider implements ServiceRegistryAwareService, Startable {
+class QueryTailLifecycleProvider extends DatasourceConnectionProviderImpl implements ServiceRegistryAwareService, Startable {
 
     final List<String> events = []
     final Set<Connection> borrowed = Collections.newSetFromMap(new IdentityHashMap<Connection, Boolean>())
@@ -731,13 +748,6 @@ class QueryTailNamedInspector implements StatementInspector {
     }
 }
 
-class QueryTailInspectedConfiguration extends HibernateMappingContextConfiguration {
-
-    QueryTailInspectedConfiguration() {
-        setStatementInspector(new QueryTailRewritingInspector())
-    }
-}
-
 class QueryTailRegistryConfiguration extends HibernateMappingContextConfiguration {
 
     @Override
@@ -747,12 +757,10 @@ class QueryTailRegistryConfiguration extends HibernateMappingContextConfiguratio
     }
 }
 
-class QueryTailBuildInspectedConfiguration extends HibernateMappingContextConfiguration {
+class QueryTailInspectedConfiguration extends HibernateMappingContextConfiguration {
 
-    @Override
-    SessionFactory buildSessionFactory() {
-        setStatementInspector(new QueryTailRewritingInspector())
-        super.buildSessionFactory()
+    QueryTailInspectedConfiguration() {
+        properties.put('hibernate.session_factory.statement_inspector', new QueryTailRewritingInspector())
     }
 }
 
@@ -808,16 +816,10 @@ class QueryTailRecordingObserver implements SessionFactoryObserver {
 }
 
 /**
- * A dialect GORM does not know, such as SQLite's or Informix's, which quote identifiers with double quotes.
+ * A dialect that is not Hibernate's, such as the Cloud Spanner dialect for Hibernate 5, which quotes
+ * identifiers with backticks: its GoogleSQL strings can be triple-quoted, which is not read as MySQL.
  */
-class QueryTailCommunityDialect extends Dialect {
-}
-
-/**
- * A dialect GORM does not know that quotes identifiers with backticks, as a community dialect for
- * BigQuery would: its database may read strings as MySQL does, or as GoogleSQL does.
- */
-class QueryTailBacktickDialect extends Dialect {
+class QueryTailSpannerDialect extends Dialect {
 
     @Override
     char openQuote() {

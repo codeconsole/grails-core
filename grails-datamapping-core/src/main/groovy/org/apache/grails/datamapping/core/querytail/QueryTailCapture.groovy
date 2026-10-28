@@ -80,8 +80,8 @@ import org.springframework.util.ClassUtils
  *
  * <p>A statement is recorded without its values: {@link QueryTailRedactor} replaces its literals and
  * drops its comments before it is written, in the {@link #syntax} of the database it runs on. A
- * capture keeps what the {@link #REMEMBERED_REDACTIONS} statements it recorded last were redacted to,
- * so that a statement run again, as the statements an application generates with parameters for its
+ * capture keeps what the {@link #REMEMBERED_REDACTIONS} statements it recorded most recently were
+ * redacted to, letting go of the one recorded least recently to keep another, so that a statement run again, as the statements an application generates with parameters for its
  * values are, is not read again on the thread that runs it, which a syntax that reads it every way it
  * may be read, as that of a database that is not known does, would read it many times. A statement
  * that is not text, such as a MongoDB command, or that is built without values, as the operations of
@@ -127,9 +127,9 @@ class QueryTailCapture implements Closeable {
     /** How often a capture waiting for another JVM to start its capture asks again. */
     private static final long STARTING_POLL_MILLIS = 10L
 
-    /** How many statements a capture keeps the redaction of, those it recorded last. */
+    /** How many statements a capture keeps the redaction of, those it recorded most recently. */
     @PackageScope
-    static final int REMEMBERED_REDACTIONS = 256
+    static final int REMEMBERED_REDACTIONS = 1024
 
     /** How long a statement may be for a capture to keep its redaction, so that what it keeps stays small. */
     @PackageScope
@@ -156,8 +156,16 @@ class QueryTailCapture implements Closeable {
     private final CaptureFile captureFile
     private final AtomicBoolean closed = new AtomicBoolean()
 
-    /** The redaction of each statement recorded last, by the statement, with the syntax it was redacted in. */
-    private final Map<String, Redaction> redactions = new ConcurrentHashMap<>()
+    /**
+     * The redaction of each statement recorded most recently, by the statement, with the syntax it was redacted in, in
+     * the order the statements were last recorded; read and changed only while holding it.
+     */
+    private final Map<String, Redaction> redactions = new LinkedHashMap<String, Redaction>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Redaction> eldest) {
+            size() > QueryTailCapture.REMEMBERED_REDACTIONS
+        }
+    }
     private final AtomicBoolean reportedLeftOut = new AtomicBoolean()
 
     private QueryTailCapture(File file, CaptureFile captureFile) {
@@ -358,17 +366,22 @@ class QueryTailCapture implements Closeable {
      */
     private String redact(String sql) {
         QueryTailSyntax current = syntax
-        Redaction remembered = sql == null ? null : redactions.get(sql)
-        if (remembered != null && remembered.syntax.is(current)) {
-            return remembered.redacted
-        }
-        String redacted = QueryTailRedactor.redact(sql, current)
-        if (sql != null && sql.length() <= REMEMBERED_LENGTH) {
-            if (redactions.size() >= REMEMBERED_REDACTIONS) {
-                // let go of them all, rather than track which was recorded last, as a statement is read in a moment
-                redactions.clear()
+        boolean remembers = sql != null && sql.length() <= REMEMBERED_LENGTH
+        if (remembers) {
+            Redaction remembered
+            synchronized (redactions) {
+                remembered = redactions.get(sql)
             }
-            redactions.put(sql, new Redaction(current, redacted))
+            if (remembered != null && remembered.syntax.is(current)) {
+                return remembered.redacted
+            }
+        }
+        // read outside the lock, so that a statement read for the first time holds up no other thread
+        String redacted = QueryTailRedactor.redact(sql, current)
+        if (remembers) {
+            synchronized (redactions) {
+                redactions.put(sql, new Redaction(current, redacted))
+            }
         }
         redacted
     }

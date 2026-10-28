@@ -21,7 +21,7 @@ package org.grails.orm.hibernate.cfg
 import grails.gorm.annotation.Entity
 import grails.gorm.hibernate.HibernateEntity
 import grails.gorm.tests.HibernateGormDatastoreSpec
-import org.apache.grails.data.hibernate7.core.querytail.QueryTailStatementInspector
+import org.apache.grails.data.hibernate7.core.querytail.QueryTailSessionFactoryObserver
 import org.apache.grails.datamapping.core.querytail.QueryTailRecord
 import org.grails.datastore.gorm.jdbc.connections.DataSourceConnectionSourceFactory
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings
@@ -62,7 +62,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         HmccRecordingInspector.seen.clear()
     }
 
-    def "setQueryTailFile gives a session factory a capture of its own in front of the inspector and observer the application set, which the configuration holds again once it is built"() {
+    def "setQueryTailFile gives a session factory a capture of its own in front of the observer the application set, which the configuration holds again once it is built, and leaves its inspector alone"() {
         given:
         File file = new File(tempDir, 'capture.log')
         HibernateConnectionSourceFactory factory = new HibernateConnectionSourceFactory(HmccTestBook, HmccTestAuthor)
@@ -76,14 +76,12 @@ class HibernateMappingContextConfigurationSpec extends Specification {
 
         when:
         SessionFactoryImplementor sessionFactory = configuration.buildSessionFactory() as SessionFactoryImplementor
-        StatementInspector capturing = sessionFactory.sessionFactoryOptions.statementInspector
+        QueryTailSessionFactoryObserver capturing = capturingObserver(sessionFactory)
         runNative(sessionFactory, 'select 1 as probed')
 
-        then: 'the session factory runs the capture, which runs the inspector and tells the observer the application set'
-        capturing instanceof QueryTailStatementInspector
-        ((QueryTailStatementInspector) capturing).delegate.is(inspector)
-        ((QueryTailStatementInspector) capturing).observer.is(observer)
-        ((QueryTailStatementInspector) capturing).capture.open
+        then: 'the session factory runs the inspector the application set, and the capture tells the observer it set'
+        sessionFactory.sessionFactoryOptions.statementInspector.is(inspector)
+        capturing.capture.open
         HmccRecordingInspector.seen.contains('select 1 as probed')
         HmccRecordingObserver.events == ['created']
         file.readLines().collect { QueryTailRecord.parse(it) }.findAll()*.sql.count('select ? as probed') == 1
@@ -96,7 +94,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         sessionFactory.close()
 
         then: 'the capture closed with the session factory'
-        !((QueryTailStatementInspector) capturing).capture.open
+        !capturing.capture.open
         HmccRecordingObserver.events == ['created', 'closing', 'closed']
 
         when: 'the configuration builds another without a capture file'
@@ -105,6 +103,7 @@ class HibernateMappingContextConfigurationSpec extends Specification {
 
         then: 'it runs what the application set, and nothing else'
         uncaptured.sessionFactoryOptions.statementInspector.is(inspector)
+        capturingObserver(uncaptured) == null
 
         cleanup:
         uncaptured?.close()
@@ -122,11 +121,10 @@ class HibernateMappingContextConfigurationSpec extends Specification {
 
         when:
         SessionFactoryImplementor sessionFactory = configuration.buildSessionFactory() as SessionFactoryImplementor
-        QueryTailStatementInspector capturing = sessionFactory.sessionFactoryOptions.statementInspector as QueryTailStatementInspector
+        QueryTailSessionFactoryObserver capturing = capturingObserver(sessionFactory)
 
         then:
         HmccRecordingObserver.events == ['created']
-        capturing.observer instanceof HmccRecordingObserver
         capturing.capture.open
 
         when:
@@ -702,6 +700,11 @@ class HibernateMappingContextConfigurationSpec extends Specification {
         
         expect:
         config.getProperties().get(AvailableSettings.CLASSLOADERS).is(cl)
+    }
+
+    private static QueryTailSessionFactoryObserver capturingObserver(SessionFactoryImplementor sessionFactory) {
+        sessionFactory.sessionFactoryOptions.sessionFactoryObservers
+                .find { it instanceof QueryTailSessionFactoryObserver } as QueryTailSessionFactoryObserver
     }
 
     /**

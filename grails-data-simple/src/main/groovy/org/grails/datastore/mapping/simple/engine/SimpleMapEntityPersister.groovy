@@ -449,16 +449,6 @@ class SimpleMapEntityPersister extends AbstractKeyValueEntityPersister<Map, Obje
      */
     @Override
     protected List<Object> retrieveAllEntities(PersistentEntity persistentEntity, Serializable[] keys) {
-        SimpleMapQueryTail queryTail = simpleMapDatastore.queryTail
-        if (queryTail == null) {
-            return super.retrieveAllEntities(persistentEntity, keys)
-        }
-        queryTail.enterBatch({ SimpleMapStatements.lookupAll(persistentEntity, family) } as Supplier<String>)
-        try {
-            return super.retrieveAllEntities(persistentEntity, keys)
-        }
-        finally {
-            SimpleMapQueryTail.exit()
-        }
+        retrieveAllEntities(persistentEntity, Arrays.asList(keys) as Iterable<Serializable>)
     }
 }

@@ -28,6 +28,7 @@ import org.neo4j.driver.Session
 import org.neo4j.driver.SessionConfig
 
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
+import org.apache.grails.datamapping.core.querytail.QueryTailRecorder
 import org.apache.grails.datamapping.core.querytail.QueryTailSyntax
 import org.apache.grails.datastore.core.querytail.QueryTailSettings
 
@@ -36,8 +37,9 @@ import org.apache.grails.datastore.core.querytail.QueryTailSettings
  * connection source built, with every session it opens recording the Cypher statements run on it,
  * in a transaction or outside one, to the {@link QueryTailCapture} of the application before they are
  * sent. A statement is recorded without its values, in the syntax of Cypher, and its parameters are
- * never recorded; the statement runs unchanged. The capture opens with the driver and closes when
- * the driver closes, so a datastore that closes leaves nothing open.
+ * never recorded; the statement runs unchanged. The capture opens with the first statement and
+ * closes when the driver closes, so a datastore that closes leaves nothing open, and one that fails
+ * to start before it ran a statement leaves the capture file as it found it.
  *
  * <p>Statements run through the driver's asynchronous and reactive sessions are not recorded; GORM
  * runs none.</p>
@@ -59,10 +61,11 @@ class QueryTailDriver implements Driver {
     @Delegate(deprecated = true)
     private final Driver delegate
 
-    private final QueryTailCapture capture
+    private final QueryTailRecorder recorder
 
     /**
-     * Opens the capture, which has stopped at once when its file cannot be created.
+     * Records nothing until the first statement opens the capture, which has stopped at once when its file cannot be
+     * created.
      *
      * @param dataSourceName the connection source the driver belongs to
      * @param file the capture file statements are recorded to
@@ -72,8 +75,7 @@ class QueryTailDriver implements Driver {
         this.dataSourceName = dataSourceName
         this.file = file
         this.delegate = delegate
-        this.capture = QueryTailCapture.open(file)
-        capture.syntax = QueryTailSyntax.CYPHER
+        this.recorder = new QueryTailRecorder(dataSourceName, file, QueryTailSyntax.CYPHER)
     }
 
     /**
@@ -102,10 +104,10 @@ class QueryTailDriver implements Driver {
     }
 
     /**
-     * @return where statements are recorded
+     * @return where statements are recorded, or null before the first statement
      */
     QueryTailCapture getCapture() {
-        capture
+        recorder.capture
     }
 
     @Override
@@ -127,13 +129,13 @@ class QueryTailDriver implements Driver {
             delegate.close()
         }
         finally {
-            capture.close()
+            recorder.close()
         }
     }
 
     @Override
     CompletionStage<Void> closeAsync() {
-        BiConsumer<Void, Throwable> closeCapture = { Void nothing, Throwable failure -> capture.close() }
+        BiConsumer<Void, Throwable> closeCapture = { Void nothing, Throwable failure -> recorder.close() }
         delegate.closeAsync().whenComplete(closeCapture)
     }
 
@@ -142,6 +144,6 @@ class QueryTailDriver implements Driver {
      */
     @PackageScope
     void record(String cypher) {
-        capture.record(dataSourceName, cypher)
+        recorder.record(cypher)
     }
 }

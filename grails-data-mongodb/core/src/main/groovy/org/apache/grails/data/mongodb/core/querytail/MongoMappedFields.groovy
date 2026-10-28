@@ -128,38 +128,17 @@ class MongoMappedFields {
         false
     }
 
+    /**
+     * @return whether the mapping of the entity knows the path as a field: a property it declares, or the identity or
+     * the class of the document, or of a document embedded in it, which every document has whatever its mapping says
+     */
     private boolean resolves(PersistentEntity entity, List<String> path) {
-        PersistentEntity current = entity
         int last = path.size() - 1
-        for (int i = 0; i <= last; i++) {
-            String segment = path[i]
-            if (isIndex(segment)) {
-                continue
-            }
-            if (segment == MongoConstants.MONGO_ID_FIELD || segment == MongoConstants.MONGO_CLASS_FIELD) {
-                return i == last
-            }
-            PersistentProperty property = propertyOf(current, segment)
-            if (property == null) {
-                return false
-            }
-            if (i == last) {
-                return true
-            }
-            if (property instanceof Embedded) {
-                current = ((Embedded) property).associatedEntity
-            }
-            else if (property instanceof EmbeddedCollection) {
-                current = ((EmbeddedCollection) property).associatedEntity
-            }
-            else {
-                return false
-            }
-            if (current == null) {
-                return false
-            }
+        if (isDocumentField(path[last])) {
+            List<String> document = path.subList(0, last)
+            return document.every { String segment -> isIndex(segment) } || embeddedIn(propertyAt(entity, document)) != null
         }
-        true
+        propertyAt(entity, path) != null
     }
 
     /**
@@ -196,7 +175,12 @@ class MongoMappedFields {
         element != null && (element.isArray() || Collection.isAssignableFrom(element))
     }
 
-    /** @return the property the path ends at, or null when the mapping does not know the path as a field */
+    /**
+     * Walks a path through the mapping of an entity, stepping into the entities embedded in it and over the indexes of a
+     * list.
+     *
+     * @return the property the path ends at, or null when the mapping does not know the path as a property
+     */
     private PersistentProperty propertyAt(PersistentEntity entity, List<String> path) {
         PersistentEntity current = entity
         PersistentProperty property = null
@@ -206,27 +190,35 @@ class MongoMappedFields {
             if (isIndex(segment)) {
                 continue
             }
-            if (segment == MongoConstants.MONGO_ID_FIELD || segment == MongoConstants.MONGO_CLASS_FIELD) {
+            if (isDocumentField(segment)) {
                 return null
             }
             property = propertyOf(current, segment)
             if (property == null || i == last) {
                 return property
             }
-            if (property instanceof Embedded) {
-                current = ((Embedded) property).associatedEntity
-            }
-            else if (property instanceof EmbeddedCollection) {
-                current = ((EmbeddedCollection) property).associatedEntity
-            }
-            else {
-                return null
-            }
+            current = embeddedIn(property)
             if (current == null) {
                 return null
             }
         }
         property
+    }
+
+    /** @return the entity a property embeds, one document or a collection of them, or null when it embeds none */
+    private static PersistentEntity embeddedIn(PersistentProperty property) {
+        if (property instanceof Embedded) {
+            return ((Embedded) property).associatedEntity
+        }
+        if (property instanceof EmbeddedCollection) {
+            return ((EmbeddedCollection) property).associatedEntity
+        }
+        null
+    }
+
+    /** @return whether a field is one every document has, its identity or its class */
+    private static boolean isDocumentField(String field) {
+        field == MongoConstants.MONGO_ID_FIELD || field == MongoConstants.MONGO_CLASS_FIELD
     }
 
     private PersistentProperty propertyOf(PersistentEntity entity, String field) {
@@ -242,12 +234,7 @@ class MongoMappedFields {
         }
         gathered.put(entity, fieldsOf(entity))
         for (PersistentProperty property in entity.persistentProperties) {
-            if (property instanceof Embedded) {
-                gatherFields(((Embedded) property).associatedEntity, gathered)
-            }
-            else if (property instanceof EmbeddedCollection) {
-                gatherFields(((EmbeddedCollection) property).associatedEntity, gathered)
-            }
+            gatherFields(embeddedIn(property), gathered)
         }
     }
 

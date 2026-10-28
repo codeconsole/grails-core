@@ -300,7 +300,7 @@ class SimpleMapQueryTailSpec extends Specification {
         listed == ["select * from ${EDITION}".toString()]
     }
 
-    void "entries read by their keys together are one read, whether getAll or a lazy collection reads them"() {
+    void "entries read by their keys together are one read, whether getAll, an array of keys or a lazy collection reads them"() {
         given:
         File file = new File(tempDir, 'capture.log')
         SimpleMapDatastore datastore = open(enabled(file))
@@ -317,6 +317,11 @@ class SimpleMapQueryTailSpec extends Specification {
                 QueryTailShelfBook.getAll(ids.tail())
             }
         }
+        List<String> arrayed = recorded(file) {
+            inSession(datastore) {
+                datastore.currentSession.getPersister(QueryTailShelfBook).retrieveAll(ids.tail() as Serializable[])
+            }
+        }
         List<String> loaded = recorded(file) {
             inSession(datastore) {
                 QueryTailShelfAuthor.get(ids.head()).books*.title
@@ -325,6 +330,7 @@ class SimpleMapQueryTailSpec extends Specification {
 
         then:
         fetched == ["select * from ${BOOK} where id in (?)".toString()]
+        arrayed == fetched
         loaded == ["select * from ${AUTHOR} where id = ?".toString(), "select * from ${BOOK} where id in (?)".toString()]
     }
 

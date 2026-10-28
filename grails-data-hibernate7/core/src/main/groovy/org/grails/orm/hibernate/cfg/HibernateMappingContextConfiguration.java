@@ -55,7 +55,6 @@ import org.hibernate.cfg.Environment;
 import org.hibernate.cfg.JdbcSettings;
 import org.hibernate.context.spi.CurrentSessionContext;
 import org.hibernate.internal.util.config.ConfigurationHelper;
-import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.hibernate.service.ServiceRegistry;
 
 import org.springframework.beans.BeansException;
@@ -72,7 +71,7 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
 import org.springframework.util.ClassUtils;
 
-import org.apache.grails.data.hibernate7.core.querytail.QueryTailStatementInspector;
+import org.apache.grails.data.hibernate7.core.querytail.QueryTailSessionFactoryObserver;
 import org.grails.datastore.gorm.GormEntity;
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
@@ -359,12 +358,11 @@ public class HibernateMappingContextConfiguration extends Configuration
         }
 
         standardServiceRegistryBuilder.addService(org.hibernate.bytecode.spi.BytecodeProvider.class, bytecodeProvider);
-        StatementInspector configuredInspector = getStatementInspector();
         SessionFactoryObserver configuredObserver = getSessionFactoryObserver();
         try {
             if (queryTailFile != null) {
-                QueryTailStatementInspector queryTail = new QueryTailStatementInspector(dataSourceName, queryTailFile);
-                queryTail.wrap(standardServiceRegistryBuilder, this);
+                QueryTailSessionFactoryObserver queryTail = new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile);
+                queryTail.recordConnections(standardServiceRegistryBuilder);
                 queryTail.observe(this);
             }
 
@@ -381,8 +379,7 @@ public class HibernateMappingContextConfiguration extends Configuration
             this.serviceRegistry = ssr;
         }
         finally {
-            // the next session factory is given an inspector of its own in front of what the application set
-            setStatementInspector(configuredInspector);
+            // the next session factory is given an observer of its own in front of the one the application set
             setSessionFactoryObserver(configuredObserver);
         }
 
@@ -444,11 +441,11 @@ public class HibernateMappingContextConfiguration extends Configuration
 
     /**
      * Sets the file query-tail capture records the statements of the session factories this
-     * configuration builds to. Each session factory is given an inspector, and a capture, of its own,
-     * which takes the place of the statement inspector the session factory would run, wherever the
-     * application configured that one, and runs it, and of the observer the application set, which it
-     * keeps telling. Once the session factory is built, the configuration holds what the application
-     * set again, so that the next session factory is given its own as well.
+     * configuration builds to. Each session factory is given an observer, and a capture, of its own,
+     * which records the statements run on the connections of its service registry and takes the
+     * place of the observer the application set, which it keeps telling. Once the session factory is
+     * built, the configuration holds what the application set again, so that the next session
+     * factory is given its own as well.
      *
      * @param queryTailFile the capture file, or null to record nothing
      */

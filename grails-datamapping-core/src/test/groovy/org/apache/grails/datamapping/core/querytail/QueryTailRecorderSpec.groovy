@@ -102,21 +102,19 @@ class QueryTailRecorderSpec extends Specification {
         records(file)*.sql == ['select ?']
     }
 
-    void "a statement is recorded as the inspector the application configured returned it, which is the statement that runs"() {
+    void "a recorder given the syntax of its database redacts the statement that opens its capture in that syntax"() {
         given:
         File file = new File(tempDir, 'capture.log')
-        QueryTailRecorder recorder = recorder('DEFAULT', file)
+        QueryTailRecorder recorder = new QueryTailRecorder('DEFAULT', file, QueryTailSyntax.CYPHER)
+        recorders << recorder
 
-        when: 'the inspector rewrites one statement, returns none for another, and empties a third'
-        String rewritten = recorder.recordInspected('select title from book', 'select title from book where active = 1')
-        String unchanged = recorder.recordInspected('select 2', null)
-        String emptied = recorder.recordInspected('select 3', '')
+        when: 'the first statement opens the capture'
+        recorder.record("RETURN 'example-secret' // api-key=abc123")
 
-        then: 'what runs is what is recorded: the statement the inspector returned, else the statement itself'
-        rewritten == 'select title from book where active = 1'
-        unchanged == 'select 2'
-        emptied == ''
-        records(file)*.sql == ['select title from book where active = ?', 'select ?', null]
+        then:
+        recorder.capture.syntax.is(QueryTailSyntax.CYPHER)
+        records(file)*.sql == ['RETURN ?']
+        !file.text.contains('example-secret')
     }
 
     void "opening the capture in the syntax of its database redacts the statements after it in that syntax"() {

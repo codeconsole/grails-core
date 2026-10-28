@@ -73,7 +73,7 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
 import org.springframework.util.ClassUtils;
 
-import org.apache.grails.data.hibernate5.core.querytail.QueryTailStatementInspector;
+import org.apache.grails.data.hibernate5.core.querytail.QueryTailSessionFactoryObserver;
 import org.grails.datastore.gorm.GormEntity;
 import org.grails.datastore.gorm.jdbc.connections.DataSourceSettings;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
@@ -318,13 +318,13 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
                     new GrailsBytecodeProvider().getProxyFactoryFactory());
 
             // Only now, after a subclass's registry builder may have set an observer of its own, which these tell first.
-            if (queryTailFile != null) {
-                QueryTailStatementInspector queryTail = new QueryTailStatementInspector(dataSourceName, queryTailFile);
-                queryTail.wrap(standardServiceRegistryBuilder);
-                queryTail.observe(this);
-            }
             ServiceRegistryClosingObserver closing = new ServiceRegistryClosingObserver(getSessionFactoryObserver());
             setSessionFactoryObserver(closing);
+            if (queryTailFile != null) {
+                QueryTailSessionFactoryObserver queryTail = new QueryTailSessionFactoryObserver(dataSourceName, queryTailFile);
+                queryTail.recordConnections(standardServiceRegistryBuilder);
+                queryTail.observe(this);
+            }
 
             StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
             closing.registry = serviceRegistry;
@@ -412,11 +412,11 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
 
     /**
      * Sets the file query-tail capture records the statements of the session factories this
-     * configuration builds to. Each session factory is given an inspector, and a capture, of its own,
-     * which takes the place of the statement inspector the session factory would run, wherever the
-     * application configured that one, and runs it, and of the observer the application set, which it
-     * keeps telling. Once the session factory is built, the configuration holds what the application
-     * set again, so that the next session factory is given its own as well.
+     * configuration builds to. Each session factory is given an observer, and a capture, of its own,
+     * which records the statements run on the connections of its service registry and takes the
+     * place of the observer the application set, which it keeps telling. Once the session factory is
+     * built, the configuration holds what the application set again, so that the next session
+     * factory is given its own as well.
      *
      * @param queryTailFile the capture file, or null to record nothing
      */
@@ -428,7 +428,7 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
      * Destroys the service registry of a session factory once it has closed, so that a session factory
      * closed while another of the configuration runs leaves the registry of the other alone. The
      * observer the configuration holds once the registry builder is created, the one the application
-     * set, even as the build began, or the query-tail capture in front of it, is told first.
+     * set, even as the build began, is told first; a query-tail capture observes in front of both.
      */
     private static class ServiceRegistryClosingObserver implements SessionFactoryObserver {
 
