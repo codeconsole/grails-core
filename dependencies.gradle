@@ -23,12 +23,14 @@
 ext {
     gradleBomDependencyVersions = [
             'ant.version'                   : '1.10.18',
-            'asm.version'                   : '9.10.1',
+            // Security: 9.11 fixes the crafted class file denial of service CVEs (CVE-2026-110257 to CVE-2026-110263,
+            // CVE-2026-110270 and CVE-2026-110591); 9.11.1 fixes a regression introduced in 9.11.
+            'asm.version'                   : '9.11.1',
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.1',
-            'asset-pipeline-gradle.version' : '5.0.35',
+            'asset-pipeline-gradle.version' : '5.0.36',
             'bnd.version'                   : '7.1.0',
-            'byte-buddy.version'            : '1.18.14',
+            'byte-buddy.version'            : '1.18.16',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-spock.version'          : '2.3-groovy-3.0',
@@ -56,6 +58,10 @@ ext {
             'ant'                   : "org.apache.ant:ant:${gradleBomDependencyVersions['ant.version']}",
             'ant-junit'             : "org.apache.ant:ant-junit:${gradleBomDependencyVersions['ant.version']}",
             'asm'                   : "org.ow2.asm:asm:${gradleBomDependencyVersions['asm.version']}",
+            // Keep the ASM family aligned - micronaut-inject-groovy pulls asm-commons 9.8 otherwise
+            'asm-analysis'          : "org.ow2.asm:asm-analysis:${gradleBomDependencyVersions['asm.version']}",
+            'asm-commons'           : "org.ow2.asm:asm-commons:${gradleBomDependencyVersions['asm.version']}",
+            'asm-tree'              : "org.ow2.asm:asm-tree:${gradleBomDependencyVersions['asm.version']}",
             'asm-util'              : "org.ow2.asm:asm-util:${gradleBomDependencyVersions['asm.version']}",
             'asciidoctor-gradle-jvm': "org.asciidoctor:asciidoctor-gradle-jvm:${gradleBomDependencyVersions['asciidoctor-gradle-jvm.version']}",
             'asciidoctorj'          : "org.asciidoctor:asciidoctorj:${gradleBomDependencyVersions['asciidoctorj.version']}",
@@ -81,30 +87,33 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.0.35',
+            'asset-pipeline-bom.version'    : '5.0.36',
             'cas-client-core.version'       : '4.0.4',
-            'bootstrap-icons.version'       : '1.13.1',
+            'bootstrap-icons.version'       : '1.13.2',
             'bootstrap.version'             : '5.3.8',
             // Align with pac4j-oauth 6.5.x so the BOM manages the transitive version too.
-            'commons-codec.version'         : '1.22.0',
+            'commons-codec.version'         : '1.22.1',
             'commons-compress.version'      : '1.28.0',
             'commons-lang3.version'         : '3.20.0',
             'geb-spock.version'             : '8.0.1',
             'graphql-java.version'          : '24.4',
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '4.0.33',
-            'guava.version'                 : '33.6.0-jre',
+            // Security: 33.7.2 fixes CVE-2026-102554, unbounded allocation when deserializing CompactHashMap,
+            // CompactHashSet and MapMakerInternalMap.
+            'guava.version'                 : '33.7.2-jre',
             'h2.version'                    : '2.4.240',
             // Security: overrides spring-boot-dependencies (5.5.2). 5.6.4 fixes CVE-2026-64607, a connection leak in
-            // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.4 still targets
-            // httpcore5 5.4.3, so it needs no companion httpcore5 change.
-            'httpclient5.version'           : '5.6.4',
+            // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.5 targets
+            // httpcore5 5.4.4, which httpcore5.version already pins.
+            'httpclient5.version'           : '5.6.5',
             // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 and later fix CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
             'httpcore5.version'             : '5.4.4',
-            // Security: pac4j 6.5.x pulls 2.22.1. 2.22.3 fixes CVE-2026-89425, CVE-2026-89407,
-            // CVE-2026-91777 and CVE-2026-91776, and retains the fixes for CVE-2026-19032,
+            // Security: pac4j 6.5.x pulls 2.22.1. 2.22.4 fixes CVE-2026-110879 (databind type id validation) and
+            // the Avro, CBOR, Protobuf and Smile CVEs listed in its release notes, and retains the 2.22.3 fixes for
+            // CVE-2026-89425, CVE-2026-89407, CVE-2026-91777 and CVE-2026-91776 and the fixes for CVE-2026-19032,
             // CVE-2026-68497 and CVE-2026-83557 on the 2.22.x line.
-            'jackson.version'               : '2.22.3',
+            'jackson.version'               : '2.22.4',
             // Security: overrides spring-boot-dependencies (1.5.34). 1.5.38 is the newest release of the 1.5.x line
             // and matches what Spring Boot 4.1.x manages. See the CVE-2026-19880 and CVE-2026-104721 notes in
             // VulnerabilityScanPlugin for the logback advisories this version does not clear.
@@ -117,6 +126,10 @@ ext {
             // PackagerResolver where '../' in module coordinates escapes the configured buildRoot.
             'ivy.version'                   : '2.6.0',
             'hibernate-groovy-proxy.version': '1.1',
+            // Security: overrides spring-boot-dependencies (8.0.3.Final). 8.0.6.Final fixes CVE-2026-93879 (HV-2256)
+            // by escaping message parameters by default, so a {duplicates} value is no longer evaluated as
+            // Expression Language.
+            'hibernate-validator.version'   : '8.0.6.Final',
             'jakarta-servlet-api.version'   : '6.1.0',
             'jakarta-validation-api.version': '3.1.1',
             'junit.version'                 : '5.13.4',
@@ -124,10 +137,14 @@ ext {
             // Security: overrides spring-boot-dependencies (1.15.12). 1.16.7 is the oldest open source release that
             // fixes CVE-2026-59295 (DoS in the Apache HttpAsyncClient instrumentation) and CVE-2026-59296 (metric
             // name/tag injection via unsanitised newlines); the 1.15.13 patch is Enterprise Support only.
-            'micrometer.version'            : '1.16.7',
+            'micrometer.version'            : '1.16.8',
             // Security: 5.11.1 fixes CVE-2026-88033 (GridFS query-operator injection in file identifiers) and
             // retains the 5.9.2 fix for CVE-2026-18710 (SOCKS5 proxy credentials exposed in logs).
             'mongodb.version'               : '5.11.1',
+            // Security: overrides spring-boot-dependencies (4.1.135.Final), which no open source Spring Boot 3.5.x
+            // release will move. 4.1.137.Final and later fix CVE-2026-75595 (SNI routing bypass via a fragmented
+            // TLS ClientHello) and the SPDY, HTTP/2 and CORS advisories against 4.1.135.Final.
+            'netty.version'                 : '4.1.139.Final',
             'nimbus-jose-jwt.version'       : '10.5',
             'opentelemetry.version'         : '1.62.0',
             'plexus-utils.version'          : '4.0.3',
@@ -139,6 +156,9 @@ ext {
             // Security: 6.5.6 fixes CVE-2026-82463 (reversed profile type check) and CVE-2026-82464 (logout open
             // redirect); 6.5.9 includes the follow-up logout redirect and direct-client CSRF fixes on the same line.
             'pac4j.version'                 : '6.5.9',
+            // Security: overrides spring-boot-dependencies (42.7.11). 42.7.12 and later fix CVE-2026-54291, a silent
+            // channel-binding authentication downgrade. Forge's PostgreSQL feature adds the driver without a version.
+            'postgresql.version'            : '42.7.14',
             'rxjava.version'                : '1.3.8',
             'rxjava2.version'               : '2.2.21',
             'rxjava3.version'               : '3.1.12',
@@ -148,10 +168,11 @@ ext {
             'sitemesh.version'              : '2.6.0',
             'starter-sitemesh.version'      : '3.2.3',
             'spring-webmvc-sitemesh.version': '3.2.3',
-            // Security: overrides spring-boot-dependencies (10.1.55). 10.1.60 includes the fixes for
-            // CVE-2026-65905, CVE-2026-65182, CVE-2026-68525 and CVE-2026-65927, plus the later 10.1.x fixes.
-            // 10.1.58, named by the advisories, failed its release vote; keep the Tomcat family aligned.
-            'tomcat.version'                : '10.1.60',
+            // Security: overrides spring-boot-dependencies (10.1.55). 10.1.61 fixes CVE-2026-101356 (HTTP/2
+            // request/response mix-up after an async error) and CVE-2026-101296 (JNDIRealm bind validation fails
+            // open), and retains the 10.1.60 fixes for CVE-2026-65905, CVE-2026-65182, CVE-2026-68525 and
+            // CVE-2026-65927. 10.1.58, named by those advisories, failed its release vote; keep the Tomcat family aligned.
+            'tomcat.version'                : '10.1.61',
     ]
 
     // Note: the name of the dependency must be the prefix of the property name so properties in the pom are resolved correctly
@@ -159,6 +180,8 @@ ext {
             'asset-pipeline-bom': "cloud.wondrify:asset-pipeline-bom:${bomDependencyVersions['asset-pipeline-bom.version']}",
             'spock-bom'         : "org.spockframework:spock-bom:${bomDependencyVersions['spock.version']}",
             'jackson-bom'       : "com.fasterxml.jackson:jackson-bom:${bomDependencyVersions['jackson.version']}",
+            // Security override of spring-boot-dependencies - see netty.version
+            'netty-bom'         : "io.netty:netty-bom:${bomDependencyVersions['netty.version']}",
             'groovy-bom'        : "org.apache.groovy:groovy-bom:${bomDependencyVersions['groovy.version']}",
             'junit-bom'         : "org.junit:junit-bom:${bomDependencyVersions['junit.version']}",
             'selenium-bom'      : "org.seleniumhq.selenium:selenium-bom:${bomDependencyVersions['selenium.version']}",
@@ -241,6 +264,9 @@ ext {
             'junit-platform-suite-engine' : "org.junit.platform:junit-platform-suite-engine:${bomDependencyVersions['junit-platform.version']}",
             // end - boot & spock conflict, so pin the version we want (newest)
             'hibernate-groovy-proxy'      : "org.yakworks:hibernate-groovy-proxy:${bomDependencyVersions['hibernate-groovy-proxy.version']}",
+            // Security override of spring-boot-dependencies - see hibernate-validator.version
+            'hibernate-validator'                     : "org.hibernate.validator:hibernate-validator:${bomDependencyVersions['hibernate-validator.version']}",
+            'hibernate-validator-annotation-processor': "org.hibernate.validator:hibernate-validator-annotation-processor:${bomDependencyVersions['hibernate-validator.version']}",
             // Security override of spring-boot-dependencies - see micrometer.version
             'micrometer-commons'          : "io.micrometer:micrometer-commons:${bomDependencyVersions['micrometer.version']}",
             'micrometer-core'             : "io.micrometer:micrometer-core:${bomDependencyVersions['micrometer.version']}",
@@ -269,6 +295,8 @@ ext {
             'plexus-utils'                                   : "org.codehaus.plexus:plexus-utils:${bomDependencyVersions['plexus-utils.version']}",
             // Required alongside plexus-utils 4.x - see plexus-xml.version
             'plexus-xml'                                     : "org.codehaus.plexus:plexus-xml:${bomDependencyVersions['plexus-xml.version']}",
+            // Security override of spring-boot-dependencies - see postgresql.version
+            'postgresql'                                     : "org.postgresql:postgresql:${bomDependencyVersions['postgresql.version']}",
             'rxjava'                                         : "io.reactivex:rxjava:${bomDependencyVersions['rxjava.version']}",
             'rxjava2'                                        : "io.reactivex.rxjava2:rxjava:${bomDependencyVersions['rxjava2.version']}",
             'rxjava3'                                        : "io.reactivex.rxjava3:rxjava:${bomDependencyVersions['rxjava3.version']}",
@@ -324,7 +352,7 @@ ext {
     else if (project.name == 'grails-micronaut-bom') {
         customBomVersions = [
                 'javaparser-core.version': '3.27.0', // micronaut requires 3.27, groovy 4 ships with 3.28 but is compatible with 3.27
-                'asm.version'            : '9.10.1',
+                'asm.version'            : '9.11.1',
         ]
         combinedVersions += customBomVersions
         customBomDependencies = [
