@@ -62,6 +62,7 @@ import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.property.access.spi.PropertyAccessStrategy;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
+import org.hibernate.service.spi.SessionFactoryServiceContributor;
 
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -304,6 +305,12 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
                     }
                     return factories;
                 }
+                else if (queryTail != null && SessionFactoryServiceContributor.class.isAssignableFrom(serviceContract)) {
+                    // The capture records the connections of the session factory, whatever provider hands them out.
+                    List<S> contributors = new ArrayList<>(super.loadJavaServices(serviceContract));
+                    contributors.add(serviceContract.cast(queryTail.getSessionFactoryServiceContributor()));
+                    return contributors;
+                }
                 else {
                     return super.loadJavaServices(serviceContract);
                 }
@@ -330,15 +337,9 @@ public class HibernateMappingContextConfiguration extends Configuration implemen
         // default initiator. Hibernate 7 gets the same behavior via GrailsBytecodeProvider.
         standardServiceRegistryBuilder.addService(ProxyFactoryFactory.class,
                 new GrailsBytecodeProvider().getProxyFactoryFactory());
-        if (queryTail != null) {
-            queryTail.recordConnections(standardServiceRegistryBuilder);
-        }
 
         StandardServiceRegistry serviceRegistry = standardServiceRegistryBuilder.build();
         closing.registry = serviceRegistry;
-        if (queryTail != null) {
-            queryTail.recordProvidedConnections(serviceRegistry);
-        }
         ClassLoader previous = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(appClassLoader);

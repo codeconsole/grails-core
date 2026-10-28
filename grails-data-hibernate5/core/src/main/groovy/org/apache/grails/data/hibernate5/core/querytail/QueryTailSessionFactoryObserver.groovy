@@ -22,12 +22,11 @@ import groovy.transform.CompileStatic
 import org.hibernate.SessionFactory
 import org.hibernate.SessionFactoryObserver
 import org.hibernate.boot.SessionFactoryBuilder
-import org.hibernate.boot.registry.StandardServiceRegistry
-import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.boot.spi.MetadataImplementor
 import org.hibernate.boot.spi.SessionFactoryBuilderFactory
 import org.hibernate.boot.spi.SessionFactoryBuilderImplementor
 import org.hibernate.engine.spi.SessionFactoryImplementor
+import org.hibernate.service.spi.SessionFactoryServiceContributor
 
 import org.apache.grails.datamapping.core.querytail.QueryTailCapture
 import org.apache.grails.datamapping.core.querytail.QueryTailDialects
@@ -37,9 +36,9 @@ import org.grails.orm.hibernate.cfg.HibernateMappingContextConfiguration
 
 /**
  * The session factory observer GORM installs on a session factory when query-tail capture is
- * enabled. It wraps the connections Hibernate's connection providers hand out, so that each
- * statement is recorded as it runs, once for each entry submitted in a batch, rather than when the
- * reusable statement is prepared. The statement runs unchanged, and so does the statement
+ * enabled. It wraps the connections the connection provider of the session factory hands out, so
+ * that each statement is recorded as it runs, once for each entry submitted in a batch, rather than
+ * when the reusable statement is prepared. The statement runs unchanged, and so does the statement
  * inspector the application configured, if any: it sees the statement first, and the statement it
  * returns is the one run and recorded.
  *
@@ -55,7 +54,9 @@ import org.grails.orm.hibernate.cfg.HibernateMappingContextConfiguration
  * <p>The observer is added to the session factory as Hibernate builds it, through the
  * {@linkplain #getSessionFactoryBuilderFactory() factory} the configuration hands Hibernate, next to
  * the observers of the configuration, which it leaves as they are, wherever the application sets
- * them.</p>
+ * them; the connection provider is decorated in the service registry of the session factory, through
+ * the {@linkplain #getSessionFactoryServiceContributor() contributor} the configuration hands
+ * Hibernate, whatever provider the registry the session factory is built with has.</p>
  *
  * <p>Nothing of this is installed unless {@link QueryTailSettings#SETTING_ENABLED} is set, so an
  * application that does not capture pays nothing per statement.</p>
@@ -107,25 +108,13 @@ class QueryTailSessionFactoryObserver implements SessionFactoryObserver {
     }
 
     /**
-     * Wraps the connection providers Hibernate selects for the service registry the session factory is
-     * built with, so that the statements run on the connections they hand out are recorded. The
-     * configuration calls this before it builds the registry.
-     *
-     * @param registry the builder of the service registry the session factory is built with
+     * @return what decorates the connection providers of the session factory Hibernate builds, as
+     * Hibernate finds it through the class loader service of the service registry, so that the
+     * statements run on the connections they hand out are recorded: whichever providers the registry
+     * the session factory is built with has, which it leaves in place
      */
-    void recordConnections(StandardServiceRegistryBuilder registry) {
-        QueryTailConnectionProvider.install(registry, recorder)
-    }
-
-    /**
-     * Wraps the connection providers the service registry was given as services, as a configuration
-     * class gives one with {@code addService}, which take the place of those Hibernate would select.
-     * The configuration calls this once it has built the registry, before anything uses it.
-     *
-     * @param registry the service registry the session factory is built with
-     */
-    void recordProvidedConnections(StandardServiceRegistry registry) {
-        QueryTailConnectionProvider.installProvided(registry, recorder)
+    SessionFactoryServiceContributor getSessionFactoryServiceContributor() {
+        QueryTailConnectionProvider.contributor(recorder)
     }
 
     /**

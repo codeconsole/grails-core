@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit
 
 import grails.gorm.annotation.Entity
 import org.bson.BsonDocument
+import org.bson.BsonString
 import org.bson.types.ObjectId
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.mapping.core.DatastoreUtils
@@ -411,6 +412,44 @@ class MongoCommandRedactorSpec extends Specification {
                 '{"find":"books","filter":{"location":{"$near":{"$geometry":{"type":"Point","coordinates":[0,0],"metadata":{"$example-secret":"v"}}}}}}',
                 '{"aggregate":"books","pipeline":[{"$geoNear":{"near":{"$literal":{"type":"Point","coordinates":[0,0],"metadata":{"$example-secret":"v"}}},"distanceField":"distance"}}]}',
         ]
+    }
+
+    @Unroll
+    void "a dollar key in a condition that is no query operator is recorded as ?, with everything under it: #shape"() {
+        expect:
+        redact(command) == redacted
+        !MongoCommandRedactor.redact('shop', BsonDocument.parse(command).firstKey, BsonDocument.parse(command), null).contains(SECRET)
+
+        where:
+        shape                         | command                                                                                                                                  || redacted
+        'beside the geometry of near' | '{"find": "books", "filter": {"location": {"$near": {"$geometry": {"type": "Point", "coordinates": [0, 0]}, "$maxDistance": 5, "$example-secret": 1}}}, "$db": "shop"}' || 'find shop.books {"filter": {"location": {"$near": {"$geometry": {?: ?, ?: [?]}, "$maxDistance": ?, ?: ?}}}}'
+        'in the operand of nearSphere' | '{"find": "books", "filter": {"location": {"$nearSphere": {"$example-secret": {"$k": 1}}}}, "$db": "shop"}'                               || 'find shop.books {"filter": {"location": {"$nearSphere": {?: {?: ?}}}}}'
+        'beside the field operators'  | '{"find": "books", "filter": {"pages": {"$gt": 1, "$example-secret": 2}}, "$db": "shop"}'                                               || 'find shop.books {"filter": {"pages": {"$gt": ?, ?: ?}}}'
+        'at the top of the condition' | '{"find": "books", "filter": {"ttl": "x", "$example-secret": {"k": 1}}, "$db": "shop"}'                                                 || 'find shop.books {"filter": {"ttl": ?, ?: {?: ?}}}'
+        'in an element match'         | '{"find": "books", "filter": {"tags": {"$elemMatch": {"$example-secret": 1}}}, "$db": "shop"}'                                          || 'find shop.books {"filter": {"tags": {"$elemMatch": {?: ?}}}}'
+        'in a match stage'            | '{"aggregate": "books", "pipeline": [{"$match": {"$example-secret": 1}}], "cursor": {}, "$db": "shop"}'                                  || 'aggregate shop.books {"pipeline": [{"$match": {?: ?}}], "cursor": {}}'
+        'a stage name in a condition' | '{"find": "books", "filter": {"$project": {"ttl": 1}}, "$db": "shop"}'                                                                  || 'find shop.books {"filter": {?: {?: ?}}}'
+    }
+
+    @Unroll
+    void "the query operators of a condition are kept: #redacted"() {
+        expect:
+        redact(command) == redacted
+
+        where:
+        command                                                                                                                                                      || redacted
+        '{"find": "books", "filter": {"location": {"$geoWithin": {"$centerSphere": [[0, 0], 1]}}}, "$db": "shop"}'                                               || 'find shop.books {"filter": {"location": {"$geoWithin": {"$centerSphere": [[?], ?]}}}}'
+        '{"find": "books", "filter": {"$text": {"$search": "x", "$language": "en", "$caseSensitive": true}, "$and": [{"pages": {"$exists": true, "$type": "int"}}]}, "$db": "shop"}' || 'find shop.books {"filter": {"$text": {"$search": ?, "$language": ?, "$caseSensitive": ?}, "$and": [{"pages": {"$exists": ?, "$type": ?}}]}}'
+        '{"find": "books", "filter": {"location": {"$near": [0, 0], "$maxDistance": 5}, "pages": {"$not": {"$mod": [2, 0]}, "$bitsAllSet": 3}}, "$db": "shop"}' || 'find shop.books {"filter": {"location": {"$near": [?], "$maxDistance": ?}, "pages": {"$not": {"$mod": [?]}, "$bitsAllSet": ?}}}'
+    }
+
+    void "a regular expression written as operators keeps them, as a condition holds them"() {
+        given: 'built as BSON, since extended JSON reads the two operators as a regular expression value'
+        BsonDocument command = new BsonDocument('find', new BsonString('books'))
+                .append('filter', new BsonDocument('ttl', new BsonDocument('$regex', new BsonString('^x')).append('$options', new BsonString('i'))))
+
+        expect:
+        MongoCommandRedactor.redact('shop', 'find', command, fields) == 'find shop.books {"filter": {"ttl": {"$regex": ?, "$options": ?}}}'
     }
 
     private String redact(String json) {

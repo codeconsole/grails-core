@@ -42,7 +42,9 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
  * is kept only where it indexes an array the mapping knows; in a map, in an element of an array,
  * which is a map or a document unless the field is a list of lists, or at the top of a document,
  * it is data. A {@code $} key is kept as an operator only where operators go, in a condition, a
- * pipeline and the operators of an update; in stored data, the documents an insert writes, a
+ * pipeline and the operators of an update, and in a condition only when it is one of MongoDB's query
+ * operators: any other, such as a key beside the geometry of {@code $near}, is recorded as the
+ * placeholder, and so is everything under it; in stored data, the documents an insert writes, a
  * replacement document and the values an update operator writes, it is a field name, which MongoDB
  * allows to start with {@code $}, and is recorded as the placeholder unless the mapping knows it.
  * So is a {@code $} key in the operand of a comparison in a condition, such as {@code $eq} or
@@ -150,6 +152,17 @@ final class MongoCommandRedactor {
      */
     private static final Set<String> VALUE_OPERATORS = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin',
             '$all', '$jsonSchema', '$geometry'] as Set<String>
+
+    /**
+     * The operators of a condition, the only {@code $} keys a condition holds but the fields of a DBRef: the query
+     * operators of MongoDB, and the options of {@code $regex}, {@code $text} and the geospatial ones.
+     */
+    private static final Set<String> QUERY_OPERATORS = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin',
+            '$and', '$or', '$not', '$nor', '$exists', '$type', '$expr', '$jsonSchema', '$mod', '$regex', '$options',
+            '$text', '$search', '$language', '$caseSensitive', '$diacriticSensitive', '$where', '$geoIntersects',
+            '$geoWithin', '$near', '$nearSphere', '$geometry', '$maxDistance', '$minDistance', '$box', '$center',
+            '$centerSphere', '$polygon', '$uniqueDocs', '$all', '$elemMatch', '$size', '$bitsAllClear', '$bitsAllSet',
+            '$bitsAnyClear', '$bitsAnySet', '$comment', '$rand', '$sampleRate'] as Set<String>
 
     /** The operator of a condition, and the stages of a pipeline, whose operand is an aggregation expression. */
     private static final Set<String> EXPRESSION_OPERATORS = ['$expr', '$addFields', '$set', '$project', '$group',
@@ -381,14 +394,18 @@ final class MongoCommandRedactor {
                 if (ANY_VALUE.contains(key)) {
                     return child(Kind.DATA, null, null, 0, quote(key))
                 }
+                if (kind == Kind.CONDITION && DBREF_FIELDS.contains(key)) {
+                    return field(key, Kind.DATA)
+                }
+                if (kind == Kind.CONDITION && !QUERY_OPERATORS.contains(key)) {
+                    // no operator of a condition, as a key beside the geometry of $near is not, so data the server rejects
+                    return child(Kind.DATA, null, null, 0, PLACEHOLDER)
+                }
                 if (EXPRESSION_OPERATORS.contains(key)) {
                     return child(Kind.EXPRESSION, null, path, depth, quote(key))
                 }
                 if (key == '$match') {
                     return child(Kind.CONDITION, null, path, depth, quote(key))
-                }
-                if (kind == Kind.CONDITION && DBREF_FIELDS.contains(key)) {
-                    return field(key, Kind.DATA)
                 }
                 // an operator on an array, such as $elemMatch, describes its elements
                 int operandDepth = indexed(path, depth) ? depth + 1 : depth

@@ -40,6 +40,7 @@ import org.hibernate.SessionFactory
 import org.hibernate.SessionFactoryObserver
 import org.hibernate.boot.registry.BootstrapServiceRegistry
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder
+import org.hibernate.boot.registry.StandardServiceInitiator
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService
 import org.hibernate.dialect.CockroachDB201Dialect
@@ -98,6 +99,7 @@ class QueryTailSessionFactoryObserverSpec extends Specification {
         QueryTailNamedInspector.seen.clear()
         QueryTailRecordingObserver.events.clear()
         QueryTailProvidedConfiguration.provided.clear()
+        QueryTailInitiatedConfiguration.initiated.clear()
     }
 
     void "an application started without the setting carries no capture, and its connection provider is Hibernate's own"() {
@@ -313,8 +315,9 @@ class QueryTailSessionFactoryObserverSpec extends Specification {
         when:
         close(datastore)
 
-        then:
+        then: 'its own registry stops it, once'
         provider.events.last() == 'stopped'
+        provider.events.count('stopped') == 1
         provider.borrowed.empty
     }
 
@@ -462,6 +465,21 @@ class QueryTailSessionFactoryObserverSpec extends Specification {
         QueryTailProvidedConfiguration.provided.size() == 1
         QueryTailProvidedConfiguration.provided.first().handed.get() > 0
         records(file)*.sql.count('select ? as provided_probe') == 1
+    }
+
+    void "a connection provider a configuration class initiates hands out the connections that run the statements recorded"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        HibernateDatastore datastore = open(enabled(file) + [(CONFIG_CLASS): QueryTailInitiatedConfiguration.name])
+
+        when:
+        List selected = runNative(datastore, 'select 1 as initiated_probe')
+
+        then:
+        selected == [1]
+        QueryTailInitiatedConfiguration.initiated.size() == 1
+        QueryTailInitiatedConfiguration.initiated.first().handed.get() > 0
+        records(file)*.sql.count('select ? as initiated_probe') == 1
     }
 
     void "a datastore that closes leaves another writing to the same file"() {
@@ -816,6 +834,45 @@ class QueryTailProvidedConfiguration extends HibernateMappingContextConfiguratio
         QueryTailProvidedProvider provider = new QueryTailProvidedProvider((DataSource) properties.values().find { it instanceof DataSource })
         provided << provider
         super.createStandardServiceRegistryBuilder(bootstrapServiceRegistry).addService(ConnectionProvider, provider)
+    }
+}
+
+/**
+ * Gives the service registry an initiator of its own for the connection provider, which takes the place of
+ * Hibernate's.
+ */
+class QueryTailInitiatedConfiguration extends HibernateMappingContextConfiguration {
+
+    static final List<QueryTailProvidedProvider> initiated = [].asSynchronized()
+
+    @Override
+    protected StandardServiceRegistryBuilder createStandardServiceRegistryBuilder(BootstrapServiceRegistry bootstrapServiceRegistry) {
+        DataSource dataSource = (DataSource) properties.values().find { it instanceof DataSource }
+        super.createStandardServiceRegistryBuilder(bootstrapServiceRegistry).addInitiator(new QueryTailProvidingInitiator(dataSource))
+    }
+}
+
+/**
+ * Initiates a provider of the connections of a data source.
+ */
+class QueryTailProvidingInitiator implements StandardServiceInitiator<ConnectionProvider> {
+
+    final DataSource dataSource
+
+    QueryTailProvidingInitiator(DataSource dataSource) {
+        this.dataSource = dataSource
+    }
+
+    @Override
+    Class<ConnectionProvider> getServiceInitiated() {
+        ConnectionProvider
+    }
+
+    @Override
+    ConnectionProvider initiateService(Map configurationValues, ServiceRegistryImplementor registry) {
+        QueryTailProvidedProvider provider = new QueryTailProvidedProvider(dataSource)
+        QueryTailInitiatedConfiguration.initiated << provider
+        provider
     }
 }
 

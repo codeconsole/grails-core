@@ -56,6 +56,7 @@ import org.hibernate.cfg.JdbcSettings;
 import org.hibernate.context.spi.CurrentSessionContext;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.service.ServiceRegistry;
+import org.hibernate.service.spi.SessionFactoryServiceContributor;
 
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -346,6 +347,12 @@ public class HibernateMappingContextConfiguration extends Configuration
                     factories.add(serviceContract.cast(queryTail.getSessionFactoryBuilderFactory()));
                     return factories;
                 }
+                if (queryTail != null && SessionFactoryServiceContributor.class.isAssignableFrom(serviceContract)) {
+                    // The capture records the connections of the session factory, whatever provider hands them out.
+                    List<S> contributors = new ArrayList<>(super.loadJavaServices(serviceContract));
+                    contributors.add(serviceContract.cast(queryTail.getSessionFactoryServiceContributor()));
+                    return contributors;
+                }
                 return super.loadJavaServices(serviceContract);
             }
         };
@@ -366,14 +373,8 @@ public class HibernateMappingContextConfiguration extends Configuration
         }
 
         standardServiceRegistryBuilder.addService(org.hibernate.bytecode.spi.BytecodeProvider.class, bytecodeProvider);
-        if (queryTail != null) {
-            queryTail.recordConnections(standardServiceRegistryBuilder);
-        }
 
         StandardServiceRegistry ssr = standardServiceRegistryBuilder.build();
-        if (queryTail != null) {
-            queryTail.recordProvidedConnections(ssr);
-        }
         ClassLoader previous = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(appClassLoader);
