@@ -65,6 +65,9 @@ class QueryTailSummary {
     /** The page of a request that never reached a controller and has no path either. */
     public static final String NO_PAGE = '(no page)'
 
+    /** Where the operation a request ran starts in its page: a page and a request line hold no space before it. */
+    private static final String OPERATION_START = ' ('
+
     /** What the statements recorded as withheld are counted as, all together. */
     public static final String WITHHELD = '(statements withheld: their values could not be redacted)'
 
@@ -286,8 +289,10 @@ class QueryTailSummary {
     /**
      * @param page a page label
      * @param filter {@code controller/action}, a controller name, or a thread page; a namespaced
-     * controller's page matches its name and its {@code controller/action} as well as its own, and the
-     * page of a thread matches the name of any thread of its pool, its numbers replaced or not
+     * controller's page matches its name and its {@code controller/action} as well as its own, the
+     * page of an operation a request ran, such as {@code graphql/index (query BookList)}, matches what
+     * the page it ran on matches as well as its own, and the page of a thread matches the name of any
+     * thread of its pool, its numbers replaced or not
      * @return whether the page is the one the filter names
      */
     static boolean matchesPage(String page, String filter) {
@@ -296,6 +301,10 @@ class QueryTailSummary {
         }
         if (page.startsWith(QueryTailRecord.THREAD_PAGE_PREFIX)) {
             return filter.startsWith(QueryTailRecord.THREAD_PAGE_PREFIX) && threadPage(page) == threadPage(filter)
+        }
+        int operation = page.indexOf(OPERATION_START)
+        if (operation > 0 && page.endsWith(')')) {
+            return matchesPage(page.substring(0, operation), filter)
         }
         if (filter.contains('/')) {
             // a page of a namespaced controller is the same controller and action under its namespace

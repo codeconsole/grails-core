@@ -62,6 +62,11 @@ import org.apache.grails.datastore.core.querytail.QueryTailRequestTarget
  * and {@code @Async} methods do, counts for the request. A statement that runs once the request
  * has completed is attributed to its thread.</p>
  *
+ * <p>An endpoint that runs whichever operation its client sends, as a GraphQL endpoint does, serves
+ * every operation on the one page; it names the operation it runs with {@link #beginOperation}, and
+ * the statements the request runs until the operation ends are counted under the operation as well as
+ * under the page: {@code graphql/index (query BookList)}.</p>
+ *
  * <p>Spring Web is optional: without it on the classpath every statement is attributed to its
  * thread.</p>
  *
@@ -78,6 +83,12 @@ class QueryTailRequestAttribution {
 
     /** How many readers that cannot be loaded are passed over before the rest are given up on. */
     private static final int MAX_READER_FAILURES = 16
+
+    /** The request attribute the operation a request runs is kept in. */
+    private static final String OPERATION_ATTRIBUTE = 'org.apache.grails.datamapping.core.querytail.OPERATION'
+
+    /** Ends no operation, as one begun with no request on the thread has none to end. */
+    private static final Runnable NO_OPERATION = { -> } as Runnable
 
     private final AtomicLong requestCounter
     private final String requestIdPrefix
@@ -130,6 +141,32 @@ class QueryTailRequestAttribution {
         record.request = null
         record.page = QueryTailRecord.THREAD_PAGE_PREFIX + Thread.currentThread().name
         record
+    }
+
+    /**
+     * Counts the statements the request on the current thread runs, from now until the operation ends, under the
+     * operation as well as under the page of the request: the page of each is the page of the request with the
+     * operation after it, in parentheses, as {@code graphql/index (query BookList)}, so that an endpoint that runs
+     * whichever operation its client sends, as a GraphQL endpoint does, shows each operation as a page of its own. A
+     * request no reader resolved is shown by its request line with the operation after it. An operation begun while
+     * another runs is the one the request runs until it ends, and the other runs on after it, whichever of them ends
+     * first.
+     *
+     * @param operation names what the request runs; it is recorded as it is given, so it names no value
+     * @return ends the operation, on whichever thread it ends, and does nothing once it has, or when there was no
+     * request on the thread to begin it in
+     */
+    static Runnable beginOperation(String operation) {
+        if (!SPRING_WEB_PRESENT || operation == null) {
+            return NO_OPERATION
+        }
+        try {
+            return WebRequestLookup.beginOperation(operation)
+        }
+        catch (IllegalStateException ignored) {
+            // the request has completed, and runs no operation
+            return NO_OPERATION
+        }
     }
 
     /**
@@ -196,9 +233,43 @@ class QueryTailRequestAttribution {
             }
             record.requestId = requestId(attributes, requestCounter, requestIdPrefix, requestIdAttribute)
             QueryTailRequestTarget target = targetOf(attributes)
-            record.page = target?.page
             record.request = SERVLET_PRESENT ? ServletRequestLookup.describe(attributes, target) : null
+            record.page = withOperation(target?.page, record.request, attributes)
             true
+        }
+
+        /**
+         * Begins an operation of the request on the current thread.
+         *
+         * @param operation names what the request runs
+         * @return ends it
+         */
+        static Runnable beginOperation(String operation) {
+            RequestAttributes attributes = RequestContextHolder.getRequestAttributes()
+            if (attributes == null) {
+                return NO_OPERATION
+            }
+            synchronized (RunningOperation) {
+                Object running = attributes.getAttribute(OPERATION_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST)
+                RunningOperation begun = new RunningOperation(operation, attributes,
+                        running instanceof RunningOperation ? (RunningOperation) running : null)
+                attributes.setAttribute(OPERATION_ATTRIBUTE, begun, RequestAttributes.SCOPE_REQUEST)
+                return begun
+            }
+        }
+
+        /**
+         * @return the page of a statement: the page of the request, or its request line when no reader resolved it,
+         * with the operation the request runs after it, if it runs one
+         */
+        private static String withOperation(String page, String request, RequestAttributes attributes) {
+            Object operation = attributes.getAttribute(OPERATION_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST)
+            if (!(operation instanceof RunningOperation)) {
+                return page
+            }
+            String shown = page ?: request
+            String name = ((RunningOperation) operation).name
+            shown ? "${shown} (${name})".toString() : "(${name})".toString()
         }
 
         /**
@@ -325,6 +396,56 @@ class QueryTailRequestAttribution {
                 String id = requestIdPrefix + REQUEST_ID_PREFIX + requestCounter.incrementAndGet()
                 attributes.setAttribute(requestIdAttribute, id, RequestAttributes.SCOPE_REQUEST)
                 return id
+            }
+        }
+    }
+
+    /**
+     * An operation a request runs, which ends it once run. The operation it interrupted, if any, is the one the request
+     * runs again once it ends, unless that one ended first, in which case the request runs the one before it.
+     */
+    @CompileStatic
+    private static final class RunningOperation implements Runnable {
+
+        final String name
+
+        private final RequestAttributes attributes
+
+        private final RunningOperation interrupted
+
+        private boolean ended
+
+        RunningOperation(String name, RequestAttributes attributes, RunningOperation interrupted) {
+            this.name = name
+            this.attributes = attributes
+            this.interrupted = interrupted
+        }
+
+        @Override
+        void run() {
+            synchronized (RunningOperation) {
+                if (ended) {
+                    return
+                }
+                ended = true
+                try {
+                    // an operation begun after this one, and still running, is still the one the request runs
+                    if (attributes.getAttribute(OPERATION_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST).is(this)) {
+                        RunningOperation resumed = interrupted
+                        while (resumed != null && resumed.ended) {
+                            resumed = resumed.interrupted
+                        }
+                        if (resumed == null) {
+                            attributes.removeAttribute(OPERATION_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST)
+                        }
+                        else {
+                            attributes.setAttribute(OPERATION_ATTRIBUTE, resumed, RequestAttributes.SCOPE_REQUEST)
+                        }
+                    }
+                }
+                catch (IllegalStateException ignored) {
+                    // the request has completed, and its attributes with it
+                }
             }
         }
     }

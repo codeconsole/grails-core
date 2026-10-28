@@ -337,6 +337,19 @@ class QueryTailSummarySpec extends Specification {
         QueryTailSummary.matchesPage(QueryTailSummary.OTHER_THREADS, QueryTailSummary.OTHER_THREADS)
     }
 
+    void "the page of an operation a request ran matches what the page it ran on matches, and its own name"() {
+        expect:
+        QueryTailSummary.matchesPage('graphql/index (query BookList)', 'graphql/index (query BookList)')
+        QueryTailSummary.matchesPage('graphql/index (query BookList)', 'graphql/index')
+        QueryTailSummary.matchesPage('graphql/index (query BookList)', 'graphql')
+        QueryTailSummary.matchesPage('api:graphql/index (mutation {bookCreate})', 'graphql/index')
+        QueryTailSummary.matchesPage('POST /?/? (query BookList)', 'POST /?/?')
+        !QueryTailSummary.matchesPage('graphql/index (query BookList)', 'graphql/index (query AuthorList)')
+        !QueryTailSummary.matchesPage('graphql/index (query BookList)', 'book')
+        !QueryTailSummary.matchesPage('(query BookList)', 'query')
+        !QueryTailSummary.matchesPage('thread:worker (1)', 'thread:worker')
+    }
+
     void "the requests of a JVM that joins the run of another JVM twice are counted apart"() {
         given: 'a capture file another JVM is writing, which holds the lock every writer holds while it writes'
         File file = new File(tempDir, 'capture.log')

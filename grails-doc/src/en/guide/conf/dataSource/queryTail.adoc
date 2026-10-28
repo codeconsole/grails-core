@@ -91,7 +91,13 @@ after the pages of requests, the busiest first, with `-` for its requests and it
 request count leaves it out: the inserts of a `BootStrap` or the statements of a test worker never
 hide the page an N+1 slows down. A request that a Spring MVC handler serves,
 rather than a Grails controller, is shown under its method and the pattern its handler mapping
-matched, such as `GET /api/books/?`. A request that does not reach a handler is shown under its
+matched, such as `GET /api/books/?`. A GraphQL endpoint serves every operation its clients send on
+one page, so with the GORM GraphQL plugin the statements of each operation are counted under the
+operation, after the page: `graphql/index (query BookList)` for an operation the document names, and
+`graphql/index (query {bookList, authorCount})`, the fields it selects at the top, for one it does not
+name. An argument, an alias or a variable of the operation is never part of it. Everything the
+operation runs counts, including the associations GraphQL loads as it reads their fields, and
+`--page=graphql/index` or `--page=graphql` takes in every operation of the endpoint. A request that does not reach a handler is shown under its
 method and the shape of its path, every segment replaced, as is a statement run before the
 controller is chosen. A request whose
 statements land on two pages, one forwarded to another action or one that queries in a filter

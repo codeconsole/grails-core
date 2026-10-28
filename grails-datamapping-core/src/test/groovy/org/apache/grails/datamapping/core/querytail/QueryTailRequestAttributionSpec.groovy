@@ -395,6 +395,168 @@ class QueryTailRequestAttributionSpec extends Specification {
         new QueryTailRequestAttribution(null).attribute(new QueryTailRecord(sql: 'select 1')).requestId == 'r1'
     }
 
+    void "the statements a request runs while it runs an operation count under the operation, after its page"() {
+        given:
+        bindRequest('POST', '/graphql', page: 'graphql/index', paths: ['/graphql': '/graphql'])
+
+        when:
+        QueryTailRecord before = attribution.attribute(new QueryTailRecord(sql: 'select 1'))
+        Runnable end = QueryTailRequestAttribution.beginOperation('query BookList')
+        QueryTailRecord during = attribution.attribute(new QueryTailRecord(sql: 'select 2'))
+        end.run()
+        QueryTailRecord after = attribution.attribute(new QueryTailRecord(sql: 'select 3'))
+
+        then:
+        before.page == 'graphql/index'
+        during.page == 'graphql/index (query BookList)'
+        during.request == 'POST /graphql'
+        during.requestId == before.requestId
+        after.page == 'graphql/index'
+        after.requestId == before.requestId
+    }
+
+    void "an operation of a request no reader resolved is shown after its request line"() {
+        given:
+        bindRequest('POST', '/api/graphql')
+        Runnable end = QueryTailRequestAttribution.beginOperation('query BookList')
+
+        when:
+        QueryTailRecord record = attribution.attribute(new QueryTailRecord(sql: 'select 1'))
+
+        then:
+        record.page == 'POST /?/? (query BookList)'
+        record.request == 'POST /?/?'
+
+        cleanup:
+        end?.run()
+    }
+
+    void "an operation of a request that has no request line and no page is the page"() {
+        given: 'an attribution without the servlet API, and its own operations, which it reads the request with'
+        bindRequest('POST', '/api/graphql')
+        Object withoutServlet = attributionWithout('jakarta.servlet.')
+        Runnable end = (Runnable) withoutServlet.class.getMethod('beginOperation', String).invoke(null, 'query BookList')
+
+        when:
+        QueryTailRecord record = withoutServlet.attribute(new QueryTailRecord(sql: 'select 1'))
+
+        then:
+        record.page == '(query BookList)'
+        record.request == null
+
+        cleanup:
+        end?.run()
+    }
+
+    void "an operation begun while another runs is the one the request runs until it ends, when #first ends first"() {
+        given:
+        bindRequest('POST', '/graphql', page: 'graphql/index')
+        Map<String, Runnable> ends = [outer: QueryTailRequestAttribution.beginOperation('query Outer')]
+        ends.inner = QueryTailRequestAttribution.beginOperation('query Inner')
+
+        when:
+        String bothRunning = attribution.attribute(new QueryTailRecord(sql: 'select 1')).page
+        ends[first].run()
+        String oneRunning = attribution.attribute(new QueryTailRecord(sql: 'select 2')).page
+        ends.values()*.run()
+        String noneRunning = attribution.attribute(new QueryTailRecord(sql: 'select 3')).page
+
+        then:
+        bothRunning == 'graphql/index (query Inner)'
+        oneRunning == afterFirst
+        noneRunning == 'graphql/index'
+
+        where:
+        first   || afterFirst
+        'inner' || 'graphql/index (query Outer)'
+        'outer' || 'graphql/index (query Inner)'
+    }
+
+    void "an operation ends on whichever thread ends it, and ending it again ends no other"() {
+        given:
+        bindRequest('POST', '/graphql', page: 'graphql/index')
+        Runnable first = QueryTailRequestAttribution.beginOperation('query First')
+
+        when: 'the operation ends on another thread, as one whose data a fetcher returns later ends'
+        Thread ending = Thread.start { first.run() }
+        ending.join()
+        String ended = attribution.attribute(new QueryTailRecord(sql: 'select 1')).page
+        Runnable second = QueryTailRequestAttribution.beginOperation('query Second')
+        first.run()
+        String afterEndingAgain = attribution.attribute(new QueryTailRecord(sql: 'select 2')).page
+
+        then:
+        ended == 'graphql/index'
+        afterEndingAgain == 'graphql/index (query Second)'
+
+        cleanup:
+        second?.run()
+    }
+
+    void "an operation begun outside a request, or once it has completed, ends without a trace: #where"() {
+        given:
+        bind()
+
+        when:
+        Runnable end = QueryTailRequestAttribution.beginOperation('query BookList')
+        QueryTailRecord record = attribution.attribute(new QueryTailRecord(sql: 'select 1'))
+        end.run()
+
+        then:
+        record.page == "thread:${Thread.currentThread().name}"
+        noExceptionThrown()
+
+        where:
+        where                       | bind
+        'without a request'         | { -> }
+        'once the request completed' | { ->
+            ServletRequestAttributes attributes = new ServletRequestAttributes(new MockHttpServletRequest('POST', '/graphql'))
+            attributes.requestCompleted()
+            RequestContextHolder.setRequestAttributes(attributes)
+        }
+    }
+
+    void "an operation that outlives its request ends without a trace"() {
+        given:
+        ServletRequestAttributes attributes = new ServletRequestAttributes(new MockHttpServletRequest('POST', '/graphql'))
+        RequestContextHolder.setRequestAttributes(attributes)
+        Runnable end = QueryTailRequestAttribution.beginOperation('query BookList')
+
+        when:
+        attributes.requestCompleted()
+        end.run()
+
+        then:
+        noExceptionThrown()
+    }
+
+    void "without Spring Web on the classpath an operation begins nothing"() {
+        given:
+        bindRequest('POST', '/graphql', page: 'graphql/index')
+        Object withoutSpringWeb = attributionWithout('org.springframework.web.')
+
+        when:
+        Runnable end = (Runnable) withoutSpringWeb.class.getMethod('beginOperation', String).invoke(null, 'query BookList')
+        end.run()
+
+        then:
+        attribution.attribute(new QueryTailRecord(sql: 'select 1')).page == 'graphql/index'
+    }
+
+    void "an operation that names nothing begins nothing"() {
+        given:
+        bindRequest('POST', '/graphql', page: 'graphql/index')
+
+        when:
+        Runnable end = QueryTailRequestAttribution.beginOperation(null)
+
+        then:
+        attribution.attribute(new QueryTailRecord(sql: 'select 1')).page == 'graphql/index'
+
+        cleanup:
+        end?.run()
+    }
+
     /**
      * Binds a request, which the reader on the class path resolves to the page given, if any, and whose paths it reads
      * as the paths given say.

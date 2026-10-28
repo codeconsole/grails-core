@@ -752,7 +752,8 @@ run. See <<startupProgress,Watching the Application Start>>.
 The new `query-tail` command shows the pages of a running application ranked by the statements they run per
 request, and for each page the statement that repeats most within one request, which is what an N+1 looks like.
 It covers every store GORM runs statements on: SQL through Hibernate 5 and 7, Cypher through Neo4j and commands
-through MongoDB.
+through MongoDB. With the GORM GraphQL plugin, each GraphQL operation is a page of its own, such as
+`graphql/index (query BookList)`.
 Start the application with `grails run-app --query-tail` (or `./gradlew bootRun -Pgrails.gorm.queryTail.enabled`), then
 `grails query-tail` in a second terminal follows the capture and refreshes as requests are served. `--statements`
 ranks the statements, `--page=book/show` shows one page's, `--stream` prints each statement as it runs, and

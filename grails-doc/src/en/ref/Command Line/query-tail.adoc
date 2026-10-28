@@ -24,7 +24,7 @@ under the License.
 
 Shows the statements a running application executes, SQL through Hibernate, Cypher through Neo4j,
 commands through MongoDB and the reads and writes of the simple in-memory datastore, grouped by the
-controller and action that ran them, so that the pages
+controller and action that ran them, or the GraphQL operation, so that the pages
 running the most queries, and the queries repeating within one request, stand out. The application must be started with capture turned on; see
 link:{guidePath}conf.html#queryTail[Finding Query-Heavy Pages with query-tail].
 
@@ -59,7 +59,7 @@ Arguments:
 
 * `statements` - Rank the statements themselves instead of the pages that run them, with how often each ran and on how many pages.
 * `stream` - Print every statement as it runs, with a header for each request, instead of a summary. A request that comes back after another interrupted it is headed as continued.
-* `page` - Only the statements of one page, given as `controller/action` or as a controller name; implies `--statements`, or filters the stream when `--stream` is given. A namespaced controller's pages match without the namespace as well as with it.
+* `page` - Only the statements of one page, given as `controller/action` or as a controller name; implies `--statements`, or filters the stream when `--stream` is given. A namespaced controller's pages match without the namespace as well as with it, and the page of a GraphQL operation, such as `graphql/index (query BookList)`, matches the page it ran on as well as its own name.
 * `top` - How many rows to show, or `0` for all of them. Defaults to 30.
 * `all` - Read what the application has run so far, not only what it runs from now on.
 * `once` - Print the summary of what has been captured and exit, which with `--all` is a report of the whole run so far.
