@@ -213,7 +213,8 @@ the mapping knows, as in `stops.0.city`; in a map, or at the top of a document, 
 `?` like any other key that may be data; so is a numeric key inside an element of such a list,
 which is a map or a document unless the property is a list of lists. A key that starts with `$` is
 kept as an operator only where operators go: in a condition, a pipeline and the operators of an
-update, and in a condition only when it is one of MongoDB's query operators. Any other `$` key in a
+update, and in a condition only when it is one of MongoDB's query operators, among them `$within`,
+which GORM writes for a box, a polygon or a circle. Any other `$` key in a
 condition, such as one beside the `$geometry` of a `$near`, is recorded as `?`, with everything under
 it, since the server rejects it after the capture has recorded the command. In stored data, the documents an insert writes, a replacement document and the values an
 update operator writes, MongoDB allows a field name to start with `$`, so such a key is recorded as
@@ -231,10 +232,15 @@ In an aggregation expression, which `$expr`, the `let` of a command and
 stages such as `$project` and `$group` hold, the operands of a comparison are expressions, and
 their operators are kept: `{"$expr": {"$gt": [{"$size": ?}, ?]}}`. The operand of `$literal`, and of
 `$const`, which MongoDB accepts in its place, is a value rather than an expression, so none of its
-keys are recorded either. A comment, the constants of an update and the `scope` of a map-reduce
-command may be any document, so none of their keys are recorded, including nested keys in documents
-and arrays and keys that happen to match mapped field names. The entries the driver adds for
-its session and its transaction are left out.
+keys are recorded either. The keys of the command itself are its options, and are kept, but a
+document under an option is read only where the option is known to hold one: the fields, a
+condition, a pipeline, an update or stored data, or options in turn, as the write and read
+concerns, the collation and the cursor of a command, the statements of a write, the indexes it
+builds and the operations of `applyOps` do. Any other option may hold any document, as a comment,
+the constants of an update, the `scope` of a map-reduce command and the document an operation of
+`applyOps` applies do, so none of its keys are recorded, including nested keys in documents and
+arrays and keys that happen to match mapped field names. The entries the driver adds for its
+session and its transaction are left out.
 
 The simple datastore keeps its entries in memory, and the unit tests that implement `DataTest` run
 on it. It runs no statements, so it records what GORM asks of it as statements in the shape of SQL,

@@ -441,6 +441,27 @@ class MongoCommandRedactorSpec extends Specification {
         '{"find": "books", "filter": {"location": {"$geoWithin": {"$centerSphere": [[0, 0], 1]}}}, "$db": "shop"}'                                               || 'find shop.books {"filter": {"location": {"$geoWithin": {"$centerSphere": [[?], ?]}}}}'
         '{"find": "books", "filter": {"$text": {"$search": "x", "$language": "en", "$caseSensitive": true}, "$and": [{"pages": {"$exists": true, "$type": "int"}}]}, "$db": "shop"}' || 'find shop.books {"filter": {"$text": {"$search": ?, "$language": ?, "$caseSensitive": ?}, "$and": [{"pages": {"$exists": ?, "$type": ?}}]}}'
         '{"find": "books", "filter": {"location": {"$near": [0, 0], "$maxDistance": 5}, "pages": {"$not": {"$mod": [2, 0]}, "$bitsAllSet": 3}}, "$db": "shop"}' || 'find shop.books {"filter": {"location": {"$near": [?], "$maxDistance": ?}, "pages": {"$not": {"$mod": [?]}, "$bitsAllSet": ?}}}'
+        '{"find": "books", "filter": {"location": {"$within": {"$box": [[0, 0], [1, 1]]}}}, "$db": "shop"}'                                                    || 'find shop.books {"filter": {"location": {"$within": {"$box": [[?]]}}}}'
+        '{"find": "books", "filter": {"location": {"$within": {"$polygon": [[0, 0], [1, 0], [1, 1]]}}}, "$db": "shop"}'                                       || 'find shop.books {"filter": {"location": {"$within": {"$polygon": [[?]]}}}}'
+        '{"find": "books", "filter": {"location": {"$within": {"$center": [[0, 0], 1]}}}, "$db": "shop"}'                                                      || 'find shop.books {"filter": {"location": {"$within": {"$center": [[?], ?]}}}}'
+        '{"find": "books", "filter": {"location": {"$within": {"$box": [[0, 0], [1, 1]], "$example-secret": {"k": 1}}}}, "$db": "shop"}'                       || 'find shop.books {"filter": {"location": {"$within": {"$box": [[?]], ?: {?: ?}}}}}'
+    }
+
+    @Unroll
+    void "the document of an option that is not known to hold options, fields or a pipeline keeps none of its keys: #shape"() {
+        expect:
+        redact(command) == redacted
+        !redact(command).contains('example-secret')
+
+        where:
+        shape                              | command                                                                                                                  || redacted
+        'the documents applyOps applies'   | '{"applyOps": [{"op": "i", "ns": "shop.books", "o": {"_id": 1, "attrs": {"example-secret": 1}}}, {"op": "u", "ns": "shop.books", "o2": {"_id": 1}, "o": {"$set": {"attrs.example-secret": 2}}}], "$db": "admin"}' || 'applyOps admin {"applyOps": [{"op": ?, "ns": ?, "o": {?: ?, ?: {?: ?}}}, {"op": ?, "ns": ?, "o2": {?: ?}, "o": {?: {?: ?}}}]}'
+        'the result a precondition expects' | '{"applyOps": [], "preCondition": [{"ns": "shop.books", "q": {"_id": 1}, "res": {"attrs": {"example-secret": 1}}}], "$db": "admin"}' || 'applyOps admin {"applyOps": [], "preCondition": [{"ns": ?, "q": {"_id": ?}, "res": {?: {?: ?}}}]}'
+        'an option of a later server'      | '{"find": "books", "filter": {"ttl": "x"}, "laterOption": {"example-secret": {"k": 1}}, "$db": "shop"}'                  || 'find shop.books {"filter": {"ttl": ?}, "laterOption": {?: {?: ?}}}'
+        'an option of a write statement'   | '{"delete": "books", "deletes": [{"q": {"ttl": "x"}, "limit": 0, "laterOption": {"example-secret": 1}}], "$db": "shop"}' || 'delete shop.books {"deletes": [{"q": {"ttl": ?}, "limit": ?, "laterOption": {?: ?}}]}'
+        'a comment'                        | '{"find": "books", "filter": {}, "comment": {"example-secret": [{"k": 1}]}, "$db": "shop"}'                               || 'find shop.books {"filter": {}, "comment": {?: [{?: ?}]}}'
+        'the command explain runs'         | '{"explain": {"find": "books", "filter": {"ttl": "x"}, "collation": {"locale": "fr"}}, "verbosity": "queryPlanner", "$db": "shop"}' || 'explain shop {"explain": {"find": ?, "filter": {"ttl": ?}, "collation": {"locale": ?}}, "verbosity": ?}'
+        'the options of a write'           | '{"insert": "books", "documents": [], "writeConcern": {"w": "majority", "j": true}, "$db": "shop"}'                      || 'insert shop.books {"documents": [], "writeConcern": {"w": ?, "j": ?}}'
     }
 
     void "a regular expression written as operators keeps them, as a condition holds them"() {

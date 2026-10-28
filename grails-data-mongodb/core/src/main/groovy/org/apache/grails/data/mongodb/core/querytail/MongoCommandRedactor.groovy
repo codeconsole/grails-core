@@ -53,9 +53,14 @@ import org.apache.grails.datamapping.core.querytail.QueryTailRedactor
  * compared with their whole value, in any order; in an aggregation expression, which
  * {@code $expr}, the {@code let} of a command and the stages that compute fields hold, the operands
  * of a comparison are expressions, and their operators are kept, except in the operand of a
- * {@code $literal} or {@code $const}, which is stored data. A comment, and the constants of an
- * update, and the scope of a map-reduce command, may be any document, and none of their keys are
- * kept. The entries the driver adds for its
+ * {@code $literal} or {@code $const}, which is stored data. The keys of the command itself are its
+ * options, and are kept, but a document under an option is read only where the option is known to
+ * hold one: the fields, a condition, a pipeline, an update or stored data, or options in turn, as
+ * the concerns, the collation and the cursor of a command, the statements of a write, the indexes it
+ * builds and the operations of {@code applyOps} do. Any other option, as a comment, the constants of
+ * an update, the scope of a map-reduce command and the document an operation of {@code applyOps}
+ * applies are, may hold any document, and none of its keys are kept; nor are those of a
+ * {@code $comment}. The entries the driver adds for its
  * session, the cluster time and the transaction, which say nothing about the command, are left out.
  *
  * <p>An array is recorded with each of its different elements once: an element recorded as one before
@@ -113,8 +118,22 @@ final class MongoCommandRedactor {
     /** The options whose documents are stored data: what an insert writes. */
     private static final Set<String> DATA_KEYED = ['documents', 'document'] as Set<String>
 
-    /** The options and the operator that may hold any document, none of whose keys say what the command does. */
-    private static final Set<String> ANY_VALUE = ['comment', '$comment', 'c', 'scope'] as Set<String>
+    /**
+     * The options whose documents, or the documents of whose arrays, hold options in turn: the concerns and the
+     * collation of a command, the cursor it opens, the statements of a write, the indexes it builds, the operations
+     * of a client-level {@code bulkWrite} and of {@code applyOps} and their preconditions, where a map-reduce
+     * command writes, the command {@code explain} runs, the options of a collection {@code create} builds, and the
+     * sessions {@code endSessions} ends. A
+     * document under any other option may hold any document, as a comment, the constants of an update, the scope
+     * of a map-reduce command and the document an operation of {@code applyOps} applies do, and none of its keys
+     * are kept.
+     */
+    private static final Set<String> OPTION_KEYED = ['writeConcern', 'readConcern', 'collation', 'cursor', 'updates',
+            'deletes', 'indexes', 'ops', 'nsInfo', 'applyOps', 'preCondition', 'out', 'explain', 'timeseries',
+            'clusteredIndex', 'changeStreamPreAndPostImages', 'endSessions'] as Set<String>
+
+    /** The operator of a condition that may hold any document, none of whose keys say what the command does. */
+    private static final String COMMENT = '$comment'
 
     /** The option whose values are aggregation expressions. */
     private static final String LET = 'let'
@@ -155,12 +174,13 @@ final class MongoCommandRedactor {
 
     /**
      * The operators of a condition, the only {@code $} keys a condition holds but the fields of a DBRef: the query
-     * operators of MongoDB, and the options of {@code $regex}, {@code $text} and the geospatial ones.
+     * operators of MongoDB, including {@code $within}, the older name of {@code $geoWithin}, which GORM writes for a
+     * box, a polygon or a circle, and the options of {@code $regex}, {@code $text} and the geospatial ones.
      */
     private static final Set<String> QUERY_OPERATORS = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin',
             '$and', '$or', '$not', '$nor', '$exists', '$type', '$expr', '$jsonSchema', '$mod', '$regex', '$options',
             '$text', '$search', '$language', '$caseSensitive', '$diacriticSensitive', '$where', '$geoIntersects',
-            '$geoWithin', '$near', '$nearSphere', '$geometry', '$maxDistance', '$minDistance', '$box', '$center',
+            '$geoWithin', '$within', '$near', '$nearSphere', '$geometry', '$maxDistance', '$minDistance', '$box', '$center',
             '$centerSphere', '$polygon', '$uniqueDocs', '$all', '$elemMatch', '$size', '$bitsAllClear', '$bitsAllSet',
             '$bitsAnyClear', '$bitsAnySet', '$comment', '$rand', '$sampleRate'] as Set<String>
 
@@ -380,18 +400,20 @@ final class MongoCommandRedactor {
          */
         Scope of(String key, BsonValue value) {
             if (kind == Kind.OPTIONS) {
-                if (ANY_VALUE.contains(key)) {
-                    return child(Kind.DATA, null, null, 0, quote(key))
-                }
                 Kind valueKind = DATA_KEYED.contains(key) ? Kind.DATA :
                         UPDATE_KEYED.contains(key) ? Kind.UPDATE :
                         CONDITION_KEYED.contains(key) ? Kind.CONDITION :
                         FIELD_KEYED.contains(key) ? Kind.QUERY :
-                        key == LET ? Kind.EXPRESSION : Kind.OPTIONS
+                        key == LET ? Kind.EXPRESSION :
+                        OPTION_KEYED.contains(key) ? Kind.OPTIONS : null
+                if (valueKind == null) {
+                    // an option not known to hold options, fields or a pipeline, whose document may be any data
+                    return child(Kind.DATA, null, null, 0, quote(key))
+                }
                 return child(valueKind, null, Collections.<String>emptyList(), 0, quote(key))
             }
             if ((kind == Kind.QUERY || kind == Kind.CONDITION) && key.startsWith('$')) {
-                if (ANY_VALUE.contains(key)) {
+                if (key == COMMENT) {
                     return child(Kind.DATA, null, null, 0, quote(key))
                 }
                 if (kind == Kind.CONDITION && DBREF_FIELDS.contains(key)) {

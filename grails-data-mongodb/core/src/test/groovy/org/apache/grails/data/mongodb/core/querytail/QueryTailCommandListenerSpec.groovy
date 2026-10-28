@@ -373,6 +373,32 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
         !file.text.contains('example-secret')
     }
 
+    void "a query GORM writes for a box, a polygon or a circle keeps its operators, while the coordinates of the shape are values"() {
+        given:
+        File file = new File(tempDir, 'capture.log')
+        open(enabled(file), QueryTailBook, QueryTailPlace)
+        QueryTailPlace.withNewSession {
+            new QueryTailPlace(name: 'example-secret', location: [50, 50]).save(flush: true)
+        }
+
+        when:
+        List<String> found = QueryTailPlace.withNewSession {
+            [QueryTailPlace.findByLocationWithinBox([[40, 30], [60, 70]]),
+             QueryTailPlace.createCriteria().get { withinPolygon('location', [[40, 30], [40, 70], [60, 70], [60, 30]]) },
+             QueryTailPlace.findByLocationWithinCircle([[40, 30], 40])]*.name
+        }
+        List<String> finds = records(file)*.sql.findAll { it.startsWith("find ${DATABASE}.queryTailPlace ") }
+
+        then: 'the database found the place inside each shape'
+        found == ['example-secret'] * 3
+
+        and: 'the capture kept the operator GORM writes, and the shape'
+        finds.any { it.contains('{"location": {"$within": {"$box": [[?]]}}}') }
+        finds.any { it.contains('{"location": {"$within": {"$polygon": [[?]]}}}') }
+        finds.any { it.contains('{"location": {"$within": {"$center": [[?], ?]}}}') }
+        !file.text.contains('example-secret')
+    }
+
     void "a literal written with \$const does not record the keys inside it, while the expression around it is kept"() {
         given:
         File file = new File(tempDir, 'capture.log')
@@ -853,9 +879,9 @@ class QueryTailCommandListenerSpec extends AutoStartedMongoSpec {
                 .collect { it.contains('"address.city": ?') } == [false, true]
     }
 
-    private MongoDatastore open(Map config) {
+    private MongoDatastore open(Map config, Class... classes = [QueryTailBook] as Class[]) {
         MongoDatastore datastore = new MongoDatastore(
-                DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_URL): url(DATABASE)] + config), QueryTailBook)
+                DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_URL): url(DATABASE)] + config), classes)
         datastores << datastore
         datastore
     }
@@ -907,6 +933,17 @@ class QueryTailBook {
 
 class QueryTailAddress {
     String city
+}
+
+@Entity
+class QueryTailPlace {
+    ObjectId id
+    String name
+    List location
+
+    static mapping = {
+        location geoIndex: true
+    }
 }
 
 @Entity
