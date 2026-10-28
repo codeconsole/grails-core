@@ -14,9 +14,12 @@
 # limitations under the License.
 
 # Merging a pull request, or labelling it "no ci", does not stop the runs still queued or in progress for its head
-# commit, and their result can no longer change anything. This workflow cancels the pull_request runs of every
-# open pull request labelled "no ci", and on a push to a release branch also those of every pull request merged by
-# the pushed commit that were created before the merge. A run is kept when an open pull request not labelled
+# commit, and except for the tests a "run ci" label asked for, their result can no longer change anything. This
+# workflow cancels the pull_request runs of every open pull request labelled "no ci", and on a push to a release
+# branch also those of every pull request merged by the pushed commit that were created before the merge, unless
+# that pull request is labelled "run ci": on a release branch below the default branch, the push after a merge
+# builds without the tests, so the tests the label ran on the pull request are the only ones the change gets there,
+# and a late failure still calls for a follow-up fix. A run is also kept when an open pull request not labelled
 # "no ci" has the same head commit, since it reports for that pull request too. A pull_request run from a fork gets
 # a read-only token, so the label only cancels at once on a pull request from this repository; the runs of a fork's
 # pull request are cancelled by the next push to a release branch. That is also why merges are found from the push
@@ -53,11 +56,12 @@ jobs:
           gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
             --jq '.[] | [.head.repo.full_name, .head.sha, (any(.labels[]; .name == "no ci") | tostring)] | @tsv' > open.tsv
           # The head repository and head commit of each pull request whose runs are unneeded, with the time its runs
-          # must have been created before: the merge, or now for a pull request labelled "no ci".
+          # must have been created before: the merge, or now for a pull request labelled "no ci". A merged pull
+          # request labelled "run ci" is left out, since its tests may be the only ones its change gets.
           {
             if [[ "$EVENT" == push ]]; then
               gh api "repos/$REPO/commits/$SHA/pulls" \
-                --jq '.[] | select(.merged_at != null) | [.head.repo.full_name, .head.sha, .merged_at] | @tsv'
+                --jq '.[] | select(.merged_at != null and (any(.labels[]; .name == "run ci") | not)) | [.head.repo.full_name, .head.sha, .merged_at] | @tsv'
             fi
             awk -F '\t' -v now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" '$3 == "true" { print $1 "\t" $2 "\t" now }' open.tsv
           } > unneeded.tsv
