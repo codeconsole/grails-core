@@ -495,12 +495,22 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
 
     /**
      * Looks up the GrailsWebRequest from the current request.
+     * <p>
+     * The web request bound to the current thread wins when it was built with this very request, so a
+     * task running alongside the request it was started during, which is bound to a web request of its
+     * own, and the request thread each find their own. Otherwise the web request stored on the request
+     * is returned, such as for a wrapper of the request, falling back to the one bound to the thread.
+     *
      * @param request The current request
      * @return The GrailsWebRequest
      */
     public static @Nullable GrailsWebRequest lookup(HttpServletRequest request) {
+        GrailsWebRequest bound = lookup();
+        if (bound != null && bound.getRequest() == request) {
+            return bound;
+        }
         GrailsWebRequest webRequest = (GrailsWebRequest) request.getAttribute(GrailsApplicationAttributes.WEB_REQUEST);
-        return webRequest == null ? lookup() : webRequest;
+        return webRequest == null ? bound : webRequest;
     }
 
     /**
