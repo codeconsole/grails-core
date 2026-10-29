@@ -215,6 +215,31 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('server.ports.01') == null
     }
 
+    void 'a full key stored with #method wins over the element of the list it names: #key'() {
+        given:
+        def config = new PropertySourcesConfig([server: [ports: [8080, 8443]]])
+
+        when:
+        write(config, key)
+
+        then: "the stored value, not the element"
+        config.getProperty(key, Integer) == 9000
+        config.get(key) == 9000
+
+        and: "the other element still reads from the list"
+        config.getProperty('server.ports[0]', Integer) == 8080
+        config.getProperty('server.ports.0', Integer) == 8080
+
+        where:
+        method   | key               | write
+        'put'    | 'server.ports[1]' | { PropertySourcesConfig c, String k -> c.put(k, 9000) }
+        'putAll' | 'server.ports[1]' | { PropertySourcesConfig c, String k -> c.putAll([(k): 9000]) }
+        'setAt'  | 'server.ports[1]' | { PropertySourcesConfig c, String k -> c[k] = 9000 }
+        'put'    | 'server.ports.1'  | { PropertySourcesConfig c, String k -> c.put(k, 9000) }
+        'putAll' | 'server.ports.1'  | { PropertySourcesConfig c, String k -> c.putAll([(k): 9000]) }
+        'setAt'  | 'server.ports.1'  | { PropertySourcesConfig c, String k -> c[k] = 9000 }
+    }
+
     void 'a map with a key that is a whole number reads it as before'() {
         given:
         def config = new PropertySourcesConfig([codes: ['0': 'zero', '1': 'one']])

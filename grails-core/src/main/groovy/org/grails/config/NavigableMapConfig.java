@@ -371,6 +371,7 @@ public abstract class NavigableMapConfig implements Config {
 
         Object value = null;
         boolean first = true;
+        boolean storedKeyRead = false;
         int length = key.length();
         int start = 0;
         while (start < length) {
@@ -380,8 +381,21 @@ public abstract class NavigableMapConfig implements Config {
             }
             if (end > start) {
                 String segment = key.substring(start, end);
-                value = childOf(first ? configMap : value, segment);
+                Object parent = first ? configMap : value;
                 first = false;
+                if (parent instanceof Map<?, ?> map && map.containsKey(segment)) {
+                    value = map.get(segment);
+                } else {
+                    value = elementOf(parent, segment);
+                    if (value != null && !storedKeyRead) {
+                        // a full key stored as written, such as one put as server.ports[1], wins over the element
+                        Object stored = configMap.get(key);
+                        if (stored != null) {
+                            return stored;
+                        }
+                        storedKeyRead = true;
+                    }
+                }
                 if (value == null) {
                     return null;
                 }
@@ -391,19 +405,23 @@ public abstract class NavigableMapConfig implements Config {
         return value;
     }
 
-    /**
-     * The child a segment of a key names: the entry of a map, or the element of a list at a whole-number segment, as
-     * Spring Boot reads {@code server.ports.0}. A whole number with a leading zero, such as {@code 01}, is not an
-     * index, as in Spring Boot. A segment with an index after a name, {@code ports[0]}, names the element of the list
-     * under {@code ports} when the map holds no key of that name itself. Anything else below a value that
-     * is not a map, such as a child of a scalar, does not exist.
-     */
     private static Object childOf(Object value, String segment) {
+        if (value instanceof Map<?, ?> map && map.containsKey(segment)) {
+            return map.get(segment);
+        }
+        return elementOf(value, segment);
+    }
+
+    /**
+     * The element of a list a segment of a key names: the element at a whole-number segment, as Spring Boot reads
+     * {@code server.ports.0}, or, for a segment with an index after a name, {@code ports[0]}, the element of the list
+     * under {@code ports} in a map that holds no key of that name itself. A whole number with a leading zero, such as
+     * {@code 01}, is not an index, as in Spring Boot. Anything else below a value that is not a map, such as a child
+     * of a scalar, does not exist. A key stored as written is read before the element it names.
+     */
+    private static Object elementOf(Object value, String segment) {
         if (value instanceof Map) {
             Map<?, ?> map = (Map<?, ?>) value;
-            if (map.containsKey(segment)) {
-                return map.get(segment);
-            }
             int bracket = segment.indexOf('[');
             if (bracket > 0 && segment.endsWith("]")) {
                 Object child = map.get(segment.substring(0, bracket));
