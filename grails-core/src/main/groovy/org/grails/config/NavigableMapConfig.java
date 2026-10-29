@@ -393,8 +393,9 @@ public abstract class NavigableMapConfig implements Config {
 
     /**
      * The child a segment of a key names: the entry of a map, or the element of a list at a whole-number segment, as
-     * Spring Boot reads {@code server.ports.0}. A segment with an index after a name, {@code ports[0]}, names the element
-     * of the list under {@code ports} when the map holds no key of that name itself. Anything else below a value that
+     * Spring Boot reads {@code server.ports.0}. A whole number with a leading zero, such as {@code 01}, is not an
+     * index, as in Spring Boot. A segment with an index after a name, {@code ports[0]}, names the element of the list
+     * under {@code ports} when the map holds no key of that name itself. Anything else below a value that
      * is not a map, such as a child of a scalar, does not exist.
      */
     private static Object childOf(Object value, String segment) {
@@ -424,7 +425,7 @@ public abstract class NavigableMapConfig implements Config {
     }
 
     private static int listIndex(String segment) {
-        if (segment.isEmpty() || segment.length() > 9) {
+        if (segment.isEmpty() || segment.length() > 9 || (segment.length() > 1 && segment.charAt(0) == '0')) {
             return -1;
         }
         for (int i = 0; i < segment.length(); i++) {

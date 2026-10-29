@@ -269,8 +269,9 @@ class NavigableMap implements Map<String, Object>, Cloneable {
 
     /**
      * The child a segment of a path names: the entry of a map, or the element of a list at a whole-number segment, as
-     * Spring Boot reads {@code server.ports.0}. A segment with an index after a name, {@code ports[0]}, names the element
-     * of the list under {@code ports} when the map holds no key of that name itself. Anything else below a value that
+     * Spring Boot reads {@code server.ports.0}. A whole number with a leading zero, such as {@code 01}, is not an
+     * index, as in Spring Boot. A segment with an index after a name, {@code ports[0]}, names the element of the list
+     * under {@code ports} when the map holds no key of that name itself. Anything else below a value that
      * is not a map has no child.
      */
     private static Object childOf(Object value, String segment) {
@@ -292,7 +293,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             }
             return null
         }
-        if (value instanceof List && segment ==~ /\d{1,9}/) {
+        if (value instanceof List && segment ==~ /0|[1-9]\d{0,8}/) {
             List list = (List) value
             int index = segment.toInteger()
             return index >= 0 && index < list.size() ? list.get(index) : null

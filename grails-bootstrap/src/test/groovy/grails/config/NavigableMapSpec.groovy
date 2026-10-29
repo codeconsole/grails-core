@@ -196,6 +196,8 @@ class NavigableMapSpec extends Specification {
         output.navigate('app', 'ports', '2') == null
         output.navigate('app', 'ports', '-1') == null
         output.navigate('app', 'ports', '+1') == null
+        output.navigate('app', 'ports', '01') == null
+        output.navigate('app', 'ports[01]') == null
         output.navigate('app', 'ports', 'first') == null
         output.navigate('app', 'ports', '0', 'deeper') == null
 

@@ -186,6 +186,8 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('server.ports.2') == null
         !config.containsProperty('server.ports.2')
         config.getProperty('server.ports.-1') == null
+        config.getProperty('server.ports.01') == null
+        config.getProperty('server.ports[01]') == null
         config.getProperty('server.ports.0.deeper') == null
 
         where:
@@ -207,6 +209,10 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('server.ports.0', Integer) == 8080
         environment.getProperty('server.ports.2') == null
         config.getProperty('server.ports.2') == null
+
+        and: "a number with a leading zero is not an index"
+        environment.getProperty('server.ports.01') == null
+        config.getProperty('server.ports.01') == null
     }
 
     void 'a map with a key that is a whole number reads it as before'() {
