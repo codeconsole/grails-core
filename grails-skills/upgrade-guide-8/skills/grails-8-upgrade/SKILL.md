@@ -595,6 +595,7 @@ Filters ordered between `Ordered.HIGHEST_PRECEDENCE + 1` and -181 now run after 
 - A filter among them that reads a request body sent without a charset through `getReader()` decodes it as `grails.filter.encoding` says instead of as ISO-8859-1.
 - With `grails.filter.forceEncoding: true`, a response such a filter writes without a charset gets the forced encoding, and a request encoding such a filter sets is no longer replaced by the forced one.
 - A filter registered at exactly `Ordered.HIGHEST_PRECEDENCE` through a `FilterRegistrationBean` still runs before the encoding filter. A filter that reads request parameters needs a later order. The CAS plugin registers its single sign-out filter at `Ordered.HIGHEST_PRECEDENCE + 1`.
+- `GrailsFilters.CHARACTER_ENCODING_FILTER` is `Ordered.HIGHEST_PRECEDENCE` too, so a filter at `GrailsFilters.CHARACTER_ENCODING_FILTER.order + 1` moves from -179 to right after the encoding filter, ahead of `FormContentFilter` and of Grails' security headers filter at `GrailsFilters.FIRST`: it no longer sees the parameters of a PUT, PATCH or DELETE form, and a response it sends without continuing the chain gets no security headers. Order it at `GrailsFilters.ASSET_PIPELINE_FILTER.order + 1` to keep the place it had in Grails 8.0.
 
 ## Verification Checklist
 
@@ -609,6 +610,7 @@ Run verification through public application behavior, not only compilation.
 - On Grails 8.1, check that packaged stylesheets and scripts with non-ASCII characters are in the charset their responses now declare: UTF-8, or the encoding `grails.filter.encoding` names.
 - On Grails 8.1, when `grails.filter.encoding` is not UTF-8, check that clients sending a PUT, PATCH or DELETE form without a charset encode it in that encoding.
 - On Grails 8.1, check that no application filter that reads request parameters is registered at `Ordered.HIGHEST_PRECEDENCE`.
+- On Grails 8.1, check filters ordered at `GrailsFilters.CHARACTER_ENCODING_FILTER.order + 1`: they now run ahead of `FormContentFilter` and the security headers filter.
 
 ## Common Fix Patterns
 
