@@ -34,6 +34,18 @@ production:
 
 Similarly system arguments can be accessed.
 
+A placeholder is resolved wherever it appears in a value, including in an element of a list or in a map inside one:
+
+[source,yaml]
+----
+app:
+    origins:
+        - https://app.example.com
+        - '${EXTRA_ORIGIN:https://admin.example.com}'
+----
+
+`grailsApplication.config` gives the resolved element whether the list is read whole, with `config.getProperty('app.origins', List)`, or by index, with `config.getProperty('app.origins[1]')`, as Spring's `Environment` does.
+
 You will need to have this in `build.gradle` to modify the `bootRun` target if `grails run-app` or `./gradlew bootRun` is used to start the application
 
 [source,groovy]
