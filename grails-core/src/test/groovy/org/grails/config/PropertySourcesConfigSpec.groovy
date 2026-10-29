@@ -18,9 +18,13 @@
  */
 package org.grails.config
 
+import org.grails.config.yaml.YamlPropertySourceLoader
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
 import org.springframework.core.env.PropertySource
+import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -201,6 +205,111 @@ class PropertySourcesConfigSpec extends Specification {
         and: "no property is written under the dotted key alone"
         config.getProperty('gorm.url') == null
         !config.containsKey('gorm.url')
+    }
+
+    void 'a placeholder in a list element from application.yml is resolved as the environment resolves it'() {
+        given: "application.yml with a placeholder in a list of values and in a list of maps"
+        def yml = """\
+app:
+  origins:
+    - https://a.example.com
+    - '\${EXAMPLE_ORIGIN:https://default.example.com}'
+  rows:
+    - url: '\${EXAMPLE_ORIGIN:https://default.example.com}'
+      name: first
+      db:
+        host: '\${EXAMPLE_ORIGIN:https://default.example.com}'
+      tags:
+        - '\${EXAMPLE_ORIGIN:https://default.example.com}'
+"""
+        def source = new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yml.bytes)).first()
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(source)
+        ConfigurationPropertySources.attach(environment)
+        def config = new PropertySourcesConfig(environment.propertySources)
+
+        expect: "the environment resolves each element"
+        environment.getProperty('app.origins[1]') == 'https://default.example.com'
+        environment.getProperty('app.rows[0].url') == 'https://default.example.com'
+
+        and: "the config answers the same, by index and in the whole list"
+        config.getProperty('app.origins[1]') == 'https://default.example.com'
+        config.getProperty('app.origins', List) == ['https://a.example.com', 'https://default.example.com']
+        config.navigate('app', 'origins') == ['https://a.example.com', 'https://default.example.com']
+        config.getProperty('app.rows[0].url') == 'https://default.example.com'
+        config.navigate('app', 'rows')[0].url == 'https://default.example.com'
+        config.navigate('app', 'rows')[0].name == 'first'
+
+        and: "so does a map or a list inside an element"
+        environment.getProperty('app.rows[0].db.host') == 'https://default.example.com'
+        config.getProperty('app.rows[0].db.host') == 'https://default.example.com'
+        config.navigate('app', 'rows')[0].db.host == 'https://default.example.com'
+        config.navigate('app', 'rows')[0].tags == ['https://default.example.com']
+    }
+
+    void 'a placeholder in a list held whole is resolved'() {
+        given: "a list held whole, as application.groovy gives it, of values, of maps and of lists"
+        def map = new NavigableMap()
+        map.merge([app: [origins: ['https://a.example.com', '${EXAMPLE_ORIGIN:https://default.example.com}'],
+                         rows   : [[url: '${EXAMPLE_ORIGIN:https://default.example.com}', port: 8080]],
+                         groups : [['${EXAMPLE_ORIGIN:https://default.example.com}']]]], true)
+        def config = new PropertySourcesConfig(new NavigableMapPropertySource('application.groovy', map))
+
+        expect:
+        config.getProperty('app.origins', List) == ['https://a.example.com', 'https://default.example.com']
+        config.navigate('app', 'origins') == ['https://a.example.com', 'https://default.example.com']
+        config.navigate('app', 'rows') == [[url: 'https://default.example.com', port: 8080]]
+        config.navigate('app', 'groups') == [['https://default.example.com']]
+
+        and: "the property source keeps the list as written"
+        map.navigate('app', 'origins') == ['https://a.example.com', '${EXAMPLE_ORIGIN:https://default.example.com}']
+    }
+
+    void 'a list without a placeholder is held as given'() {
+        given:
+        def origins = ['https://a.example.com', 8080]
+        def config = new PropertySourcesConfig([:])
+
+        when:
+        config.merge([app: [origins: origins]])
+
+        then:
+        config.navigate('app', 'origins').is(origins)
+    }
+
+    void 'a placeholder in a list element merged in a nested map is resolved once, alike for the flat key and the nested entry'() {
+        given:
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+
+        when:
+        config.merge([app: [hosts: ['http://${host}']]])
+
+        then:
+        config.navigate('app', 'hosts') == ['http://host1']
+        config['app.hosts'] == ['http://host1']
+        config.getProperty('app.hosts', List) == ['http://host1']
+        counter.readCount() == 1
+    }
+
+    void 'a placeholder in a list element merged #description is resolved once, alike for every read'() {
+        given:
+        def counter = new CountingPropertySource()
+        def config = new PropertySourcesConfig(counter)
+
+        when:
+        config.merge(merged)
+
+        then:
+        config.navigate('app', 'hosts') == ['http://host1']
+        config['app.hosts'] == ['http://host1']
+        config.navigate('app', 'hosts[0]') == indexed
+        counter.readCount() == 1
+
+        where:
+        description         | merged                             | indexed
+        'as a dotted key'   | ['app.hosts': ['http://${host}']]  | null
+        'as an indexed key' | ['app.hosts[0]': 'http://${host}'] | 'http://host1'
     }
 
     static class CountingPropertySource extends PropertySource<Object> {
