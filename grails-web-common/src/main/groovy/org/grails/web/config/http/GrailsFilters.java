@@ -28,6 +28,10 @@ import org.springframework.core.Ordered;
  */
 public enum GrailsFilters {
 
+    /**
+     * The first slot after the character encoding filter, which runs at {@link Ordered#HIGHEST_PRECEDENCE}. A filter
+     * at this order runs ahead of the other Grails filters, with the request encoding already set.
+     */
     FIRST,
     ASSET_PIPELINE_FILTER,
 
