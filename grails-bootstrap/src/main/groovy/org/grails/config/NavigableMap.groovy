@@ -256,7 +256,8 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     /**
      * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a
      * nested map is kept, and so is the nested map the owner holds for the element just written when it is that same
-     * map, since the merge has written the field into it. Otherwise an element that is a map is held as a nested map
+     * map, since the merge has written the field into it, or when the element is a value that is not a map, which the
+     * map the indexed key wrote replaces, as {@code rows[1].name} replaces {@code 'two'}. Otherwise an element that is a map is held as a nested map
      * built from it, so that it holds every field the element holds, such as {@code db.url} beside the {@code db.port}
      * just written below it, and none of an element the list held before it was replaced. The field just written then
      * takes the value the owner's nested map holds for it, which the merge stored through
@@ -268,7 +269,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                                       Object element, String writtenField) {
         String indexedName = "${name}[${index}]".toString()
         Object written = writtenField != null ? owner.get(indexedName) : null
-        if (written instanceof NavigableMap && (element == null || element.is(written))) {
+        if (written instanceof NavigableMap && (element == null || element.is(written) || !(element instanceof Map))) {
             Object stored = valueAt(written, writtenField)
             if (stored != null && writtenField.indexOf('.') > -1) {
                 ((NavigableMap) written).merge([(writtenField): stored], true)

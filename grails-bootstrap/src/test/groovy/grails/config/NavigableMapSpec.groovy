@@ -255,4 +255,17 @@ class NavigableMapSpec extends Specification {
         'after a dotted key' | ['a.b.c.d': 'old']
         'after a nested map' | [a: [b: [c: [d: 'old']]]]
     }
+
+    def "an indexed key with a property after the index writes a map over a value of a list that is not a map"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(['a.rows': ['one', 'two']], true)
+        output.merge(['a.rows[0].name': 'first', 'a.rows[1].name': 'second'], true)
+
+        then:
+        output.navigate('a', 'rows') == [[name: 'first'], [name: 'second']]
+        output.navigate('a', 'rows')[1].name == 'second'
+    }
 }

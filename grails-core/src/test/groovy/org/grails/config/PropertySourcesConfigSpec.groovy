@@ -296,6 +296,21 @@ class PropertySourcesConfigSpec extends Specification {
         config.navigate('app', 'rows') == [[name: 'dev', port: '9'], [name: 'second']]
     }
 
+    void 'indexed keys with a property after the index replace values of a list that are not maps'() {
+        given:
+        def config = new PropertySourcesConfig()
+        config.merge(['app.rows': ['one', 'two']])
+
+        when:
+        config.merge(['app.rows[0].name': 'first', 'app.rows[1].name': 'second'])
+
+        then: "the list, the indexed keys and dot notation read the maps"
+        config.navigate('app', 'rows') == [[name: 'first'], [name: 'second']]
+        config.getProperty('app.rows', List) == [[name: 'first'], [name: 'second']]
+        config.getProperty('app.rows[1].name') == 'second'
+        config.app.rows[1].name == 'second'
+    }
+
     void 'a list of maps is given as plain maps by getProperty and read through dot notation, from #description'() {
         given:
         def config = new PropertySourcesConfig(source)
