@@ -423,11 +423,26 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             if (!candidate.value.every { Object bracketedValue -> bracketedValue == value }) {
                 continue
             }
-            if (candidate.key in pathsToCheck && (containsKey(candidate.key) || navigate(candidate.key.tokenize('.') as String[]) != null)) {
+            if (candidate.key in pathsToCheck && (containsKey(candidate.key) || holdsPath(candidate.key.tokenize('.')))) {
                 continue
             }
             flatConfig.remove(candidate.key)
         }
+    }
+
+    /**
+     * Whether the nested maps hold a value under every segment of a path, walking only through maps, so that a scalar
+     * part way down, such as {@code /v1} under {@code routes} for {@code routes./v1.0/**}, holds no value below it.
+     */
+    private boolean holdsPath(List<String> path) {
+        Object value = this
+        for (String segment in path) {
+            if (!(value instanceof Map) || !((Map) value).containsKey(segment)) {
+                return false
+            }
+            value = ((Map) value).get(segment)
+        }
+        value != null
     }
 
     /**
