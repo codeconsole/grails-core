@@ -36,6 +36,7 @@ import org.springframework.context.support.GenericApplicationContext
 import org.springframework.scheduling.annotation.ProxyAsyncConfiguration
 import org.springframework.core.env.Environment
 import org.springframework.javapoet.ClassName
+import org.springframework.util.StopWatch
 import spock.lang.Specification
 
 /**
@@ -141,6 +142,17 @@ class BeanReflectionBeanFactoryInitializationAotProcessorSpec extends Specificat
             !registered(hints, ProxyAsyncConfiguration, MemberCategory.INVOKE_DECLARED_CONSTRUCTORS)
     }
 
+    void 'a Spring class a registrar declares by class can be created'() {
+        given: 'a registrar bean is left out of the generated code, so Spring creates it as the registrar declared it'
+            register(new SpringClassRegistrar())
+
+        when:
+            def hints = hints()
+
+        then:
+            registered(hints, StopWatch, MemberCategory.INVOKE_DECLARED_CONSTRUCTORS, MemberCategory.INVOKE_PUBLIC_METHODS)
+    }
+
     void 'the product of a factory method has its injection points reached'() {
         given: 'a bean a factory method creates'
             context.registerBeanDefinition('produced', new RootBeanDefinition(FactoryFixture).tap {
@@ -168,6 +180,14 @@ class BeanReflectionBeanFactoryInitializationAotProcessorSpec extends Specificat
             registry.registerBean('withSupplier', DeclaredWithSupplierFixture) { BeanRegistry.Spec<DeclaredWithSupplierFixture> spec ->
                 spec.supplier { new DeclaredWithSupplierFixture() }
             }
+        }
+    }
+
+    static class SpringClassRegistrar implements BeanRegistrar {
+
+        @Override
+        void register(BeanRegistry registry, Environment environment) {
+            registry.registerBean('watch', StopWatch)
         }
     }
 

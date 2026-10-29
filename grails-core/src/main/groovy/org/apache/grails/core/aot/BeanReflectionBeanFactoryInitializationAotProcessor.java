@@ -39,6 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.aot.BeanFactoryInitializationAotContribution;
 import org.springframework.beans.factory.aot.BeanFactoryInitializationAotProcessor;
+import org.springframework.beans.factory.aot.BeanRegistrationAotProcessor;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
@@ -65,7 +66,7 @@ import org.springframework.util.ReflectionUtils;
  * built by a supplier and declared as an interface hides the class whose members need injecting; those
  * processors then inject every bean, including the ones the generated code already injected, and do it
  * reflectively. Only the annotated members of Spring's beans are registered: creating them is the generated
- * code's business.</p>
+ * code's business, except for the ones a registrar declares, which the generated code leaves out.</p>
  *
  * @since 9.0
  */
@@ -102,7 +103,7 @@ public class BeanReflectionBeanFactoryInitializationAotProcessor implements Bean
     /**
      * The class of every bean, and how much of it is reached reflectively: a bean is created through its
      * constructor unless a supplier or a factory method creates it, and the product of a factory method, like
-     * a Spring bean, only has its annotated members reached.
+     * a Spring bean the generated code creates, only has its annotated members reached.
      */
     private Map<Class<?>, Integer> beanClassesOf(ConfigurableListableBeanFactory beanFactory) {
         Map<Class<?>, Integer> beanClasses = new LinkedHashMap<>();
@@ -130,12 +131,17 @@ public class BeanReflectionBeanFactoryInitializationAotProcessor implements Bean
             if (beanClass == null) {
                 continue;
             }
-            if (beanClass.getName().startsWith(SPRING_PACKAGE)) {
+            if (beanClass.getName().startsWith(SPRING_PACKAGE) && !isLeftOutOfGeneration(beanDefinition)) {
                 access = INJECTED;
             }
             beanClasses.merge(beanClass, access, Math::max);
         }
         return beanClasses;
+    }
+
+    /** A registrar's bean: the generated code does not create it, and the registrar declares it again. */
+    private static boolean isLeftOutOfGeneration(AbstractBeanDefinition beanDefinition) {
+        return Boolean.TRUE.equals(beanDefinition.getAttribute(BeanRegistrationAotProcessor.IGNORE_REGISTRATION_ATTRIBUTE));
     }
 
     /** What a factory method creates, as far as it can be told without calling it. */
