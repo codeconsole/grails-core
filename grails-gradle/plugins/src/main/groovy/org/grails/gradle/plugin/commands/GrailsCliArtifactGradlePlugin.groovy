@@ -113,7 +113,8 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
 
         // the compiler merges the hand-authored grails-cli.factories into the one it generates for the
         // commands, so a change to that file has to recompile them even when no command changed, and a
-        // command deleted without anything being recompiled has to leave the generated file all the same
+        // command deleted without anything being recompiled, which only an incremental Groovy
+        // compilation (options.incremental = true) does, has to leave the generated file all the same
         project.plugins.withId('groovy') {
             project.tasks.named(cliSourceSet.getCompileTaskName('groovy'), GroovyCompile).configure { GroovyCompile task ->
                 FactoriesCompileInput.registerCliFactories(project, task)

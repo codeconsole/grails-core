@@ -28,6 +28,11 @@ import org.gradle.testkit.runner.BuildResult
  * compilation deletes the class file and compiles nothing, and the entry naming the class would
  * survive into what the build packages: a registration of a class that cannot be loaded.</p>
  *
+ * <p>The fixture opts into incremental Groovy compilation ({@code options.incremental = true}). The
+ * default compilation recompiles everything and cleans the destination directory first, so the
+ * compiler writes the generated file again from the classes that remain and leaves nothing to
+ * prune.</p>
+ *
  * @since 8.0.1
  * @see PruneGeneratedFactories
  */
@@ -40,8 +45,8 @@ class PruneGeneratedFactoriesFunctionalSpec extends GradleSpecification {
         File projectDir = setupTestResourceProject('factories-prune').projectDir
         executeTask('compileGroovy')
 
-        expect: 'the compilation registered both classes beside the hand-authored entry'
-        handlers(projectDir) == ['elsewhere.JarHandler', 'example.GoneHandler', 'example.KeepHandler']
+        expect: 'the compilation registered both handlers beside the hand-authored entry, and Plain under nothing'
+        registered(projectDir) == ['example.Handler': ['elsewhere.JarHandler', 'example.GoneHandler', 'example.KeepHandler']]
 
         when:
         assert new File(projectDir, 'src/main/groovy/example/GoneHandler.groovy').delete()
@@ -51,27 +56,37 @@ class PruneGeneratedFactoriesFunctionalSpec extends GradleSpecification {
         deleted.output.contains('None of the classes needs to be compiled')
 
         and: 'the class is gone from the file, and the hand-authored entry, naming no class here, is kept'
-        handlers(projectDir) == ['elsewhere.JarHandler', 'example.KeepHandler']
+        registered(projectDir) == ['example.Handler': ['elsewhere.JarHandler', 'example.KeepHandler']]
     }
 
     void 'the generated factories file is removed when its last entry is'() {
-        given:
+        given: 'a project whose one registration is GoneHandler, with Plain the only other source'
         File projectDir = setupTestResourceProject('factories-prune').projectDir
         assert new File(projectDir, 'src/main/resources/META-INF/grails.factories').delete()
         assert new File(projectDir, 'src/main/groovy/example/KeepHandler.groovy').delete()
         executeTask('compileGroovy')
 
+        expect:
+        registered(projectDir) == ['example.Handler': ['example.GoneHandler']]
+
         when:
         assert new File(projectDir, 'src/main/groovy/example/GoneHandler.groovy').delete()
-        executeTask('compileGroovy')
+        BuildResult deleted = executeTask('compileGroovy', ['--info'])
 
-        then:
+        then: 'Plain kept the compilation from having no source, which skips it and removes every output, and it compiled nothing'
+        deleted.output.contains('None of the classes needs to be compiled')
+        new File(projectDir, 'build/classes/groovy/main/example/Plain.class').isFile()
+
+        and: 'so it is the prune that removed the file, rather than leave one without an entry'
         !new File(projectDir, GENERATED).exists()
     }
 
-    private static List<String> handlers(File projectDir) {
+    /** Every registration of the generated file, by type, so a class registered under no type is seen to be */
+    private static Map<String, List<String>> registered(File projectDir) {
         Properties properties = new Properties()
         new File(projectDir, GENERATED).withInputStream { properties.load(it) }
-        properties.getProperty('example.Handler').tokenize(',').sort()
+        properties.stringPropertyNames().sort().collectEntries { String type ->
+            [(type): properties.getProperty(type).tokenize(',').sort()]
+        }
     }
 }

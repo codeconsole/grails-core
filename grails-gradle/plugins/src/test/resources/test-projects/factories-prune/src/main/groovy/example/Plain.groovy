@@ -18,5 +18,10 @@
  */
 package example
 
+/**
+ * Registers nothing, and stays when the handlers are deleted. A compilation with no source left is
+ * skipped and its previous outputs are removed, so without this class the generated factories file
+ * would be removed by Gradle rather than by the prune under test.
+ */
 class Plain {
 }

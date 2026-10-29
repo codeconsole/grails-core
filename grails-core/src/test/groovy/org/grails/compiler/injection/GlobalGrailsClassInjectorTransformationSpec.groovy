@@ -801,6 +801,28 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             factories.getProperty('grails.compiler.traits.TraitInjector') == null
     }
 
+    void "a class that is both an artefact handler and a trait injector is registered under both types"() {
+        given:
+            def sourceFile = new File(tempDir, 'src/main/groovy/BothTypes.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            compileToFile(sourceFile, '''
+                class BothTypes extends grails.core.ArtefactHandlerAdapter implements grails.compiler.traits.TraitInjector {
+                    BothTypes() {
+                        super('BothTypes', null, null, 'Handler')
+                    }
+                    Class getTrait() { null }
+                    String[] getArtefactTypes() { [] as String[] }
+                }
+            ''', targetDir)
+
+        then: "every type is checked, not only until one registers the class"
+            def factories = factoriesIn(targetDir)
+            factories.getProperty('grails.core.ArtefactHandler') == 'BothTypes'
+            factories.getProperty('grails.compiler.traits.TraitInjector') == 'BothTypes'
+    }
+
     void "the global transform skips classes whose source falls outside the Grails resource patterns"() {
         given: "a plain source under src/main/groovy, which is project source but not a Grails resource"
             def sourceFile = new File(tempDir, 'src/main/groovy/PlainClass.groovy')

@@ -30,7 +30,7 @@ import org.gradle.testkit.runner.TaskOutcome
  * recompilation as well: an incremental one compiles nothing when no source changed, and the
  * generated file would keep what the previous version of the hand-authored file said.</p>
  *
- * @since 9.0
+ * @since 8.0.1
  * @see FactoriesCompileInput
  */
 class FactoriesCompileInputFunctionalSpec extends GradleSpecification {

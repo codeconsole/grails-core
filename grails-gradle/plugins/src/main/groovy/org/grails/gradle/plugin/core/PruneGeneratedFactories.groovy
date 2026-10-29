@@ -39,6 +39,11 @@ import org.apache.grails.gradle.common.PropertyFileUtils
  * survive into what the build packages: a registration of a class that cannot be loaded. This runs
  * after the compilation, when every class it produces has been written.</p>
  *
+ * <p>Only an incremental Groovy compilation, which a build opts into with
+ * {@code options.incremental = true}, leaves such an entry behind. The default compilation
+ * recompiles everything and cleans its destination directory first, so the compiler writes the
+ * generated file again from the classes that remain and this action finds nothing to drop.</p>
+ *
  * @since 8.0.1
  */
 @CompileStatic

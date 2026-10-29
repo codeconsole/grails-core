@@ -30,7 +30,7 @@ import org.gradle.api.tasks.compile.GroovyCompile
  * to one of these files left the generated file as it was until a source changed as well. As an input
  * that is not a source, a change to one recompiles in full, which writes the generated file again.
  *
- * @since 9.0
+ * @since 8.0.1
  */
 @CompileStatic
 class FactoriesCompileInput {

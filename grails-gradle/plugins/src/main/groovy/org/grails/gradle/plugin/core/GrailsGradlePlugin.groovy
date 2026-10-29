@@ -249,8 +249,11 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 AutoConfigurationImportsCompileInput.register(project, c)
                 FactoriesCompileInput.registerGrailsFactories(project, c)
                 FactoriesCompileInput.registerCliFactories(project, c)
-                // A deleted class that nothing depends on compiles nothing, so the factories files the
-                // compiler generated are reconciled with what the compilation produced once it is done.
+                // Under incremental Groovy compilation, which a build opts into with
+                // options.incremental = true, a deleted class that nothing depends on compiles nothing,
+                // so the factories files the compiler generated are reconciled with what the compilation
+                // produced once it is done. The default full recompilation cleans the destination
+                // directory first and leaves nothing to prune.
                 PruneGeneratedFactories.register(project, c, PruneGeneratedFactories.GRAILS_FACTORIES_LOCATION,
                         [FactoriesCompileInput.GRAILS_FACTORIES_PATH])
                 PruneGeneratedFactories.register(project, c, PruneGeneratedFactories.CLI_FACTORIES_LOCATION,
