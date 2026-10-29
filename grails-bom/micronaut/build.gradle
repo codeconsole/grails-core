@@ -65,6 +65,11 @@ def overriddenModules = customBomDependencies.values().collect { String coord ->
 }
 Set<String> overriddenCoords = overriddenModules.collect { "${it.group}:${it.module}".toString() } as Set
 
+// Platforms the Micronaut platform manages itself. grails-bom overrides netty-bom for the Spring Boot
+// stack (Netty 4.1.x), but Micronaut 4.9 runs on Netty 4.2.x, so forcing that override on
+// enforcedPlatform() consumers would downgrade Micronaut's Netty.
+Set<String> micronautManagedPlatforms = ['netty-bom'] as Set
+
 dependencies {
     api platform(gradleBomPlatformDependencies['log4j2-bom'])
     api(platform(project(':grails-bom'))) {
@@ -96,6 +101,7 @@ dependencies {
             api coord
         }
         for (def entry : bomPlatformDependencies.entrySet()) {
+            if (entry.key in micronautManagedPlatforms) continue
             api entry.value
         }
         // Re-declare the Micronaut platform as a constraint for enforcedPlatform support
