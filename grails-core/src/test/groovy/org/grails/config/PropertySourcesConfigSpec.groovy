@@ -150,6 +150,32 @@ class PropertySourcesConfigSpec extends Specification {
         config.navigate('app', 'rows')*.name == ['first', 'second']
     }
 
+    void 'a map key in brackets holds every field written below it, #key, #order'() {
+        given: "a Boot-style source with the fields of one CORS mapping"
+        def entries = [
+                ("grails.cors.mappings[${key}].allowedOrigins[0]".toString()): 'http://a',
+                ("grails.cors.mappings[${key}].allowCredentials".toString()): 'true',
+                ("grails.cors.mappings[${key}].maxAge".toString()): '10',
+        ]
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('boot', order == 'in order' ? entries : entries.entrySet().toList().reverse().collectEntries()))
+        def config = new PropertySourcesConfig(sources)
+
+        when:
+        def mapping = config.getProperty('grails.cors.mappings', Map)[key]
+
+        then: "the map read whole and through dot notation holds all three fields"
+        mapping.allowedOrigins == ['http://a']
+        mapping.allowCredentials == 'true'
+        mapping.maxAge == '10'
+        config.grails.cors.mappings[key].allowCredentials == 'true'
+        config.grails.cors.mappings[key].maxAge == '10'
+        config.grails.cors.mappings[key].allowedOrigins == ['http://a']
+
+        where:
+        [key, order] << [['/api/**', '/api/v1.0/**'], ['in order', 'reversed']].combinations()
+    }
+
     void 'a map written by indexed keys is read through dot notation, and a key it does not hold is null-safe'() {
         given:
         def config = new PropertySourcesConfig()
