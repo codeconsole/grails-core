@@ -21,6 +21,9 @@ package org.grails.plugins.web.async
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletRequestWrapper
 
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.request.RequestContextHolder
 
 import grails.util.GrailsWebMockUtil
@@ -98,6 +101,52 @@ class GrailsWebRequestTaskDecoratorSpec extends Specification {
 
         then: 'the task is bound to a web request of its own, which it finds from the request it was given'
         !seen.bound.is(original)
+        seen.fromRequest.is(seen.bound)
+    }
+
+    void 'a task finds its own web request from a wrapper of its request, so its params stay its own'() {
+        given: 'a request whose params the request thread has read'
+        GrailsWebRequest original = GrailsWebMockUtil.bindMockWebRequest()
+        HttpServletRequest request = original.currentRequest
+        original.params.put('id', 'request')
+        Map seen = [:]
+        Runnable decorated = new GrailsWebRequestTaskDecorator().decorate {
+            // As data binding looks the web request up from the request it binds, which can be a wrapper
+            GrailsWebRequest found = GrailsWebRequest.lookup(new HttpServletRequestWrapper(request))
+            found.params.put('id', 'task')
+            seen.found = found
+            seen.bound = GrailsWebRequest.lookup()
+        }
+
+        when:
+        runOnAnotherThread(decorated)
+
+        then: 'the task wrote to its own params'
+        seen.found.is(seen.bound)
+        seen.bound.params.id == 'task'
+
+        and: 'the request thread keeps its own'
+        original.params.id == 'request'
+    }
+
+    void 'a task given a wrapper of the request finds its own web request from the request it wraps'() {
+        given: 'a web request bound to a wrapper of the request, as a filter inside the web request filter makes'
+        MockHttpServletRequest request = new MockHttpServletRequest(new MockServletContext())
+        HttpServletRequestWrapper wrapper = new HttpServletRequestWrapper(request)
+        GrailsWebRequest original = GrailsWebMockUtil.bindMockWebRequest(new MockServletContext(), request,
+                new MockHttpServletResponse())
+        GrailsWebRequest wrapped = new GrailsWebRequest(wrapper, original.currentResponse, original.attributes)
+        Map seen = [:]
+        Runnable decorated = new GrailsWebRequestTaskDecorator().decorate({
+            seen.bound = GrailsWebRequest.lookup()
+            seen.fromRequest = GrailsWebRequest.lookup(request)
+        } as Runnable, wrapped)
+
+        when:
+        runOnAnotherThread(decorated)
+
+        then:
+        seen.bound.currentRequest.is(wrapper)
         seen.fromRequest.is(seen.bound)
     }
 

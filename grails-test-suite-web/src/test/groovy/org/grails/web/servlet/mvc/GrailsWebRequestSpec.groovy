@@ -118,8 +118,28 @@ class GrailsWebRequestSpec extends Specification {
         expect: 'this thread finds its own web request from the request'
         GrailsWebRequest.lookup(request).is(bound)
 
-        and: 'a wrapper of the request finds the web request stored on the request'
-        GrailsWebRequest.lookup(new HttpServletRequestWrapper(request)).is(stored)
+        and: 'from a wrapper of the request, however deep, such as the multipart request the dispatcher resolves'
+        GrailsWebRequest.lookup(new HttpServletRequestWrapper(request)).is(bound)
+        GrailsWebRequest.lookup(new HttpServletRequestWrapper(new HttpServletRequestWrapper(request))).is(bound)
+
+        cleanup:
+        RequestContextHolder.resetRequestAttributes()
+    }
+
+    void 'looking up the web request of a request a thread bound to a wrapper of it finds the one bound to the thread'() {
+        given: 'a web request built with a wrapper of the request, as the outermost request usually is'
+        def request = new MockHttpServletRequest(servletContext)
+        def wrapper = new HttpServletRequestWrapper(request)
+        def stored = new GrailsWebRequest(request, new MockHttpServletResponse(), servletContext)
+        request.setAttribute(GrailsApplicationAttributes.WEB_REQUEST, stored)
+        def bound = new GrailsWebRequest(wrapper, new MockHttpServletResponse(), servletContext)
+        RequestContextHolder.setRequestAttributes(bound)
+
+        expect: 'the request it wraps finds it too'
+        GrailsWebRequest.lookup(request).is(bound)
+
+        and: 'another wrapper of that request is still the same request'
+        GrailsWebRequest.lookup(new HttpServletRequestWrapper(request)).is(bound)
 
         cleanup:
         RequestContextHolder.resetRequestAttributes()
