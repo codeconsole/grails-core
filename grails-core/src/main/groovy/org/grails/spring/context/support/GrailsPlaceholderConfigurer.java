@@ -110,10 +110,15 @@ public class GrailsPlaceholderConfigurer extends PropertySourcesPlaceholderConfi
      * {@code @ConfigurationProperties} binding matches it, so {@code ${app.allowedOrigins}} and
      * {@code ${app.allowed-origins}} read the same list. A list holding objects has no value a
      * placeholder could be replaced with, so a placeholder naming it is not resolved.</p>
+     *
+     * <p>The lists are read only when the environment is one of the configurer's property sources, as
+     * it is unless {@link #setPropertySources} selected others. A configurer given its own sources
+     * resolves placeholders from those sources alone, as Spring's does.</p>
      */
     @Override
     protected ConfigurablePropertyResolver createPropertyResolver(MutablePropertySources propertySources) {
         if (this.environment instanceof ConfigurableEnvironment configurableEnvironment &&
+                propertySources.contains(ENVIRONMENT_PROPERTIES_PROPERTY_SOURCE_NAME) &&
                 !propertySources.contains(CONFIGURATION_LISTS_PROPERTY_SOURCE_NAME)) {
             propertySources.addLast(new ConfigurationListPropertySource(configurableEnvironment));
         }

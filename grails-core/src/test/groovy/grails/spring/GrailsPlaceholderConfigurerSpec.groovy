@@ -29,7 +29,11 @@ import org.springframework.boot.convert.ApplicationConversionService
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
+import org.springframework.core.env.Environment
 import org.springframework.core.env.MapPropertySource
+import org.springframework.core.env.MutablePropertySources
+import org.springframework.core.env.PropertySource
 import org.springframework.core.env.SystemEnvironmentPropertySource
 import org.springframework.core.io.ByteArrayResource
 import spock.lang.Issue
@@ -240,6 +244,41 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
         }
     }
 
+    void "a configurer given its own property sources reads the environment only when it is one of them: #description"() {
+        given:
+        def runner = new ApplicationContextRunner()
+                .withInitializer { context ->
+                    context.environment.propertySources.addFirst(load('app.names: [first, second]\napp.scalar: single'))
+                    context.beanFactory.conversionService = ApplicationConversionService.sharedInstance
+                    def sources = new MutablePropertySources()
+                    if (unrelatedSource) {
+                        sources.addLast(new MapPropertySource('unrelated', ['other.name': 'other']))
+                    }
+                    if (environmentSource) {
+                        sources.addLast(environmentPropertySource(context.environment))
+                    }
+                    // Spring adds the environment and the local properties only to a configurer given no sources
+                    context.registerBeanDefinition('grailsPlaceholderConfigurer', BeanDefinitionBuilder.genericBeanDefinition(GrailsPlaceholderConfigurer)
+                            .addPropertyValue('propertySources', sources)
+                            .beanDefinition)
+                }
+                .withBean(FallbackValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            def values = context.getBean(FallbackValues)
+            assert values.names == names
+            assert values.scalar == scalar
+        }
+
+        where:
+        description                   | unrelatedSource | environmentSource || names          | scalar
+        'no sources'                  | false           | false             || 'fallback'     | 'fallback'
+        'an unrelated source'         | true            | false             || 'fallback'     | 'fallback'
+        'the environment among them'  | true            | true              || 'first,second' | 'single'
+    }
+
     void "the environment still presents a list by its indexed names only"() {
         given:
         def runner = contextRunner(load('app.names: [first, second]')).withBean(ListValues)
@@ -266,6 +305,16 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
 
     private static NavigableMapPropertySource load(String yaml, String name = 'test') {
         (NavigableMapPropertySource) new YamlPropertySourceLoader().load(name, new ByteArrayResource(yaml.bytes)).first()
+    }
+
+    // the environment as PropertySourcesPlaceholderConfigurer adds it to the sources it builds itself
+    private static PropertySource<Environment> environmentPropertySource(Environment environment) {
+        new PropertySource<Environment>(PropertySourcesPlaceholderConfigurer.ENVIRONMENT_PROPERTIES_PROPERTY_SOURCE_NAME, environment) {
+            @Override
+            Object getProperty(String name) {
+                environment.getProperty(name)
+            }
+        }
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -312,6 +361,15 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
 
         @Value('${app.items:none}')
         String itemsOrDefault
+    }
+
+    static class FallbackValues {
+
+        @Value('${app.names:fallback}')
+        String names
+
+        @Value('${app.scalar:fallback}')
+        String scalar
     }
 }
 class TestBean {
