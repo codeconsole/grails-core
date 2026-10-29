@@ -170,9 +170,10 @@ returns `null`, as in a plain Spring Boot application. A `@Value('${grails.cors.
 other `${...}` placeholder that names a list of plain values, still reads it: it resolves to the elements of the list
 joined by commas, with the placeholders in the elements resolved, and Spring converts that value to the `List` or array
 the placeholder is injected into. The list is read as `@ConfigurationProperties` binding reads it, from the property
-source of the highest priority that sets it, but a value set under the name of the list itself, in any property source,
-is used instead. The conversion splits an element that contains a comma in two, so bind a list whose elements can
-contain commas.
+source of the highest priority that sets it, and its name is matched as that binding matches it, so
+`${grails.cors.allowed-origins}` reads the same list. A value set under the name of the list itself, in any property
+source, is used instead of the list. The conversion splits an element that contains a comma in two, so bind a list
+whose elements can contain commas.
 
 A placeholder that names a list of objects has nothing to resolve to. Grails leaves a placeholder it cannot resolve as
 written, so the injection point receives the placeholder text, or the placeholder's default when it has one. Bind such

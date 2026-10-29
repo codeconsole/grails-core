@@ -141,6 +141,42 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
         }
     }
 
+    void "a placeholder naming a list by a camelCase key resolves to the elements of the list"() {
+        given:
+        def runner = contextRunner(load('grails.cors.allowedOrigins: [https://a.example.com, https://b.example.com]'))
+                .withBean(CorsValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            def values = context.getBean(CorsValues)
+            assert values.allowedOrigins == ['https://a.example.com', 'https://b.example.com']
+            assert values.text == 'https://a.example.com,https://b.example.com'
+        }
+    }
+
+    void "a placeholder names a list in any form binding matches: #placeholder reads #key"() {
+        given:
+        def runner = contextRunner(load("${key}: [first, second]"))
+                .withInitializer { context ->
+                    context.registerBeanDefinition('testBean', BeanDefinitionBuilder.genericBeanDefinition(TestBean)
+                            .addPropertyValue('name', '${' + placeholder + '}')
+                            .beanDefinition)
+                }
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            assert context.getBean(TestBean).name == 'first,second'
+        }
+
+        where:
+        key                   | placeholder
+        'app.allowedOrigins'  | 'app.allowed-origins'
+        'app.allowed-origins' | 'app.allowedOrigins'
+        'app.allowedOrigins'  | 'app.allowedorigins'
+    }
+
     void "the placeholders in the elements of a list are resolved with environment #variables"() {
         given:
         def runner = contextRunner(load('app.origins: [https://static.example.com, "${EXAMPLE_ORIGIN:https://default.example.com}"]'))
@@ -258,6 +294,15 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
 
         @Value('${app.origins}')
         List<String> origins
+    }
+
+    static class CorsValues {
+
+        @Value('${grails.cors.allowedOrigins}')
+        List<String> allowedOrigins
+
+        @Value('${grails.cors.allowedOrigins}')
+        String text
     }
 
     static class ObjectListValues {

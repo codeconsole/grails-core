@@ -106,7 +106,9 @@ public class GrailsPlaceholderConfigurer extends PropertySourcesPlaceholderConfi
      * <p>The environment presents a configuration list only under its indexed names, such as
      * {@code app.names[0]}, so that Spring Boot binds it element by element. The list is read as Spring
      * Boot binds it, from the property source of the highest priority that sets it, and the placeholders
-     * in its elements are resolved with the rest of the value. A list holding objects has no value a
+     * in its elements are resolved with the rest of the value. The name is matched as
+     * {@code @ConfigurationProperties} binding matches it, so {@code ${app.allowedOrigins}} and
+     * {@code ${app.allowed-origins}} read the same list. A list holding objects has no value a
      * placeholder could be replaced with, so a placeholder naming it is not resolved.</p>
      */
     @Override
@@ -166,11 +168,14 @@ public class GrailsPlaceholderConfigurer extends PropertySourcesPlaceholderConfi
 
         @Override
         public Object getProperty(String name) {
-            if (!ConfigurationPropertyName.isValid(name)) {
+            // adapted rather than validated: a placeholder names the list in any form the binder matches,
+            // such as grails.cors.allowedOrigins, which is not in Spring Boot's canonical form
+            ConfigurationPropertyName propertyName = ConfigurationPropertyName.adapt(name, '.');
+            if (propertyName.isEmpty()) {
                 return null;
             }
             try {
-                return this.binder.bind(name, Bindable.listOf(String.class))
+                return this.binder.bind(propertyName, Bindable.listOf(String.class))
                         .map(elements -> elements.isEmpty() ? null : StringUtils.collectionToCommaDelimitedString(elements))
                         .orElse(null);
             }
