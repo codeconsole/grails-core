@@ -1,6 +1,6 @@
 ---
 name: grails-9-upgrade
-description: Guide for upgrading Grails applications from Grails 8.x to Grails 9, covering the Groovy 6 baseline, the GPars deprecation in favour of groovy.concurrent, invokedynamic compilation, the separate grails-xml module, the opt-in settings for Spring JSON rendering, Jackson request binding, Spring MVC exception handlers and response bodies, the Jackson-backed JSON converter and domain class rendering, named JSON configurations, RFC 9457 validation problems, format resolution, web unit tests, generated GORM id and version properties, RxGORM on RxJava 3 (imports, blocking calls, subscribers, empty results), the deprecated RxJava 1 and RxJava 2 async and events modules, and configuration keys below a value that is not a map, which are absent
+description: Guide for upgrading Grails applications from Grails 8.x to Grails 9, covering the Groovy 6 baseline, the GPars deprecation in favour of groovy.concurrent, invokedynamic compilation, the separate grails-xml module, the opt-in settings for Spring JSON rendering, Jackson request binding, Spring MVC exception handlers and response bodies, the Jackson-backed JSON converter and domain class rendering, named JSON configurations, RFC 9457 validation problems, format resolution, web unit tests, generated GORM id and version properties, RxGORM on RxJava 3 (imports, blocking calls, subscribers, empty results), the deprecated RxJava 1 and RxJava 2 async and events modules, configuration keys below a value that is not a map, which are absent, and list elements read by index as in Spring Boot
 license: Apache-2.0
 ---
 
@@ -428,12 +428,12 @@ A datastore implementation of RxGORM compiled for Grails 8 or earlier, such as t
 
 ## A Configuration Key Below a Value That Is Not a Map Is Absent
 
-`getProperty` on `grailsApplication.config` answers a dotted key that runs past a value that is not a map, such as `server.url.port` when `server.url` is a string, `server.ports.0` when `server.ports` is a list, or `grails.gorm.default.constraints.nullable` when the parent is a closure from `application.groovy`, with `null` or the default, and `containsProperty` of such a key is `false`; Grails 8 answered with the parent value. `navigate` answers `null` too.
+`getProperty` on `grailsApplication.config` answers a dotted key that runs past a value that is not a map, such as `server.url.port` when `server.url` is a string, `server.ports.0` when `server.ports` is a list, or `grails.gorm.default.constraints.nullable` when the parent is a closure from `application.groovy`, with `null` or the default, and `containsProperty` of such a key is `false`; Grails 8 answered with the parent value. `navigate` answers `null` too. Below a list, a whole-number segment names an element instead, as in Spring Boot: `server.ports.0` is the first port, where Grails 8 answered with the whole list, and `server.ports[0]` is the same element for a list from `application.yml` or `application.groovy`. A list of maps reads into its elements, `app.rows.0.name`; an index past the end is absent; a map whose keys are numbers reads as before.
 
 - A typed read with a default changes silently, because the default takes over: with `x.y: false` set as a shorthand for the block, `getProperty('x.y.enabled', Boolean, true)` answered `false` in Grails 8 and answers `true`.
 - A property source of lower precedence that sets the deeper key now answers it: with `a.b: x` in one source and `a.b.c: y` in a source of lower precedence, `getProperty('a.b.c')` answers `y`, where Grails 8 answered `x`, as a Spring `Environment` over the same sources does. `navigate('a', 'b', 'c')` answers `null`.
-- Code that reads a child of a string, a list or a closure and relied on being answered with the parent reads the parent instead.
-- Read a list element from the list, `config.getProperty('server.ports', List)[0]`; `server.ports[0]` names the element only for a list from `application.yml`, not for one from `application.groovy`.
+- Code that reads a child of a string or a closure and relied on being answered with the parent reads the parent instead.
+- Code that read a whole list through a key ending in a whole number, such as `server.ports.0`, now gets the element; read the list as `server.ports`.
 
 ## Verification Checklist
 
@@ -457,7 +457,8 @@ A datastore implementation of RxGORM compiled for Grails 8 or earlier, such as t
 - [ ] `@ControllerAdvice` beans meant only for Spring MVC controllers are scoped, and no Grails controller that renders views carries `@ResponseBody` or `@RestController`
 - [ ] No plain superclass of a domain class refers to the generated `id` or `version` in `@CompileStatic` code, `@ToString` or `@EqualsAndHashCode`
 - [ ] The application starts with no `deprecated` warning from the Grails async or events modules
-- [ ] No code reads a child of a string, list or closure configuration value expecting the parent
+- [ ] No code reads a child of a string or closure configuration value expecting the parent
+- [ ] No code reads a whole list through a key ending in a whole number, such as `server.ports.0`
 - [ ] No typed read with a default, such as `getProperty('x.y.enabled', Boolean, true)`, names a key below a configuration value that is not a map
 - [ ] The full test suite passes on Groovy 6
 
