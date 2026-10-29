@@ -168,6 +168,34 @@ class PropertySourcesConfigSpec extends Specification {
         config.navigate('app', 'mappings') == [foo: [name: 'x'], bar: 'y']
     }
 
+    void 'a list of maps read as #type.simpleName gives a #type.simpleName of plain maps, written #description'() {
+        given:
+        def config = new PropertySourcesConfig()
+        config.merge(source)
+
+        when:
+        def rows = config.getProperty('app.rows', type)
+
+        then:
+        type.isInstance(rows)
+        rows.collect { it.getClass() } == [LinkedHashMap, LinkedHashMap]
+        rows*.name as List == ['first', 'second']
+
+        where:
+        [description, source, type] << [
+                [
+                        ['by indexed keys', ['app.rows[0].name': 'first', 'app.rows[1].name': 'second']],
+                        ['as a linked list', [app: [rows: new LinkedList([[name: 'first'], [name: 'second']])]]],
+                        ['as a linked list of navigable maps', [app: [rows: new LinkedList([navigableMap(name: 'first'), navigableMap(name: 'second')])]]]
+                ],
+                [List, Collection, LinkedList, ArrayList, Set, Iterable, Object]
+        ].combinations().collect { pair, type -> [pair[0], pair[1], type] }
+    }
+
+    private static NavigableMap navigableMap(Map values) {
+        new NavigableMap().tap { merge(values) }
+    }
+
     void 'a list replaced after an indexed key wrote it keeps none of its old elements'() {
         given:
         def config = new PropertySourcesConfig()
