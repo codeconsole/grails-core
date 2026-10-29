@@ -23,8 +23,9 @@ import org.springframework.core.Ordered;
 /**
  * The orders of the servlet filters in a Grails application, listed in the order they run: those Grails and the
  * plugins in the Grails repository register, and the slots Grails gives to Spring Boot's own. Place a filter of
- * your own relative to them, for example at {@code GrailsFilters.CHARACTER_ENCODING_FILTER.getOrder() + 1} to run
- * right after the character encoding filter.
+ * your own relative to them, for example at {@code GrailsFilters.ASSET_PIPELINE_FILTER.getOrder() + 1} to run right
+ * after asset-pipeline's filter. To run right after Spring Boot's character encoding filter, use
+ * {@code Ordered.HIGHEST_PRECEDENCE + 1}.
  *
  * <p>Several filters share {@link Ordered#HIGHEST_PRECEDENCE}. Among filters of the same order, Spring Boot runs
  * the ones registered through a {@code FilterRegistrationBean} first and plain {@code Filter} beans after them;
@@ -55,10 +56,14 @@ public enum GrailsFilters {
     CORS_FILTER(Ordered.HIGHEST_PRECEDENCE),
 
     /**
-     * Runs ahead of every other filter, as Spring Boot's own encoding filter does. A filter that reads a request
-     * parameter before the encoding is set makes the servlet container decode the request body with its default
-     * charset (ISO-8859-1), for the rest of the request.
+     * The order of the character encoding filter, {@link Ordered#HIGHEST_PRECEDENCE}. Spring Boot registers its
+     * encoding filter at this order, as a plain {@code Filter} bean, so of the filters at this order only those
+     * registered through a {@code FilterRegistrationBean} run before it.
+     *
+     * @deprecated since 9.0, for removal. Grails no longer registers a character encoding filter of its own; order a
+     * filter after Spring Boot's with {@code Ordered.HIGHEST_PRECEDENCE + 1}.
      */
+    @Deprecated(since = "9.0", forRemoval = true)
     CHARACTER_ENCODING_FILTER(Ordered.HIGHEST_PRECEDENCE),
 
     /**
