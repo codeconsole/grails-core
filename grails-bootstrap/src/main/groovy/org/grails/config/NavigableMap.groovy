@@ -195,11 +195,12 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         }
         String containerKey = indexedKey.substring(0, subscriptStart)
         int lastDot = containerKey.lastIndexOf('.')
-        if (lastDot < 0) {
-            // the write of the container has put it in the map that owns it already
+        if (lastDot < 0 && targetMap.getPath().isEmpty()) {
+            // the root holds the container under its own key, as the subscript wrote it, as 7.0.x always did
             return
         }
-        NavigableMap owner = targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false)
+        // a map below the root, such as an element of a list, owns a container it holds itself, cols of rows[0].cols[0]
+        NavigableMap owner = lastDot < 0 ? targetMap : targetMap.navigateSubMap(containerKey.substring(0, lastDot).tokenize('.'), false)
         if (owner == null) {
             return
         }

@@ -150,6 +150,50 @@ class PropertySourcesConfigSpec extends Specification {
         config.navigate('app', 'rows')*.name == ['first', 'second']
     }
 
+    void 'a list of maps inside an element of a list is read through dot notation, and a miss inside it is null-safe, from #description'() {
+        given:
+        def config = new PropertySourcesConfig(source)
+
+        expect: "every value is read through dot notation"
+        config.app.rows[0].cols[0].name == 'c0'
+        config.app.rows[0].cols[0].db.url == 'x'
+        config.app.rows[0].cols[1].name == 'c1'
+        config.app.rows[1].name == 'r1'
+
+        and: "a miss two levels into an element of the nested list is null-safe"
+        (config.app.rows[0].cols[1].missing.deeper ?: 'default') == 'default'
+        (config.app.rows[0].cols[0].db.missing.deeper ?: 'default') == 'default'
+
+        and: "the nested list read whole holds plain maps"
+        config.getProperty('app.rows', List)[0].cols*.name == ['c0', 'c1']
+        config.getProperty('app.rows', List)[0].cols[0].db == [url: 'x']
+        config.getProperty('app.rows[0].cols[0].db.url') == 'x'
+
+        where:
+        description              | source
+        'application.yml'        | nestedListYaml()
+        'application.properties' | nestedListProperties()
+    }
+
+    void 'a list of maps inside an element of a list is read alike from application.yml and application.properties'() {
+        given:
+        def fromYaml = new PropertySourcesConfig(nestedListYaml())
+        def fromProperties = new PropertySourcesConfig(nestedListProperties())
+
+        expect: "the nested list and the element beside it"
+        fromYaml.getProperty('app.rows', List)[0].cols == fromProperties.getProperty('app.rows', List)[0].cols
+        fromYaml.getProperty('app.rows', List)[1] == fromProperties.getProperty('app.rows', List)[1]
+        fromYaml.navigate('app', 'rows')[0].cols == fromProperties.navigate('app', 'rows')[0].cols
+    }
+
+    private static PropertySource nestedListYaml() {
+        new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("app:\n  rows:\n    - cols:\n        - name: c0\n          db:\n            url: x\n        - name: c1\n    - name: r1\n".bytes)).first()
+    }
+
+    private static PropertySource nestedListProperties() {
+        new MapPropertySource('application.properties', ['app.rows[0].cols[0].name': 'c0', 'app.rows[0].cols[0].db.url': 'x', 'app.rows[0].cols[1].name': 'c1', 'app.rows[1].name': 'r1'])
+    }
+
     void 'a map key in brackets holds every field written below it, #key, #order'() {
         given: "a Boot-style source with the fields of one CORS mapping"
         def entries = [
