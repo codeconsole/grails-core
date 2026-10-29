@@ -266,5 +266,7 @@ test.another = true
         'a dotted key merged after two keys in brackets that differ'    | ['a.b.c': 'new', 'a.b[c]': 'old', 'a[b.c]': 'new']                       | [{ NavigableMap m -> m.merge(['a[b.c]': 'new'], true) }, { NavigableMap m -> m.merge(['a.b[c]': 'old'], true) }, { NavigableMap m -> m.merge(['a.b.c': 'new'], true) }]
         'a key with a dot in brackets'                                  | ['a[b.c]': 'x']                                                          | [{ NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
         'a key with a dot in brackets beside the nested path it spells' | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.merge(['a.b.c': 'x'], true) }, { NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
+        'a key with a dot in brackets merged after a dotted key put'    | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.put('a.b.c', 'x') }, { NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
+        'a dotted key put after a key with a dot in brackets'           | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }, { NavigableMap m -> m.put('a.b.c', 'x') }]
     }
 }

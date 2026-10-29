@@ -393,7 +393,8 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      * flattened under both. A dotted name is removed only when every bracketed name that it writes with dots holds the
      * same value; where they differ, as when a later write changed one of them, every name stays, as it was before. A
      * bracketed key with a dot in it, {@code a[b.c]}, names a key of {@code a}, so the dotted name {@code a.b.c} is
-     * a property of its own, and it stays when the nested maps hold a value under that path.
+     * a property of its own, and it stays when the map holds it as a key, as a put of {@code a.b.c} does, or the nested
+     * maps hold a value under that path.
      */
     private void removeDottedDuplicates(Map<? extends Object, Object> flatConfig) {
         Map<String, List<Object>> bracketedValues = [:]
@@ -422,7 +423,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             if (!candidate.value.every { Object bracketedValue -> bracketedValue == value }) {
                 continue
             }
-            if (candidate.key in pathsToCheck && navigate(candidate.key.tokenize('.') as String[]) != null) {
+            if (candidate.key in pathsToCheck && (containsKey(candidate.key) || navigate(candidate.key.tokenize('.') as String[]) != null)) {
                 continue
             }
             flatConfig.remove(candidate.key)
