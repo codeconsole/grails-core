@@ -380,19 +380,59 @@ public abstract class NavigableMapConfig implements Config {
             }
             if (end > start) {
                 String segment = key.substring(start, end);
-                if (first) {
-                    value = configMap.get(segment);
-                    first = false;
-                } else if (value instanceof Map) {
-                    value = ((Map<?, ?>) value).get(segment);
-                } else {
-                    // The key names a child of a scalar, which does not exist whatever the scalar is.
+                value = childOf(first ? configMap : value, segment);
+                first = false;
+                if (value == null) {
                     return null;
                 }
             }
             start = end + 1;
         }
         return value;
+    }
+
+    /**
+     * The child a segment of a key names: the entry of a map, or the element of a list at a whole-number segment, as
+     * Spring Boot reads {@code server.ports.0}. A segment with an index after a name, {@code ports[0]}, names the element
+     * of the list under {@code ports} when the map holds no key of that name itself. Anything else below a value that
+     * is not a map, such as a child of a scalar, does not exist.
+     */
+    private static Object childOf(Object value, String segment) {
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            if (map.containsKey(segment)) {
+                return map.get(segment);
+            }
+            int bracket = segment.indexOf('[');
+            if (bracket > 0 && segment.endsWith("]")) {
+                Object child = map.get(segment.substring(0, bracket));
+                for (String index : segment.substring(bracket + 1, segment.length() - 1).split("\\]\\[", -1)) {
+                    child = childOf(child, index);
+                    if (child == null) {
+                        return null;
+                    }
+                }
+                return child;
+            }
+            return null;
+        }
+        if (value instanceof List<?> list) {
+            int index = listIndex(segment);
+            return index >= 0 && index < list.size() ? list.get(index) : null;
+        }
+        return null;
+    }
+
+    private static int listIndex(String segment) {
+        if (segment.isEmpty() || segment.length() > 9) {
+            return -1;
+        }
+        for (int i = 0; i < segment.length(); i++) {
+            if (!Character.isDigit(segment.charAt(i))) {
+                return -1;
+            }
+        }
+        return Integer.parseInt(segment);
     }
 
     /**

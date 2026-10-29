@@ -18,10 +18,13 @@
  */
 package org.grails.config
 
+import org.grails.config.yaml.YamlPropertySourceLoader
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
 import org.springframework.core.env.PropertySource
 import org.springframework.core.env.StandardEnvironment
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
 import spock.lang.Issue
 import spock.lang.Specification
@@ -152,16 +155,67 @@ class PropertySourcesConfigSpec extends Specification {
         config.getProperty('server.ports', List) == [8080, 8443]
         config.getProperty('grails.gorm.default.constraints', Closure).is(constraints)
 
-        and: "a key that names a child of any of them is absent rather than the value"
+        and: "a key that names a child of any of them, other than an element of the list, is absent rather than the value"
         config.getProperty('server.url.port') == null
         config.getProperty('server.url.port', String, 'none') == 'none'
-        config.getProperty('server.ports.0') == null
+        config.getProperty('server.ports.first') == null
         config.getProperty('grails.gorm.default.constraints.nullable') == null
 
         and: "containsProperty agrees"
         !config.containsProperty('server.url.port')
-        !config.containsProperty('server.ports.0')
+        !config.containsProperty('server.ports.first')
         !config.containsProperty('grails.gorm.default.constraints.nullable')
+    }
+
+    void 'a whole number after a list names its element, as Spring Boot reads it, from #description'() {
+        given:
+        def config = new PropertySourcesConfig(source)
+
+        expect: "the element, by a whole-number segment or by an index after the name"
+        config.getProperty('server.ports.0', Integer) == 8080
+        config.getProperty('server.ports.1', Integer) == 8443
+        config.getProperty('server.ports[1]', Integer) == 8443
+        config.containsProperty('server.ports.0')
+        config.navigate('server', 'ports', '1') == 8443
+
+        and: "a list of maps reads into its elements"
+        config.getProperty('app.rows.0.name') == 'first'
+        config.getProperty('app.rows[1].name') == 'second'
+
+        and: "an index past the end, or a segment that is not a whole number, is absent"
+        config.getProperty('server.ports.2') == null
+        !config.containsProperty('server.ports.2')
+        config.getProperty('server.ports.-1') == null
+        config.getProperty('server.ports.0.deeper') == null
+
+        where:
+        description                        | source
+        'a list held whole, as from a map' | [server: [ports: [8080, 8443]], app: [rows: [[name: 'first'], [name: 'second']]]]
+        'application.yml'                  | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("server:\n  ports:\n    - 8080\n    - 8443\napp:\n  rows:\n    - name: first\n    - name: second\n".bytes)).first()
+    }
+
+    void 'a whole number after a list gives the element the Spring environment gives'() {
+        given: "application.yml in a config and in an environment with configuration property sources attached"
+        def source = new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource("server:\n  ports:\n    - 8080\n    - 8443\n".bytes)).first()
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(source)
+        ConfigurationPropertySources.attach(environment)
+        def config = new PropertySourcesConfig(source)
+
+        expect:
+        environment.getProperty('server.ports.0', Integer) == 8080
+        config.getProperty('server.ports.0', Integer) == 8080
+        environment.getProperty('server.ports.2') == null
+        config.getProperty('server.ports.2') == null
+    }
+
+    void 'a map with a key that is a whole number reads it as before'() {
+        given:
+        def config = new PropertySourcesConfig([codes: ['0': 'zero', '1': 'one']])
+
+        expect:
+        config.getProperty('codes.0') == 'zero'
+        config.navigate('codes', '1') == 'one'
     }
 
     void 'a typed read with a default below a value that is not a map gets the default'() {
