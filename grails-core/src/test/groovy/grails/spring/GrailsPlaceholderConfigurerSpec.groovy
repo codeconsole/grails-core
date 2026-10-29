@@ -20,7 +20,18 @@ package grails.spring
 
 import grails.util.Holders
 import grails.core.DefaultGrailsApplication
+import org.grails.config.NavigableMapPropertySource
+import org.grails.config.yaml.YamlPropertySourceLoader
 import org.grails.spring.context.support.GrailsPlaceholderConfigurer
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.beans.factory.support.BeanDefinitionBuilder
+import org.springframework.boot.convert.ApplicationConversionService
+import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.MapPropertySource
+import org.springframework.core.env.SystemEnvironmentPropertySource
+import org.springframework.core.io.ByteArrayResource
 import spock.lang.Issue
 import spock.lang.Specification
 
@@ -107,6 +118,155 @@ class GrailsPlaceholderConfigurerSpec extends Specification {
         then:"The placeholder is replaced"
         bean.name == "test"
 
+    }
+
+    void "a placeholder naming a list of plain values resolves to the elements of the list"() {
+        given:
+        def runner = contextRunner(load('app.names: [first, second]'))
+                .withBean(ListValues)
+                .withInitializer { context ->
+                    context.registerBeanDefinition('testBean', BeanDefinitionBuilder.genericBeanDefinition(TestBean)
+                            .addPropertyValue('name', '${app.names}')
+                            .beanDefinition)
+                }
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            def values = context.getBean(ListValues)
+            assert values.list == ['first', 'second']
+            assert values.array == ['first', 'second'] as String[]
+            assert values.text == 'first,second'
+            assert context.getBean(TestBean).name == 'first,second'
+        }
+    }
+
+    void "the placeholders in the elements of a list are resolved with environment #variables"() {
+        given:
+        def runner = contextRunner(load('app.origins: [https://static.example.com, "${EXAMPLE_ORIGIN:https://default.example.com}"]'))
+                .withInitializer { context ->
+                    context.environment.propertySources.addFirst(new SystemEnvironmentPropertySource('testEnvironment', variables))
+                }
+                .withBean(OriginValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            assert context.getBean(OriginValues).origins == ['https://static.example.com', origin]
+        }
+
+        where:
+        variables                                         | origin
+        [:]                                               | 'https://default.example.com'
+        [EXAMPLE_ORIGIN: 'https://custom.example.com']   | 'https://custom.example.com'
+    }
+
+    void "a placeholder naming a list reads it from the source of the highest priority that sets it"() {
+        given:
+        def runner = contextRunner(load('app.names: [first, second]'))
+                .withInitializer { context ->
+                    context.environment.propertySources.addFirst(load('app.names: [replacement]', 'override'))
+                }
+                .withBean(ListValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            assert context.getBean(ListValues).list == ['replacement']
+        }
+    }
+
+    void "a value set under the name of a list, in any property source, is used instead of the list"() {
+        given:
+        def runner = contextRunner(load('app.names: [first, second]'))
+                .withInitializer { context ->
+                    context.environment.propertySources.addLast(new MapPropertySource('lower', ['app.names': 'single']))
+                }
+                .withBean(ListValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            assert context.getBean(ListValues).text == 'single'
+        }
+    }
+
+    void "a placeholder naming a list of objects is left as written, or resolves to its default"() {
+        given:
+        def runner = contextRunner(load('app.items: [{name: first}]')).withBean(ObjectListValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            def values = context.getBean(ObjectListValues)
+            assert values.items == '${app.items}'
+            assert values.itemsOrDefault == 'none'
+        }
+    }
+
+    void "the environment still presents a list by its indexed names only"() {
+        given:
+        def runner = contextRunner(load('app.names: [first, second]')).withBean(ListValues)
+
+        expect:
+        runner.run { context ->
+            assert !context.startupFailure
+            assert context.getBean(ListValues).list == ['first', 'second']
+            assert context.environment.getProperty('app.names') == null
+            assert !context.environment.containsProperty('app.names')
+            assert context.environment.getProperty('app.names[1]') == 'second'
+        }
+    }
+
+    private static ApplicationContextRunner contextRunner(NavigableMapPropertySource configuration) {
+        new ApplicationContextRunner()
+                .withInitializer { context ->
+                    context.environment.propertySources.addFirst(configuration)
+                    // as SpringApplication sets it, so that a comma-separated value converts to a List or an array
+                    context.beanFactory.conversionService = ApplicationConversionService.sharedInstance
+                }
+                .withUserConfiguration(PlaceholderConfiguration)
+    }
+
+    private static NavigableMapPropertySource load(String yaml, String name = 'test') {
+        (NavigableMapPropertySource) new YamlPropertySourceLoader().load(name, new ByteArrayResource(yaml.bytes)).first()
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PlaceholderConfiguration {
+
+        // a static bean method, as CoreGrailsPlugin registers it, because the configurer is a BeanFactoryPostProcessor
+        @Bean
+        static GrailsPlaceholderConfigurer grailsPlaceholderConfigurer() {
+            new GrailsPlaceholderConfigurer()
+        }
+    }
+
+    static class ListValues {
+
+        @Value('${app.names}')
+        List<String> list
+
+        @Value('${app.names}')
+        String[] array
+
+        @Value('${app.names}')
+        String text
+    }
+
+    static class OriginValues {
+
+        @Value('${app.origins}')
+        List<String> origins
+    }
+
+    static class ObjectListValues {
+
+        @Value('${app.items}')
+        String items
+
+        @Value('${app.items:none}')
+        String itemsOrDefault
     }
 }
 class TestBean {
