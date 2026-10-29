@@ -99,8 +99,8 @@ public class NameUtils {
 
     /**
      * Get the class name, taking into account proxies.
-     * A {@code $} in the simple name is taken to mean a generated subclass,
-     * which is also how a nested class has always been treated.
+     * A {@code $} in the simple name marks a generated subclass; a nested class
+     * is unaffected, since its simple name carries no {@code $}.
      *
      * @param clazz The class
      * @return The class name

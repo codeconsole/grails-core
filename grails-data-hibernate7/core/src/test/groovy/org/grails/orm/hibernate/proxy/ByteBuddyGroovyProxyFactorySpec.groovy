@@ -61,6 +61,7 @@ class ByteBuddyGroovyProxyFactorySpec extends Specification {
         GormEnhancer.findStaticApi(proxyClass).is(GormEnhancer.findStaticApi(GroovyProxyFactoryEntity))
         GormEnhancer.findInstanceApi(proxyClass).is(GormEnhancer.findInstanceApi(GroovyProxyFactoryEntity))
         GormEnhancer.findDatastore(proxyClass).is(datastore)
+        GormEnhancer.findEntity(proxyClass).is(GormEnhancer.findEntity(GroovyProxyFactoryEntity))
         !Hibernate.isInitialized(proxy)
 
         cleanup:

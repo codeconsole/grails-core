@@ -18,7 +18,7 @@
  */
 package org.grails.core.artefact
 
-import grails.core.artefact.test.Entity
+import grails.persistence.Entity
 import spock.lang.Specification
 
 class DomainClassArtefactHandlerSpec extends Specification {
