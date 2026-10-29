@@ -256,8 +256,11 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     /**
      * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a
      * nested map is kept, and so is the nested map the owner holds for the element just written when it is that same
-     * map, since the merge has written the field into it, or when the element is a value that is not a map, which the
-     * map the indexed key wrote replaces, as {@code rows[1].name} replaces {@code 'two'}. Otherwise an element that is a map is held as a nested map
+     * map, since the merge has written the field into it. An element that is a value that is not a map, or none, is
+     * replaced by the map the indexed key wrote, as {@code rows[1].name} replaces {@code 'two'}, rebuilt from the
+     * element under the flat key, so that a field written before the list was replaced or cleared does not come back;
+     * a map the owner holds under the indexed name of any other element that is not a map is removed. Otherwise an
+     * element that is a map is held as a nested map
      * built from it, so that it holds every field the element holds, such as {@code db.url} beside the {@code db.port}
      * just written below it, and none of an element the list held before it was replaced. The field just written then
      * takes the value the owner's nested map holds for it, which the merge stored through
@@ -268,15 +271,30 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     private static Object heldElement(NavigableMap targetMap, NavigableMap owner, String containerKey, String name, String index,
                                       Object element, String writtenField) {
         String indexedName = "${name}[${index}]".toString()
-        Object written = writtenField != null ? owner.get(indexedName) : null
-        if (written instanceof NavigableMap && (element == null || element.is(written) || !(element instanceof Map))) {
+        Object nested = owner.get(indexedName)
+        Object written = writtenField != null ? nested : null
+        if (written instanceof NavigableMap && element != null && element.is(written)) {
             Object stored = valueAt(written, writtenField)
             if (stored != null && writtenField.indexOf('.') > -1) {
                 ((NavigableMap) written).merge([(writtenField): stored], true)
             }
             return written
         }
+        if (written instanceof NavigableMap && !(element instanceof Map)) {
+            Object flat = elementOf(targetMap.get(containerKey), index)
+            if (!(flat instanceof Map)) {
+                return written
+            }
+            NavigableMap held = rebuilt(owner, indexedName, (Map) flat, written)
+            owner.put(indexedName, held)
+            replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
+            return held
+        }
         if (!(element instanceof Map)) {
+            if (nested instanceof NavigableMap) {
+                // the map an indexed key wrote before the list was replaced holds no element of it
+                owner.remove(indexedName)
+            }
             return element
         }
         if (element instanceof NavigableMap && writtenField == null) {
@@ -303,7 +321,41 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      */
     private static Object nestedOrElement(NavigableMap owner, String indexedName, Object element) {
         Object nested = owner.get(indexedName)
-        nested instanceof NavigableMap ? nested : element
+        if (!(nested instanceof NavigableMap)) {
+            return element
+        }
+        element instanceof Map ? rebuilt(owner, indexedName, (Map) element, nested) : element
+    }
+
+    /**
+     * An element as the flat key holds it, with the value the owner's nested map holds for each of its fields, which
+     * the merge stored through {@link #mergeMapEntry(NavigableMap, String, Object)}. A field the nested map holds and
+     * the flat element does not was written before the list was replaced or cleared, and is left out.
+     */
+    private static NavigableMap rebuilt(NavigableMap owner, String indexedName, Map flat, Object nested) {
+        NavigableMap held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
+        copyFields(held, flat, nested, '')
+        held
+    }
+
+    private static void copyFields(NavigableMap held, Map flat, Object nested, String prefix) {
+        for (Map.Entry entry in flat.entrySet()) {
+            String field = prefix + String.valueOf(entry.key)
+            if (entry.value instanceof Map && !((Map) entry.value).isEmpty()) {
+                copyFields(held, (Map) entry.value, nested, field + '.')
+                continue
+            }
+            Object value = valueAt(nested, field)
+            held.merge([(field): value != null && !(value instanceof Map) ? value : entry.value], true)
+        }
+    }
+
+    private static Object elementOf(Object container, String index) {
+        if (container instanceof List) {
+            List list = (List) container
+            return index.isInteger() && index.toInteger() < list.size() ? list.get(index.toInteger()) : null
+        }
+        container instanceof Map ? ((Map) container).get(index) : null
     }
 
     private static Object valueAt(Object map, String field) {

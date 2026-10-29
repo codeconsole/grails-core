@@ -268,4 +268,39 @@ class NavigableMapSpec extends Specification {
         output.navigate('a', 'rows') == [[name: 'first'], [name: 'second']]
         output.navigate('a', 'rows')[1].name == 'second'
     }
+
+    def "an element rebuilt after the list was #description holds only the fields written since"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(first, true)
+        output.merge(replacement, true)
+        writes.each { Map write -> output.merge(write, true) }
+
+        then:
+        output.navigate('a', 'rows') == expected
+        output.get('a.rows') == expected
+
+        where:
+        description              | first                         | replacement                | writes                                                      | expected
+        'replaced with values'   | ['a.rows[1].obsolete': 'old'] | ['a.rows': ['one', 'two']] | [['a.rows[0].name': 'first'], ['a.rows[1].name': 'second']] | [[name: 'first'], [name: 'second']]
+        'replaced, then written' | ['a.rows[1].obsolete': 'old'] | ['a.rows': ['one', 'two']] | [['a.rows[1].name': 'second']]                              | ['one', [name: 'second']]
+        'cleared'                | ['a.rows[1].obsolete': 'old'] | ['a.rows': null]           | [['a.rows[0].port': '8080'], ['a.rows[1].name': 'second']]  | [[port: '8080'], [name: 'second']]
+        'cleared, same element'  | ['a.rows[0].name': 'old']     | ['a.rows': null]           | [['a.rows[0].port': '8080']]                                | [[port: '8080']]
+    }
+
+    def "a map written by subscript and then replaced holds only the fields written since in its entry"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge(['a.routes[x].obsolete': 'old'], true)
+        output.merge(['a.routes': [x: 'one']], true)
+        output.merge(['a.routes[x].name': 'second'], true)
+
+        then:
+        output.navigate('a', 'routes') == [x: [name: 'second']]
+        output.get('a.routes') == [x: [name: 'second']]
+    }
 }
