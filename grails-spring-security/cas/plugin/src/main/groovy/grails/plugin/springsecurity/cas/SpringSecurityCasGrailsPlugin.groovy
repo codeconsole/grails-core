@@ -30,7 +30,6 @@ import org.apereo.cas.client.validation.Cas20ServiceTicketValidator
 
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean
-import org.springframework.core.Ordered
 import org.springframework.security.cas.ServiceProperties
 import org.springframework.security.cas.authentication.CasAuthenticationProvider
 import org.springframework.security.cas.authentication.NullStatelessTicketCache
@@ -42,6 +41,7 @@ import grails.plugin.springsecurity.BeanTypeResolver
 import grails.plugin.springsecurity.SecurityFilterPosition
 import grails.plugin.springsecurity.SpringSecurityUtils
 import grails.plugins.Plugin
+import org.grails.web.config.http.GrailsFilters
 
 @Slf4j
 @CompileStatic
@@ -117,12 +117,10 @@ class SpringSecurityCasGrailsPlugin extends Plugin {
                     ignoreInitConfiguration = true
                 }
 
-                // after Spring Boot's encoding filter, at HIGHEST_PRECEDENCE: SingleSignOutFilter reads the
-                // logoutRequest parameter of every POST
                 singleSignOutFilterRegistrationBean(FilterRegistrationBean) {
                     name = 'CAS Single Sign Out Filter'
                     filter = ref('singleSignOutFilter')
-                    order = Ordered.HIGHEST_PRECEDENCE + 1
+                    order = GrailsFilters.CAS_SINGLE_SIGN_OUT_FILTER.order
                 }
 
                 singleSignOutHttpSessionListener(ServletListenerRegistrationBean, new SingleSignOutHttpSessionListener())
