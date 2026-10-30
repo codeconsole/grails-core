@@ -281,6 +281,31 @@ class PropertySourcesConfigSpec extends Specification {
         key << ['/api/**', '/api/v1.0/**']
     }
 
+    void 'a placeholder in a field of a map key in brackets is resolved alike for every read of it, #key, written #description'() {
+        given: "a property source that holds the value of the placeholder"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('env', [x: 'resolved']))
+        def config = new PropertySourcesConfig(sources)
+
+        when:
+        merges.each { Map merged -> config.merge(merged) }
+
+        then: "the map read whole, through navigate and through dot notation, and the flat key of the field agree"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == 'resolved'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == 'resolved'
+        config.grails.cors.mappings[key].maxAge == 'resolved'
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == 'resolved'
+
+        where:
+        [key, description, merges] << [['/api/**', '/api/v1.0/**'], [
+                ['once', [['maxAge': '${x}']]],
+                ['over an earlier value', [['maxAge': '10'], ['maxAge': '${x}']]],
+                ['beside another field', [['maxAge': '${x}', 'allowCredentials': 'true']]],
+        ]].combinations().collect { String key, List row ->
+            [key, row[0], row[1].collect { Map fields -> fields.collectEntries { field, value -> [("grails.cors.mappings[${key}].${field}".toString()): value] } }]
+        }
+    }
+
     void 'a map written by indexed keys is read through dot notation, and a key it does not hold is null-safe'() {
         given:
         def config = new PropertySourcesConfig()
