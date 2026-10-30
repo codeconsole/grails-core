@@ -270,5 +270,7 @@ test.another = true
         'a dotted key put after a key with a dot in brackets'           | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }, { NavigableMap m -> m.put('a.b.c', 'x') }]
         'a key with a dot in brackets whose first part holds a scalar'  | ['routes[/v1]': 'one', 'routes[/v1.0/**]': 'two']                        | [{ NavigableMap m -> m.merge(['routes[/v1]': 'one'], true) }, { NavigableMap m -> m.merge(['routes[/v1.0/**]': 'two'], true) }]
         'a key with a dot in brackets whose first part holds a map'     | ['routes./v1.0/**': 'two', 'routes[/v1.0/**]': 'two']                    | [{ NavigableMap m -> m.merge(['routes./v1.0/**': 'two'], true) }, { NavigableMap m -> m.merge(['routes[/v1.0/**]': 'two'], true) }]
+        'a key with a dot in brackets whose dotted start holds a map'   | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.put('a.b', [c: 'x']) }, { NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }]
+        'a map put at the dotted start of a key with a dot in brackets' | ['a.b.c': 'x', 'a[b.c]': 'x']                                            | [{ NavigableMap m -> m.merge(['a[b.c]': 'x'], true) }, { NavigableMap m -> m.put('a.b', [c: 'x']) }]
     }
 }

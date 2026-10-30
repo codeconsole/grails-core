@@ -393,8 +393,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      * flattened under both. A dotted name is removed only when every bracketed name that it writes with dots holds the
      * same value; where they differ, as when a later write changed one of them, every name stays, as it was before. A
      * bracketed key with a dot in it, {@code a[b.c]}, names a key of {@code a}, so the dotted name {@code a.b.c} is
-     * a property of its own, and it stays when the map holds it as a key, as a put of {@code a.b.c} does, or the nested
-     * maps hold a value under that path.
+     * a property of its own, and it stays when a key of the map that spells all of it, as a put of {@code a.b.c}
+     * does, or the start of it, as a put of a map at {@code a.b} does, holds a value under the rest. A map put at
+     * {@code a} with the key {@code b.c} in it is stored as merging {@code a[b.c]} stores it, so nothing tells the
+     * two apart, and the dotted name is removed after both.
      */
     private void removeDottedDuplicates(Map<? extends Object, Object> flatConfig) {
         Map<String, List<Object>> bracketedValues = [:]
@@ -423,7 +425,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
             if (!candidate.value.every { Object bracketedValue -> bracketedValue == value }) {
                 continue
             }
-            if (candidate.key in pathsToCheck && (containsKey(candidate.key) || holdsPath(candidate.key.tokenize('.')))) {
+            if (candidate.key in pathsToCheck && holdsPath(candidate.key.tokenize('.'))) {
                 continue
             }
             flatConfig.remove(candidate.key)
@@ -431,11 +433,21 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     }
 
     /**
-     * Whether the nested maps hold a value under every segment of a path, walking only through maps, so that a scalar
-     * part way down, such as {@code /v1} under {@code routes} for {@code routes./v1.0/**}, holds no value below it.
+     * Whether a key of this map that spells the whole path, or the start of it, holds a value under the rest of the
+     * path. The rest is walked only through maps, so that a scalar part way down, such as {@code /v1} under
+     * {@code routes} for {@code routes./v1.0/**}, holds no value below it.
      */
     private boolean holdsPath(List<String> path) {
-        Object value = this
+        for (int end = path.size(); end > 0; end--) {
+            String key = path.subList(0, end).join('.')
+            if (containsKey(key) && holdsPath(get(key), path.subList(end, path.size()))) {
+                return true
+            }
+        }
+        false
+    }
+
+    private static boolean holdsPath(Object value, List<String> path) {
         for (String segment in path) {
             if (!(value instanceof Map) || !((Map) value).containsKey(segment)) {
                 return false
