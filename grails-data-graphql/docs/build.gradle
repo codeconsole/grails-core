@@ -46,6 +46,12 @@ tasks.named('asciidoctor', AsciidoctorTask).configure { AsciidoctorTask it ->
     it.inputs.dir(project.layout.projectDirectory.dir('src/main/docs'))
             .withPropertyName('docsSrcDir')
             .withPathSensitivity(PathSensitivity.RELATIVE)
+    it.inputs.files(rootProject.layout.projectDirectory.dir('grails-test-examples/graphql').asFileTree.matching { include '**/*.groovy' })
+            .withPropertyName('exampleSources')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    it.inputs.dir(project.layout.projectDirectory.dir('../core/src/test/groovy'))
+            .withPropertyName('coreTestSources')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
     it.outputs.dir project.layout.buildDirectory.dir('docs/manual')
 
     it.jvm {
