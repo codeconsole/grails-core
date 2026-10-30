@@ -140,12 +140,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             java: 17
             cache_writer: true
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             java: 21
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             java: 25
           - os: macos-latest
             java: 21
@@ -193,7 +193,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             java: 17
     runs-on: ${{ matrix.os }}
     steps:
