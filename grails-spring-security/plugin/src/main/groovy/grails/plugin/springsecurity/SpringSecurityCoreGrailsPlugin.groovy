@@ -26,6 +26,7 @@ import org.springframework.boot.autoconfigure.security.SecurityProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean
 import org.springframework.cache.jcache.JCacheCacheManager
+import org.springframework.core.Ordered
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.security.access.event.LoggerListener
 import org.springframework.security.access.expression.DenyAllPermissionEvaluator
@@ -133,6 +134,7 @@ import grails.plugin.springsecurity.web.filter.DebugFilter
 import grails.plugin.springsecurity.web.filter.GrailsAnonymousAuthenticationFilter
 import grails.plugin.springsecurity.web.filter.GrailsRememberMeAuthenticationFilter
 import grails.plugin.springsecurity.web.filter.IpAddressFilter
+import grails.plugin.springsecurity.web.filter.StartupGateFilter
 import grails.plugins.Plugin
 import org.grails.web.mime.HttpServletResponseExtension
 
@@ -224,6 +226,20 @@ class SpringSecurityCoreGrailsPlugin extends Plugin {
             beanTypeResolver = beanTypeResolverClass.newInstance(conf, grailsApplication)
 
             springSecurityBeanFactoryPostProcessor(classFor('springSecurityBeanFactoryPostProcessor', SpringSecurityBeanFactoryPostProcessor))
+
+            if (conf.rejectRequestsDuringStartup) {
+                // respond with 503 until the application has started
+                springSecurityStartupGateFilter(classFor('springSecurityStartupGateFilter', StartupGateFilter))
+
+                springSecurityStartupGateRegistrationBean(classFor('springSecurityStartupGateRegistrationBean', FilterRegistrationBean)) {
+                    filter = ref('springSecurityStartupGateFilter')
+                    urlPatterns = ['/*']
+                    dispatcherTypes = EnumSet.of(DispatcherType.ERROR, DispatcherType.REQUEST)
+                    // leave the highest precedence to filters that answer requests themselves while
+                    // the application starts, such as a startup progress page
+                    order = Ordered.HIGHEST_PRECEDENCE + 1
+                }
+            }
 
             // configure the filter and optionally the listener
 
@@ -716,6 +732,11 @@ to default to 'Annotation'; setting value to 'Annotation'
 // TODO         if (passwordEncoder instanceof DigestAuthPasswordEncoder) {
 //              passwordEncoder.resetInitializing()
 //          }
+        }
+
+        if (conf.rejectRequestsDuringStartup) {
+            // the startup gate opens once this has run and the application has started
+            applicationContext.springSecurityStartupGateFilter.markInitialized()
         }
     }
 
