@@ -115,15 +115,13 @@ public class PropertySourcesConfig extends NavigableMapConfig {
             final String[] propertyNames = enumerablePropertySource.getPropertyNames();
             for (String propertyName : propertyNames) {
                 Object value = enumerablePropertySource.getProperty(propertyName);
-                if (value instanceof ConfigObject) {
-                    if (((ConfigObject) value).isEmpty()) continue;
-                } else {
-                    value = processAndEvaluate(value);
+                if (value instanceof ConfigObject && ((ConfigObject) value).isEmpty()) {
+                    continue;
                 }
-                map.put(propertyName, value);
+                map.put(propertyName, processAndEvaluate(value));
             }
 
-            configMap.merge(map, true);
+            mergeResolved(map);
         }
     }
 

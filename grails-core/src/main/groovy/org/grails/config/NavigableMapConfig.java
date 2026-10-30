@@ -19,7 +19,9 @@
 package org.grails.config;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -56,49 +58,51 @@ public abstract class NavigableMapConfig implements Config {
     protected static final Logger LOG = LoggerFactory.getLogger(NavigableMapConfig.class);
     protected ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     protected ConfigurableConversionService conversionService = new DefaultConversionService();
+
+    /**
+     * Whether the merge resolves the placeholders in the values it writes. It does not while it merges values that are
+     * resolved already, so a placeholder an escape kept as text is not resolved a second time.
+     */
+    private boolean resolvingPlaceholders = true;
+
     protected NavigableMap configMap = new NavigableMap() {
 
         /**
-         * A value resolved for a dotted key, which the merge writes twice in a row: under the whole key and then,
-         * in the nested map, under its last part. The second write takes the value the first one resolved.
+         * The texts the merge in progress has resolved, by the full name of the entry and the text. The merge writes one
+         * entry under several keys: a dotted key under the whole key and in its nested map, and a list element in its
+         * list in the nested map, in its list under the flat key and under its indexed key. Every write takes one value,
+         * even for {@code ${random.uuid}}.
          */
-        private Object pendingSource;
-        private Object pendingResolved;
+        private Map<List<String>, String> resolvedTexts;
+
+        @Override
+        public void merge(Map sourceMap, boolean parseFlatKeys) {
+            resolvedTexts = new HashMap<>();
+            try {
+                super.merge(sourceMap, parseFlatKeys);
+            } finally {
+                resolvedTexts = null;
+            }
+        }
 
         /**
-         * Resolves the placeholders in a list, which is stored as it is, and in a value written under an indexed key,
-         * {@code rows[0]} or {@code rows[0].url}, which is written into its list or map without the hook below.
+         * Resolves the placeholders in a value before it is written: in a string, in the strings of a list, through
+         * the maps and lists it holds, and in a map written under an indexed key, {@code rows[0]}, which is written into
+         * its list as it is. A map written under a plain key is merged entry by entry, through this method.
          */
         @Override
         protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey,
                 Object sourceValue, boolean parseFlatKeys, boolean isNestedSet) {
-            Object value = pendingSource != null && pendingSource == sourceValue ? pendingResolved : resolvedBeforeMerge(sourceKey, sourceValue);
-            pendingSource = null;
-            pendingResolved = null;
-            if (value != sourceValue && parseFlatKeys && sourceKey.split("\\.").length > 1) {
-                pendingSource = sourceValue;
-                pendingResolved = value;
+            Object value = sourceValue;
+            if (resolvingPlaceholders && (sourceValue instanceof CharSequence || sourceValue instanceof List || sourceValue instanceof Map && isIndexed(sourceKey))) {
+                value = resolved(path == null || path.isEmpty() ? sourceKey : path + '.' + sourceKey, sourceValue);
             }
             super.mergeMapEntry(rootMap, path, targetMap, sourceKey, value, parseFlatKeys, isNestedSet);
         }
 
-        @Override
-        protected Object mergeMapEntry(NavigableMap targetMap, String sourceKey, Object newValue) {
-            if (newValue instanceof CharSequence) {
-                newValue = resolvePlaceholders(newValue.toString());
-            }
-            return super.mergeMapEntry(targetMap, sourceKey, newValue);
-        }
-
-        private Object resolvedBeforeMerge(String sourceKey, Object value) {
-            if (value instanceof List) {
-                return resolvedElements((List<?>) value);
-            }
+        private boolean isIndexed(String sourceKey) {
             int subscriptStart = sourceKey.indexOf('[');
-            if ((value instanceof CharSequence || value instanceof Map) && subscriptStart > -1 && sourceKey.indexOf(']') > subscriptStart) {
-                return resolvedElement(value);
-            }
-            return value;
+            return subscriptStart > -1 && sourceKey.indexOf(']') > subscriptStart;
         }
 
         /**
@@ -107,18 +111,29 @@ public abstract class NavigableMapConfig implements Config {
          * keeps what it holds.
          */
         @SuppressWarnings("unchecked")
-        private Object resolvedElement(Object value) {
+        private Object resolved(String name, Object value) {
             if (value instanceof CharSequence) {
-                return resolvePlaceholders(value.toString());
+                return resolvedText(name, value.toString());
             }
             if (value instanceof List) {
-                return resolvedElements((List<?>) value);
+                List<?> list = (List<?>) value;
+                List<Object> resolved = null;
+                for (int i = 0; i < list.size(); i++) {
+                    Object element = resolved(name + '[' + i + ']', list.get(i));
+                    if (resolved == null && !Objects.equals(element, list.get(i))) {
+                        resolved = new ArrayList<>(list);
+                    }
+                    if (resolved != null) {
+                        resolved.set(i, element);
+                    }
+                }
+                return resolved != null ? resolved : list;
             }
             if (value instanceof Map) {
                 Map<?, ?> map = (Map<?, ?>) value;
                 Map<Object, Object> resolved = null;
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
-                    Object element = resolvedElement(entry.getValue());
+                    Object element = resolved(name + '.' + entry.getKey(), entry.getValue());
                     if (resolved == null && !Objects.equals(element, entry.getValue())) {
                         resolved = map instanceof NavigableMap ? (Map<Object, Object>) (Map<?, ?>) ((NavigableMap) map).clone() : new LinkedHashMap<>(map);
                     }
@@ -131,18 +146,11 @@ public abstract class NavigableMapConfig implements Config {
             return value;
         }
 
-        private List<?> resolvedElements(List<?> list) {
-            List<Object> resolved = null;
-            for (int i = 0; i < list.size(); i++) {
-                Object element = resolvedElement(list.get(i));
-                if (resolved == null && !Objects.equals(element, list.get(i))) {
-                    resolved = new ArrayList<>(list);
-                }
-                if (resolved != null) {
-                    resolved.set(i, element);
-                }
+        private String resolvedText(String name, String text) {
+            if (resolvedTexts == null) {
+                return resolvePlaceholders(text);
             }
-            return resolved != null ? resolved : list;
+            return resolvedTexts.computeIfAbsent(Arrays.asList(name, text), key -> resolvePlaceholders(text));
         }
     };
 
@@ -257,6 +265,19 @@ public abstract class NavigableMapConfig implements Config {
     public Config merge(Map<String, Object> toMerge) {
         configMap.merge(toMerge, true);
         return this;
+    }
+
+    /**
+     * Merges values whose placeholders are resolved already, as those of a property source are once they are read,
+     * without resolving them a second time.
+     */
+    void mergeResolved(Map<String, Object> values) {
+        resolvingPlaceholders = false;
+        try {
+            configMap.merge(values, true);
+        } finally {
+            resolvingPlaceholders = true;
+        }
     }
 
     public Object asType(Class c) {

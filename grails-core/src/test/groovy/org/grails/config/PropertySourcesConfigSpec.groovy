@@ -312,6 +312,79 @@ app:
         'as an indexed key' | ['app.hosts[0]': 'http://${host}'] | 'http://host1'
     }
 
+    void 'a placeholder in a list element of application.yml is resolved once, alike for every read'() {
+        given: "application.yml, read through Grails' YAML loader, and a property source that answers a new value each time it is read"
+        def yml = '''\
+app:
+  hosts:
+    - 'http://${host}'
+  rows:
+    - url: 'http://${host}'
+      tags:
+        - 'http://${host}'
+'''
+        def counter = new CountingPropertySource()
+        def propertySources = new MutablePropertySources()
+        propertySources.addFirst(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yml.bytes)).first())
+        propertySources.addLast(counter)
+        def config = new PropertySourcesConfig(propertySources)
+
+        expect: "each element is read once"
+        counter.readCount() == 3
+
+        and: "a list element reads the same by index, in the whole list, by navigation and in the export"
+        String host = config.getProperty('app.hosts[0]')
+        host ==~ /http:\/\/host\d/
+        config['app.hosts[0]'] == host
+        config['app.hosts'] == [host]
+        config.getProperty('app.hosts', List) == [host]
+        config.navigate('app', 'hosts') == [host]
+        config.toProperties().getProperty('app.hosts[0]') == host
+
+        and: "so do a value and a list element inside an element"
+        String url = config.getProperty('app.rows[0].url')
+        config.navigate('app', 'rows')[0].url == url
+        config['app.rows'][0].url == url
+        config.toProperties().getProperty('app.rows[0].url') == url
+        String tag = config.getProperty('app.rows[0].tags[0]')
+        config.navigate('app', 'rows')[0].tags == [tag]
+        config['app.rows'][0].tags == [tag]
+        config.toProperties().getProperty('app.rows[0].tags[0]') == tag
+
+        and: "each element is resolved on its own"
+        [host, url, tag].toSet().size() == 3
+    }
+
+    void 'a value of an ordinary property source is resolved once, so an escaped placeholder is kept as text, as the environment keeps it'() {
+        given: "a property source the environment resolves as it reads it, with an escaped placeholder in a value, a list, an indexed key and a ConfigObject"
+        def section = new ConfigObject()
+        section.url = 'http://${exampleHost}'
+        section.hosts = ['\\${exampleHost}', '${exampleHost}']
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(new MapPropertySource('ordinary', [
+                exampleHost   : 'secret',
+                'app.text'    : '\\${exampleHost}',
+                'app.list'    : ['\\${exampleHost}', '${exampleHost}'],
+                'app.hosts[0]': '\\${exampleHost}',
+                'app.section' : section]))
+        def config = new PropertySourcesConfig(environment.propertySources)
+
+        expect: "the environment keeps the escaped placeholder as text"
+        environment.getProperty('app.text') == '${exampleHost}'
+        environment.getProperty('app.hosts[0]') == '${exampleHost}'
+
+        and: "so does the config, in a value, in a list and under an indexed key"
+        config.getProperty('app.text') == '${exampleHost}'
+        config.getProperty('app.list', List) == ['${exampleHost}', 'secret']
+        config.navigate('app', 'list') == ['${exampleHost}', 'secret']
+        config.getProperty('app.hosts[0]') == '${exampleHost}'
+        config.navigate('app', 'hosts') == ['${exampleHost}']
+
+        and: "and in a ConfigObject, whose placeholders are resolved"
+        config.getProperty('app.section.url') == 'http://secret'
+        config.navigate('app', 'section', 'hosts') == ['${exampleHost}', 'secret']
+    }
+
     static class CountingPropertySource extends PropertySource<Object> {
 
         private int reads
