@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.regex.Pattern;
 
 import groovy.util.ConfigObject;
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
@@ -56,6 +57,11 @@ import org.grails.core.exceptions.GrailsConfigurationException;
 @Deprecated
 public abstract class NavigableMapConfig implements Config {
     protected static final Logger LOG = LoggerFactory.getLogger(NavigableMapConfig.class);
+
+    /**
+     * A key in brackets that is not an index and holds no dot, {@code [x]} of {@code routes[x]}.
+     */
+    private static final Pattern NAMED_SUBSCRIPT = Pattern.compile("\\[([^.\\[\\]]*[^.\\[\\]0-9][^.\\[\\]]*)]");
     protected ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     protected ConfigurableConversionService conversionService = new DefaultConversionService();
 
@@ -150,7 +156,17 @@ public abstract class NavigableMapConfig implements Config {
             if (resolvedTexts == null) {
                 return resolvePlaceholders(text);
             }
-            return resolvedTexts.computeIfAbsent(Arrays.asList(name, text), key -> resolvePlaceholders(text));
+            return resolvedTexts.computeIfAbsent(Arrays.asList(entryName(name), text), key -> resolvePlaceholders(text));
+        }
+
+        /**
+         * The name with each key in brackets that is not an index and holds no dot written as a part of a dotted name.
+         * {@code routes[x]} names the entry {@code x} of the map {@code routes}, and an element of a list from
+         * application.yml holds it under both names, so both take one resolution. A key with a dot, {@code [a.b]}, stays
+         * in its brackets, so it is not taken for the entry {@code b} of a map {@code a}.
+         */
+        private String entryName(String name) {
+            return name.indexOf('[') < 0 ? name : NAMED_SUBSCRIPT.matcher(name).replaceAll(".$1");
         }
     };
 

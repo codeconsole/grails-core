@@ -322,6 +322,8 @@ app:
     - url: 'http://${host}'
       tags:
         - 'http://${host}'
+      routes:
+        '[x]': 'http://${host}'
 '''
         def counter = new CountingPropertySource()
         def propertySources = new MutablePropertySources()
@@ -330,7 +332,7 @@ app:
         def config = new PropertySourcesConfig(propertySources)
 
         expect: "each element is read once"
-        counter.readCount() == 3
+        counter.readCount() == 4
 
         and: "a list element reads the same by index, in the whole list, by navigation and in the export"
         String host = config.getProperty('app.hosts[0]')
@@ -351,8 +353,16 @@ app:
         config['app.rows'][0].tags == [tag]
         config.toProperties().getProperty('app.rows[0].tags[0]') == tag
 
+        and: "so does a key in brackets in a map inside an element, which the element holds under both of its names"
+        String route = config.getProperty('app.rows[0].routes[x]')
+        config.getProperty('app.rows[0].routes.x') == route
+        config.getProperty('app.rows', List)[0].routes.x == route
+        config.navigate('app', 'rows')[0].routes.x == route
+        config.toProperties().getProperty('app.rows[0].routes[x]') == route
+        config.toProperties().getProperty('app.rows[0].routes.x') == route
+
         and: "each element is resolved on its own"
-        [host, url, tag].toSet().size() == 3
+        [host, url, tag, route].toSet().size() == 4
     }
 
     void 'a value of an ordinary property source is resolved once, so an escaped placeholder is kept as text, as the environment keeps it'() {
