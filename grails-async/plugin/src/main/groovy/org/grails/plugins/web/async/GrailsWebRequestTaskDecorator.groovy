@@ -56,7 +56,8 @@ class GrailsWebRequestTaskDecorator implements TaskDecorator {
                     captured.currentResponse,
                     captured.attributes)
             // Bound to the task's thread only: the request is still shared with the request thread, which
-            // would find the task's web request on it from then on
+            // would find the task's web request on it from then on, and a task that outlives the response,
+            // such as a fire-and-forget task, would write it to a request the container may have recycled
             RequestContextHolder.setRequestAttributes(taskRequest)
             try {
                 task.run()
