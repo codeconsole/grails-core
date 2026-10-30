@@ -220,6 +220,37 @@ class PropertySourcesConfigSpec extends Specification {
         [key, order] << [['/api/**', '/api/v1.0/**'], ['in order', 'reversed']].combinations()
     }
 
+    void 'a field of a map key in brackets written by a second source holds the value of that source, #key'() {
+        given: "two Boot-style sources that write the same field, the second above the first"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('application.properties', [
+                ("grails.cors.mappings[${key}].maxAge".toString()): '10',
+                ("grails.cors.mappings[${key}].allowCredentials".toString()): 'true',
+        ]))
+        sources.addFirst(new MapPropertySource('systemProperties', [("grails.cors.mappings[${key}].maxAge".toString()): '20']))
+        def config = new PropertySourcesConfig(sources)
+
+        expect: "every read gives the value of the source above, and the other field stays"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == '20'
+        config.getProperty('grails.cors.mappings', Map)[key].allowCredentials == 'true'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == '20'
+        config.grails.cors.mappings[key].maxAge == '20'
+        config.grails.cors.mappings[key].allowCredentials == 'true'
+        config.get('grails.cors.mappings')[key].maxAge == '20'
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == '20'
+
+        when:
+        config.refresh()
+
+        then: "and the same after refresh()"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == '20'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == '20'
+        config.grails.cors.mappings[key].maxAge == '20'
+
+        where:
+        key << ['/api/**', '/api/v1.0/**']
+    }
+
     void 'a map written by indexed keys is read through dot notation, and a key it does not hold is null-safe'() {
         given:
         def config = new PropertySourcesConfig()

@@ -275,9 +275,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         Object nested = owner.get(indexedName)
         Object written = writtenField != null ? nested : null
         if (written instanceof NavigableMap && element != null && element.is(written)) {
-            Object stored = valueAt(written, writtenField)
+            // a key in brackets with a dot in it, [/api/v1.0/**], has the merge write the field at another path, so the
+            // field is taken from the flat element every time it is written, not only when this map holds none yet
+            Object stored = index.indexOf('.') > -1 ? null : valueAt(written, writtenField)
             if (stored == null) {
-                // a key in brackets with a dot in it, [/api/v1.0/**], had the merge write the field at another path
                 Object flat = elementOf(targetMap.get(containerKey), index)
                 stored = flat instanceof Map && ((Map) flat).containsKey(writtenField) ? ((Map) flat).get(writtenField) : valueAt(flat, writtenField)
                 if (stored != null) {

@@ -256,6 +256,24 @@ class NavigableMapSpec extends Specification {
         'after a nested map' | [a: [b: [c: [d: 'old']]]]
     }
 
+    def "a field of a map key in brackets written again holds the last value written, #key"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge([("a.mappings[${key}].maxAge".toString()): '10', ("a.mappings[${key}].allowCredentials".toString()): 'true'], true)
+        output.merge([("a.mappings[${key}].maxAge".toString()): '20'], true)
+
+        then: 'the held map, the flat key of the map and the flat key of the field all hold the last value'
+        output.navigate('a', 'mappings')[key].maxAge == '20'
+        output.navigate('a', 'mappings')[key].allowCredentials == 'true'
+        output.get('a.mappings')[key].maxAge == '20'
+        output.get("a.mappings[${key}].maxAge".toString()) == '20'
+
+        where:
+        key << ['/api/**', '/api/v1.0/**']
+    }
+
     def "an indexed key with a property after the index writes a map over a value of a list that is not a map"() {
         given:
         NavigableMap output = new NavigableMap()
