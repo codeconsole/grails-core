@@ -266,7 +266,8 @@ class NavigableMap implements Map<String, Object>, Cloneable {
      * element holds, such as {@code db.url} beside the {@code db.port}
      * just written below it, and none of an element the list held before it was replaced. The field just written then
      * takes the value the merge stored for it, {@link #storedValue(NavigableMap, String, String, String)}, so a
-     * placeholder in it is resolved as in every other entry, and the keys of the map the indexed key was merged into
+     * placeholder in it is resolved as in every other entry and a null written over it is held as null, as the flat
+     * key holds it, and the keys of the map the indexed key was merged into
      * that held the element, or a map inside it, such as {@code a.rows[0]} and {@code a.rows[0].db}, then hold the
      * rebuilt element and its maps.
      */
@@ -277,9 +278,10 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         Object written = writtenField != null ? nested : null
         Object stored = writtenField != null ? storedValue(targetMap, containerKey, index, writtenField) : null
         if (written instanceof NavigableMap && element != null && element.is(written)) {
-            if (stored != null && (index.indexOf('.') > -1 || writtenField.indexOf('.') > -1)) {
+            if (index.indexOf('.') > -1 || writtenField.indexOf('.') > -1) {
                 // the merge wrote the field of a key in brackets with a dot in it, [/api/v1.0/**], at another path, and
-                // a field with a dot in it, db.url, is also held as one key, as application.yml gives it
+                // a field with a dot in it, db.url, is also held as one key, as application.yml gives it; a null
+                // written over the field is written here too, so the held map does not keep the value before it
                 ((NavigableMap) written).merge([(writtenField): stored], true)
             }
             return written
@@ -290,9 +292,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 return written
             }
             NavigableMap held = rebuilt(owner, indexedName, (Map) flat, written)
-            if (stored != null) {
-                held.merge([(writtenField): stored], true)
-            }
+            held.merge([(writtenField): stored], true)
             owner.put(indexedName, held)
             replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
             return held
@@ -310,7 +310,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         }
         NavigableMap held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
         held.merge((Map) element, true)
-        if (stored != null) {
+        if (writtenField != null) {
             held.merge([(writtenField): stored], true)
         }
         owner.put(indexedName, held)

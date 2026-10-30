@@ -281,6 +281,39 @@ class PropertySourcesConfigSpec extends Specification {
         key << ['/api/**', '/api/v1.0/**']
     }
 
+    void 'a field of a map key in brackets written as null by a second source is null for every read of it, #key'() {
+        given: "two Boot-style sources, the second above the first writing the field as null"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('application.properties', [
+                ("grails.cors.mappings[${key}].maxAge".toString()): '10',
+                ("grails.cors.mappings[${key}].allowCredentials".toString()): 'true',
+        ]))
+        sources.addFirst(new MapPropertySource('systemProperties', [("grails.cors.mappings[${key}].maxAge".toString()): null]))
+        def config = new PropertySourcesConfig(sources)
+
+        expect: "every read gives null, the other field stays, and the properties hold no key of the field"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == null
+        config.getProperty('grails.cors.mappings', Map)[key].allowCredentials == 'true'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == null
+        config.grails.cors.mappings[key].maxAge == null
+        config.grails.cors.mappings[key].allowCredentials == 'true'
+        config.get('grails.cors.mappings')[key].maxAge == null
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == null
+        !config.toProperties().keySet().any { it.toString().endsWith('maxAge') }
+
+        when:
+        config.refresh()
+
+        then: "and the same after refresh()"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == null
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == null
+        config.grails.cors.mappings[key].maxAge == null
+        !config.toProperties().keySet().any { it.toString().endsWith('maxAge') }
+
+        where:
+        key << ['/api/**', '/api/v1.0/**']
+    }
+
     void 'a placeholder in a field of a map key in brackets is resolved alike for every read of it, #key, written #description'() {
         given: "a property source that holds the value of the placeholder"
         def sources = new MutablePropertySources()
