@@ -265,6 +265,35 @@ app:
         map.navigate('app', 'origins') == ['https://a.example.com', '${EXAMPLE_ORIGIN:https://default.example.com}']
     }
 
+    void 'a list element follows the value its placeholder names when the config is refreshed, and #description keeps the placeholder'() {
+        given: "a list with a placeholder, and a property source holding the value it names"
+        def values = [exampleHost: 'first']
+        def propertySources = new MutablePropertySources()
+        propertySources.addFirst(new MapPropertySource('values', values))
+        propertySources.addLast(source)
+        def config = new PropertySourcesConfig(propertySources)
+
+        expect:
+        config.getProperty('app.origins', List) == ['http://first']
+
+        when: "the value changes and the config is refreshed"
+        values.exampleHost = 'second'
+        config.refresh()
+
+        then: "the list element follows it, in the whole list and by navigation"
+        config.getProperty('app.origins', List) == ['http://second']
+        config.navigate('app', 'origins') == ['http://second']
+
+        and: "the property source still holds the placeholder"
+        source.getProperty('app.origins') == ['http://${exampleHost}']
+
+        where:
+        description                    | source
+        'application.yml'              | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource('app:\n  origins:\n    - http://${exampleHost}\n'.bytes)).first()
+        'application.groovy'           | new NavigableMapPropertySource('application.groovy', new NavigableMap().tap { merge([app: [origins: ['http://${exampleHost}']]], true) })
+        'an ordinary property source'  | new MapPropertySource('ordinary', ['app.origins': ['http://${exampleHost}']])
+    }
+
     void 'a list of an ordinary property source is held as a copy, so an indexed write from a source of higher precedence leaves the source as it is'() {
         given:
         def origins = ['https://a.example.com', 'https://b.example.com']
