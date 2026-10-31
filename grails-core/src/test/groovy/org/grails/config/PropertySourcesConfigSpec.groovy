@@ -19,9 +19,12 @@
 package org.grails.config
 
 import org.grails.config.yaml.YamlPropertySourceLoader
+import org.springframework.boot.context.properties.bind.Bindable
+import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
 import org.springframework.core.env.PropertySource
+import org.springframework.core.env.StandardEnvironment
 import org.springframework.core.io.ByteArrayResource
 import spock.lang.Ignore
 import spock.lang.Issue
@@ -525,6 +528,72 @@ class PropertySourcesConfigSpec extends Specification {
         and: "no property is written under the dotted key alone"
         config.getProperty('gorm.url') == null
         !config.containsKey('gorm.url')
+    }
+
+    void 'a map written by map subscripts is exported by its bracketed keys only, which Spring Boot binds as written'() {
+        given: "a map written by map subscripts, as application.yml writes '[/api/**]'"
+        def config = new PropertySourcesConfig(new MapPropertySource('yaml', [
+                'app.routes[/api/**]': 'x', 'app.routes[/v1.0/**]': 'y', 'app.routes[k]': 'z',
+                'app.cors[/admin/**].allowedOrigins[0]': 'https://a.example.com',
+        ]))
+
+        when:
+        Properties exported = config.toProperties()
+
+        then: "no entry is exported a second time by a dotted name"
+        exported.stringPropertyNames().findAll { it.startsWith('app.routes') } as Set == ['app.routes[/api/**]', 'app.routes[/v1.0/**]', 'app.routes[k]'] as Set
+        !exported.stringPropertyNames().any { it.startsWith('app.cors./') }
+
+        and: "Spring Boot binds the exported map with the keys the file wrote"
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', exported as Map<String, Object>))
+        Binder.get(published).bind('app.routes', Bindable.mapOf(String, String)).get() == ['/api/**': 'x', '/v1.0/**': 'y', k: 'z']
+        Binder.get(published).bind('app.cors', Bindable.mapOf(String, Object)).get().keySet() == ['/admin/**'] as Set
+    }
+
+    void 'a map put as a value is exported by the dotted names of its entries'() {
+        given:
+        def config = new PropertySourcesConfig()
+        config.put('plain', [nested: 'value'])
+
+        expect:
+        config.toProperties().getProperty('plain.nested') == 'value'
+    }
+
+    void 'a map written by map subscripts is exported once whatever precedes it in application.yml, #description'() {
+        given: "application.yml as Grails loads it, which keeps the order of the file"
+        def config = new PropertySourcesConfig(new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yaml.bytes)).first())
+
+        when:
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', config.toProperties() as Map<String, Object>))
+
+        then:
+        !config.toProperties().stringPropertyNames().any { it.contains('./') }
+        Binder.get(published).bind(prefix, Bindable.mapOf(String, Object)).get() == bound
+
+        where:
+        description                          | yaml                                                                         | prefix        | bound
+        'a plain key before a bracketed one' | "app:\n  routes:\n    default: z\n    '[/api/**]': x\n"                       | 'app.routes'  | [default: 'z', '/api/**': 'x']
+        'a subscript after a subscript'      | "app:\n  tenants:\n    '[acme]':\n      routes:\n        '[/api/**]': x\n" | 'app.tenants' | [acme: [routes: ['/api/**': 'x']]]
+    }
+
+    void 'Spring Boot binds every field of an entry written in brackets that a later merge changed, #description'() {
+        given:
+        def config = new PropertySourcesConfig()
+        merges.each { Map merged -> config.merge(merged) }
+
+        when:
+        def published = new StandardEnvironment()
+        published.propertySources.addFirst(new MapPropertySource('published', config.toProperties() as Map<String, Object>))
+
+        then:
+        Binder.get(published).bind(prefix, Bindable.mapOf(String, Object)).get() == bound
+
+        where:
+        description                                      | merges                                                                         | prefix       | bound
+        'a field merged after a map written in brackets' | [['routes[api]': [target: 'http://localhost'], 'routes[api].enabled': 'true']] | 'routes'     | [api: [target: 'http://localhost', enabled: 'true']]
+        'a dotted key merged after a null in brackets'   | [['app.routes[k]': null], ['app.routes.k': 'new']]                             | 'app.routes' | [k: 'new']
     }
 
     static class CountingPropertySource extends PropertySource<Object> {
