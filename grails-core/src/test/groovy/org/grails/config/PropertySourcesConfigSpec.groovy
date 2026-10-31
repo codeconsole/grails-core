@@ -209,19 +209,19 @@ class PropertySourcesConfigSpec extends Specification {
 
     void 'a placeholder in a list element from application.yml is resolved as the environment resolves it'() {
         given: "application.yml with a placeholder in a list of values and in a list of maps"
-        def yml = """\
+        def yml = '''\
 app:
   origins:
     - https://a.example.com
-    - '\${EXAMPLE_ORIGIN:https://default.example.com}'
+    - '${EXAMPLE_ORIGIN:https://default.example.com}'
   rows:
-    - url: '\${EXAMPLE_ORIGIN:https://default.example.com}'
+    - url: '${EXAMPLE_ORIGIN:https://default.example.com}'
       name: first
       db:
-        host: '\${EXAMPLE_ORIGIN:https://default.example.com}'
+        host: '${EXAMPLE_ORIGIN:https://default.example.com}'
       tags:
-        - '\${EXAMPLE_ORIGIN:https://default.example.com}'
-"""
+        - '${EXAMPLE_ORIGIN:https://default.example.com}'
+'''
         def source = new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource(yml.bytes)).first()
         def environment = new StandardEnvironment()
         environment.propertySources.addFirst(source)
