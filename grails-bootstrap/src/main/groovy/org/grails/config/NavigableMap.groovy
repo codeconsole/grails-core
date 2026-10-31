@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory
 class NavigableMap implements Map<String, Object>, Cloneable {
 
     private static final Logger LOG = LoggerFactory.getLogger(NavigableMap)
+    private static final int MAX_DOTTED_BRACKETS = 8
 
     final NavigableMap rootConfig
     final List<String> path
@@ -374,13 +375,129 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     Map<String, Object> toFlatConfig() {
         Map<String, Object> flatConfig = [:]
         flattenKeys(flatConfig, this, [], false)
+        removeDottedDuplicates(flatConfig)
         flatConfig
     }
 
     Properties toProperties() {
         Properties properties = new Properties()
         flattenKeys((Map<Object, Object>) properties, this, [], true)
+        removeDottedDuplicates((Map<Object, Object>) properties)
         properties
+    }
+
+    /**
+     * Removes each name that only writes a bracketed name with dots, such as {@code app.routes./api/**} beside
+     * {@code app.routes[/api/**]}, which Spring Boot would bind as the key {@code api}. A map written by map subscripts
+     * holds its entries under their bracketed names and is walked under their dotted ones too, so each entry is
+     * flattened under both. A dotted name is removed only when every bracketed name that it writes with dots holds the
+     * same value; where they differ, as when a later write changed one of them, every name stays, as it was before. A
+     * bracketed key with a dot in it, {@code a[b.c]}, names a key of {@code a}, so the dotted name {@code a.b.c} is
+     * a property of its own, and it stays when a key of the map that spells all of it, as a put of {@code a.b.c}
+     * does, or the start of it, as a put of a map at {@code a.b} does, holds a value under the rest. A map put at
+     * {@code a} with the key {@code b.c} in it is stored as merging {@code a[b.c]} stores it, so nothing tells the
+     * two apart, and the dotted name is removed after both.
+     */
+    private void removeDottedDuplicates(Map<? extends Object, Object> flatConfig) {
+        Map<String, List<Object>> bracketedValues = [:]
+        Set<String> pathsToCheck = [] as Set<String>
+        for (Map.Entry<? extends Object, Object> entry in flatConfig.entrySet()) {
+            String name = String.valueOf(entry.key)
+            if (name.indexOf('[') > -1) {
+                for (Map.Entry<String, Boolean> dottedName in dottedNamesOf(name).entrySet()) {
+                    List<Object> values = bracketedValues.get(dottedName.key)
+                    if (values == null) {
+                        values = []
+                        bracketedValues.put(dottedName.key, values)
+                    }
+                    values.add(entry.value)
+                    if (dottedName.value) {
+                        pathsToCheck.add(dottedName.key)
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, List<Object>> candidate in bracketedValues.entrySet()) {
+            if (!flatConfig.containsKey(candidate.key)) {
+                continue
+            }
+            Object value = flatConfig.get(candidate.key)
+            if (!candidate.value.every { Object bracketedValue -> bracketedValue == value }) {
+                continue
+            }
+            if (candidate.key in pathsToCheck && holdsPath(candidate.key.tokenize('.'))) {
+                continue
+            }
+            flatConfig.remove(candidate.key)
+        }
+    }
+
+    /**
+     * Whether a key of this map that spells the whole path, or the start of it, holds a value under the rest of the
+     * path. The rest is walked only through maps, so that a scalar part way down, such as {@code /v1} under
+     * {@code routes} for {@code routes./v1.0/**}, holds no value below it.
+     */
+    private boolean holdsPath(List<String> path) {
+        for (int end = path.size(); end > 0; end--) {
+            String key = path.subList(0, end).join('.')
+            if (containsKey(key) && holdsPath(get(key), path.subList(end, path.size()))) {
+                return true
+            }
+        }
+        false
+    }
+
+    private static boolean holdsPath(Object value, List<String> path) {
+        for (String segment in path) {
+            if (!(value instanceof Map) || !((Map) value).containsKey(segment)) {
+                return false
+            }
+            value = ((Map) value).get(segment)
+        }
+        value != null
+    }
+
+    /**
+     * The names that write some or all of the bracketed map keys of a name with dots, {@code app.routes./api/**} for
+     * {@code app.routes[/api/**]}, each with whether one of the keys it writes so has a dot in it. A list index,
+     * {@code rows[0]}, is not a map key and stays as it is.
+     */
+    private static Map<String, Boolean> dottedNamesOf(String name) {
+        List<int[]> brackets = []
+        int start = name.indexOf('[')
+        while (start > -1 && brackets.size() < MAX_DOTTED_BRACKETS) {
+            int end = name.indexOf(']', start)
+            if (end < 0) {
+                break
+            }
+            if (!name.substring(start + 1, end).isNumber()) {
+                brackets.add([start, end] as int[])
+            }
+            start = name.indexOf('[', end)
+        }
+        Map<String, Boolean> dottedNames = [:]
+        int combinations = 1 << brackets.size()
+        for (int mask = 1; mask < combinations; mask++) {
+            StringBuilder dottedName = new StringBuilder()
+            boolean keyWithDot = false
+            int from = 0
+            for (int i = 0; i < brackets.size(); i++) {
+                if ((mask & (1 << i)) != 0) {
+                    int[] bracket = brackets.get(i)
+                    dottedName.append(name, from, bracket[0])
+                    if (bracket[0] > 0) {
+                        dottedName.append('.')
+                    }
+                    String key = name.substring(bracket[0] + 1, bracket[1])
+                    keyWithDot = keyWithDot || key.indexOf('.') > -1
+                    dottedName.append(key)
+                    from = bracket[1] + 1
+                }
+            }
+            dottedName.append(name, from, name.length())
+            dottedNames.put(dottedName.toString(), keyWithDot)
+        }
+        dottedNames
     }
 
     private void flattenKeys(Map<? extends Object, Object> flatConfig, Map currentMap, List<String> path, boolean forceStrings) {
