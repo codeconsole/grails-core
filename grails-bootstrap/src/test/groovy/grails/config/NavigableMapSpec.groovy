@@ -260,6 +260,50 @@ class NavigableMapSpec extends Specification {
         'after a nested map' | [a: [b: [c: [d: 'old']]]]
     }
 
+    def "a field of a map key in brackets written again holds the last value written, #key, written #description"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge([("a.mappings[${key}].maxAge".toString()): '10', ("a.mappings[${key}].allowCredentials".toString()): 'true'], true)
+        output.merge([("a.mappings[${key}].maxAge".toString()): value], true)
+
+        then: 'the held map, the flat key of the map and the flat key of the field all hold the last value'
+        output.navigate('a', 'mappings')[key].maxAge == value
+        output.navigate('a', 'mappings')[key].allowCredentials == 'true'
+        output.get('a.mappings')[key].maxAge == value
+        output.get("a.mappings[${key}].maxAge".toString()) == value
+
+        and: 'the properties hold the last value under every key of the field, and none when it is null'
+        output.toProperties().findAll { it.key.toString().endsWith('maxAge') }.values().toSet() == (value == null ? [] : [value]).toSet()
+
+        where:
+        [key, description, value] << [['/api/**', '/api/v1.0/**'], [['as a value', '20'], ['as null', null]]].combinations().collect { String key, List row ->
+            [key, row[0], row[1]]
+        }
+    }
+
+    def "a field of a map key in brackets written as null after the map was #description holds the null, #key"() {
+        given:
+        NavigableMap output = new NavigableMap()
+
+        when:
+        output.merge([("a.mappings[${key}].maxAge".toString()): '10'], true)
+        output.merge(replacement, true)
+        output.merge([("a.mappings[${key}].maxAge".toString()): null, ("a.mappings[${key}].allowCredentials".toString()): 'true'], true)
+
+        then: 'the held map holds the null and the field written beside it, and not the value written before the replacement'
+        output.navigate('a', 'mappings')[key] == [maxAge: null, allowCredentials: 'true']
+        output.get('a.mappings')[key] == [maxAge: null, allowCredentials: 'true']
+        output.get("a.mappings[${key}].maxAge".toString()) == null
+        !output.toProperties().keySet().any { it.toString().endsWith('maxAge') }
+
+        where:
+        [key, description, replacement] << [['/api/**', '/api/v1.0/**'], ['replaced with a value', 'cleared']].combinations().collect { String key, String description ->
+            [key, description, description == 'cleared' ? ['a.mappings': null] : ['a.mappings': [(key): 'one']]]
+        }
+    }
+
     def "an indexed key with a property after the index writes a map over a value of a list that is not a map"() {
         given:
         NavigableMap output = new NavigableMap()

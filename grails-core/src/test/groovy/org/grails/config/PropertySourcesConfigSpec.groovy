@@ -123,6 +123,36 @@ class PropertySourcesConfigSpec extends Specification {
         cfg.foo.bar == ['two': '2']
     }
 
+    void 'a dotted key inside a nested map is exported under its full path and overwrites no other property'() {
+        given: "a map holding a property and, in a nested map, a dotted key that alone names the same property"
+        def config = new PropertySourcesConfig([a: [b: 'root'], x: ['a.b': 'nested'], logging: [level: ['org.springframework': 'DEBUG']]])
+
+        expect: "each property is read and exported under its own name"
+        config['a.b'] == 'root'
+        config.getProperty('a.b') == 'root'
+        config.getProperty('x.a.b') == 'nested'
+        config.getProperty('logging.level.org.springframework') == 'DEBUG'
+        config.toProperties().getProperty('a.b') == 'root'
+        config.toProperties().getProperty('x.a.b') == 'nested'
+        config.toProperties().getProperty('logging.level.org.springframework') == 'DEBUG'
+
+        and: "no property is written under the dotted key alone"
+        config.getProperty('org.springframework') == null
+        !config.toProperties().containsKey('org.springframework')
+    }
+
+    void 'a dotted key inside a nested map writes no property that the nested maps do not hold'() {
+        given: "a map with no b of its own, and a nested map holding a dotted key that alone names a.b"
+        def config = new PropertySourcesConfig([a: [c: '1'], x: ['a.b': 'nested']])
+
+        expect: "a.b is absent, and the dotted key is read under its full path"
+        config.getProperty('a.b') == null
+        !config.toProperties().containsKey('a.b')
+        config.navigate('a', 'b') == null
+        config.getProperty('x.a.b') == 'nested'
+        config.getProperty('a.c') == '1'
+    }
+
     void 'a list merged as indexed keys with a property after the index is read through the nested maps'() {
         given: "a config"
         def config = new PropertySourcesConfig()
@@ -221,6 +251,95 @@ class PropertySourcesConfigSpec extends Specification {
 
         where:
         [key, order] << [['/api/**', '/api/v1.0/**'], ['in order', 'reversed']].combinations()
+    }
+
+    void 'a field of a map key in brackets written by a second source holds the value of that source, #key'() {
+        given: "two Boot-style sources that write the same field, the second above the first"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('application.properties', [
+                ("grails.cors.mappings[${key}].maxAge".toString()): '10',
+                ("grails.cors.mappings[${key}].allowCredentials".toString()): 'true',
+        ]))
+        sources.addFirst(new MapPropertySource('systemProperties', [("grails.cors.mappings[${key}].maxAge".toString()): '20']))
+        def config = new PropertySourcesConfig(sources)
+
+        expect: "every read gives the value of the source above, and the other field stays"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == '20'
+        config.getProperty('grails.cors.mappings', Map)[key].allowCredentials == 'true'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == '20'
+        config.grails.cors.mappings[key].maxAge == '20'
+        config.grails.cors.mappings[key].allowCredentials == 'true'
+        config.get('grails.cors.mappings')[key].maxAge == '20'
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == '20'
+
+        when:
+        config.refresh()
+
+        then: "and the same after refresh()"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == '20'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == '20'
+        config.grails.cors.mappings[key].maxAge == '20'
+
+        where:
+        key << ['/api/**', '/api/v1.0/**']
+    }
+
+    void 'a field of a map key in brackets written as null by a second source is null for every read of it, #key'() {
+        given: "two Boot-style sources, the second above the first writing the field as null"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('application.properties', [
+                ("grails.cors.mappings[${key}].maxAge".toString()): '10',
+                ("grails.cors.mappings[${key}].allowCredentials".toString()): 'true',
+        ]))
+        sources.addFirst(new MapPropertySource('systemProperties', [("grails.cors.mappings[${key}].maxAge".toString()): null]))
+        def config = new PropertySourcesConfig(sources)
+
+        expect: "every read gives null, the other field stays, and the properties hold no key of the field"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == null
+        config.getProperty('grails.cors.mappings', Map)[key].allowCredentials == 'true'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == null
+        config.grails.cors.mappings[key].maxAge == null
+        config.grails.cors.mappings[key].allowCredentials == 'true'
+        config.get('grails.cors.mappings')[key].maxAge == null
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == null
+        !config.toProperties().keySet().any { it.toString().endsWith('maxAge') }
+
+        when:
+        config.refresh()
+
+        then: "and the same after refresh()"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == null
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == null
+        config.grails.cors.mappings[key].maxAge == null
+        !config.toProperties().keySet().any { it.toString().endsWith('maxAge') }
+
+        where:
+        key << ['/api/**', '/api/v1.0/**']
+    }
+
+    void 'a placeholder in a field of a map key in brackets is resolved alike for every read of it, #key, written #description'() {
+        given: "a property source that holds the value of the placeholder"
+        def sources = new MutablePropertySources()
+        sources.addFirst(new MapPropertySource('env', [x: 'resolved']))
+        def config = new PropertySourcesConfig(sources)
+
+        when:
+        merges.each { Map merged -> config.merge(merged) }
+
+        then: "the map read whole, through navigate and through dot notation, and the flat key of the field agree"
+        config.getProperty('grails.cors.mappings', Map)[key].maxAge == 'resolved'
+        config.navigate('grails', 'cors', 'mappings')[key].maxAge == 'resolved'
+        config.grails.cors.mappings[key].maxAge == 'resolved'
+        config.getProperty("grails.cors.mappings[${key}].maxAge") == 'resolved'
+
+        where:
+        [key, description, merges] << [['/api/**', '/api/v1.0/**'], [
+                ['once', [['maxAge': '${x}']]],
+                ['over an earlier value', [['maxAge': '10'], ['maxAge': '${x}']]],
+                ['beside another field', [['maxAge': '${x}', 'allowCredentials': 'true']]],
+        ]].combinations().collect { String key, List row ->
+            [key, row[0], row[1].collect { Map fields -> fields.collectEntries { field, value -> [("grails.cors.mappings[${key}].${field}".toString()): value] } }]
+        }
     }
 
     void 'a map written by indexed keys is read through dot notation, and a key it does not hold is null-safe'() {
@@ -479,36 +598,6 @@ class PropertySourcesConfigSpec extends Specification {
         config['app.url'] == 'http://host1'
         config.navigate('app', 'url') == 'http://host1'
         counter.readCount() == 1
-    }
-
-    void 'a dotted key inside a nested map is exported under its full path and overwrites no other property'() {
-        given: "a map holding a property and, in a nested map, a dotted key that alone names the same property"
-        def config = new PropertySourcesConfig([a: [b: 'root'], x: ['a.b': 'nested'], logging: [level: ['org.springframework': 'DEBUG']]])
-
-        expect: "each property is read and exported under its own name"
-        config['a.b'] == 'root'
-        config.getProperty('a.b') == 'root'
-        config.getProperty('x.a.b') == 'nested'
-        config.getProperty('logging.level.org.springframework') == 'DEBUG'
-        config.toProperties().getProperty('a.b') == 'root'
-        config.toProperties().getProperty('x.a.b') == 'nested'
-        config.toProperties().getProperty('logging.level.org.springframework') == 'DEBUG'
-
-        and: "no property is written under the dotted key alone"
-        config.getProperty('org.springframework') == null
-        !config.toProperties().containsKey('org.springframework')
-    }
-
-    void 'a dotted key inside a nested map writes no property that the nested maps do not hold'() {
-        given: "a map with no b of its own, and a nested map holding a dotted key that alone names a.b"
-        def config = new PropertySourcesConfig([a: [c: '1'], x: ['a.b': 'nested']])
-
-        expect: "a.b is absent, and the dotted key is read under its full path"
-        config.getProperty('a.b') == null
-        !config.toProperties().containsKey('a.b')
-        config.navigate('a', 'b') == null
-        config.getProperty('x.a.b') == 'nested'
-        config.getProperty('a.c') == '1'
     }
 
     void 'a placeholder in a dotted key inside a nested map is read alike for the flat key and the nested entry'() {

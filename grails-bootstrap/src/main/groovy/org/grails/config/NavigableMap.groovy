@@ -258,33 +258,31 @@ class NavigableMap implements Map<String, Object>, Cloneable {
     /**
      * The element to hold, which the owner also holds under its indexed name, {@code rows[0]}. An element that is a
      * nested map is kept, and so is the nested map the owner holds for the element just written when it is that same
-     * map, since the merge has written the field into it. An element that is a value that is not a map, or none, is
-     * replaced by the map the indexed key wrote, as {@code rows[1].name} replaces {@code 'two'}, rebuilt from the
-     * element under the flat key, so that a field written before the list was replaced or cleared does not come back;
-     * a map the owner holds under the indexed name of any other element that is not a map is removed. Otherwise an
-     * element that is a map is held as a nested map
-     * built from it, so that it holds every field the element holds, such as {@code db.url} beside the {@code db.port}
+     * map, since the merge has written the field into it or, for a key in brackets with a dot in it,
+     * {@code [/api/v1.0/**]}, the map takes the field from where the merge wrote it. An element that is a value that is
+     * not a map, or none, is replaced by the map the indexed key wrote, as {@code rows[1].name} replaces {@code 'two'},
+     * rebuilt from the element under the flat key, so that a field written before the list was replaced or cleared does
+     * not come back; a map the owner holds under the indexed name of any other element that is not a map is removed.
+     * Otherwise an element that is a map is held as a nested map built from it, so that it holds every field the
+     * element holds, such as {@code db.url} beside the {@code db.port}
      * just written below it, and none of an element the list held before it was replaced. The field just written then
-     * takes the value the owner's nested map holds for it, which the merge stored through
-     * {@link #mergeMapEntry(NavigableMap, String, Object)}, so a placeholder in it is resolved as in every other entry,
-     * and the keys of the map the indexed key was merged into that held the element, or a map inside it, such as
-     * {@code a.rows[0]} and {@code a.rows[0].db}, then hold the rebuilt element and its maps.
+     * takes the value the merge stored for it, {@link #storedValue(NavigableMap, String, String, String)}, so a
+     * placeholder in it is resolved as in every other entry and a null written over it is held as null, as the flat
+     * key holds it, and the keys of the map the indexed key was merged into
+     * that held the element, or a map inside it, such as {@code a.rows[0]} and {@code a.rows[0].db}, then hold the
+     * rebuilt element and its maps.
      */
     private static Object heldElement(NavigableMap targetMap, NavigableMap owner, String containerKey, String name, String index,
                                       Object element, String writtenField) {
         String indexedName = "${name}[${index}]".toString()
         Object nested = owner.get(indexedName)
         Object written = writtenField != null ? nested : null
+        Object stored = writtenField != null ? storedValue(targetMap, containerKey, index, writtenField) : null
         if (written instanceof NavigableMap && element != null && element.is(written)) {
-            Object stored = valueAt(written, writtenField)
-            if (stored == null) {
-                // a key in brackets with a dot in it, [/api/v1.0/**], had the merge write the field at another path
-                Object flat = elementOf(targetMap.get(containerKey), index)
-                stored = flat instanceof Map && ((Map) flat).containsKey(writtenField) ? ((Map) flat).get(writtenField) : valueAt(flat, writtenField)
-                if (stored != null) {
-                    ((NavigableMap) written).merge([(writtenField): stored], true)
-                }
-            } else if (writtenField.indexOf('.') > -1) {
+            if (index.indexOf('.') > -1 || writtenField.indexOf('.') > -1) {
+                // the merge wrote the field of a key in brackets with a dot in it, [/api/v1.0/**], at another path, and
+                // a field with a dot in it, db.url, is also held as one key, as application.yml gives it; a null
+                // written over the field is written here too, so the held map does not keep the value before it
                 ((NavigableMap) written).merge([(writtenField): stored], true)
             }
             return written
@@ -295,6 +293,7 @@ class NavigableMap implements Map<String, Object>, Cloneable {
                 return written
             }
             NavigableMap held = rebuilt(owner, indexedName, (Map) flat, written)
+            held.merge([(writtenField): stored], true)
             owner.put(indexedName, held)
             replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
             return held
@@ -313,14 +312,22 @@ class NavigableMap implements Map<String, Object>, Cloneable {
         NavigableMap held = new NavigableMap(owner.getRootConfig(), (owner.getPath() + [indexedName]).asImmutable())
         held.merge((Map) element, true)
         if (writtenField != null) {
-            Object stored = valueAt(written, writtenField)
-            if (stored != null) {
-                held.merge([(writtenField): stored], true)
-            }
+            held.merge([(writtenField): stored], true)
         }
         owner.put(indexedName, held)
         replaceKeysOf(targetMap, "${containerKey}[${index}]".toString(), held)
         held
+    }
+
+    /**
+     * The value the merge stored for the field just written, through {@link #mergeMapEntry(NavigableMap, String, Object)},
+     * so that a placeholder in it is resolved as in every other entry. The merge splits the key at every dot, so the
+     * field is in the nested map the owner holds for the element, {@code rows[0]}, or, for a key in brackets with a dot
+     * in it, {@code [/api/v1.0/**]}, in the maps named by the parts of the key, and not in the map held for the element.
+     */
+    private static Object storedValue(NavigableMap targetMap, String containerKey, String index, String writtenField) {
+        List<String> parts = "${containerKey}[${index}]".toString().split(/\./) as List<String>
+        valueAt(targetMap.navigateSubMap(parts, false), writtenField)
     }
 
     /**
