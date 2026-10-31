@@ -245,10 +245,14 @@ class NavigableMapSpec extends Specification {
         output.merge(written, true)
         output.merge(['a[b].c.d': 'new'], true)
 
-        then: 'the nested map, its flat key and the flattened config all hold the new value'
+        then: 'the nested map and its flat key hold the new value'
         output.navigate('a', 'b', 'c', 'd') == 'new'
         output.get('a.b.c.d') == 'new'
-        output.toFlatConfig().get('a.b.c.d') == 'new'
+
+        and: 'the flattened config holds it once, under the bracketed name, and the old value nowhere'
+        output.toFlatConfig().get('a[b].c.d') == 'new'
+        !output.toFlatConfig().containsKey('a.b.c.d')
+        !output.toFlatConfig().containsValue('old')
 
         where:
         description          | written
