@@ -422,7 +422,9 @@ app:
         config.getProperty('app.rows', List)[0].routes.x == route
         config.navigate('app', 'rows')[0].routes.x == route
         config.toProperties().getProperty('app.rows[0].routes[x]') == route
-        config.toProperties().getProperty('app.rows[0].routes.x') == route
+
+        and: "the export gives the key in brackets once, by its bracketed name"
+        !config.toProperties().containsKey('app.rows[0].routes.x')
 
         and: "each element is resolved on its own"
         [host, url, tag, route].toSet().size() == 4
