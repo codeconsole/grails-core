@@ -20,6 +20,7 @@ package org.grails.config;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,8 +108,9 @@ public class PropertySourcesConfig extends NavigableMapConfig {
     }
 
     private void mergeEnumerablePropertySource(EnumerablePropertySource enumerablePropertySource) {
+        Map<Object, Object> copies = new IdentityHashMap<>();
         if (enumerablePropertySource instanceof NavigableMapPropertySource) {
-            configMap.merge(((NavigableMapPropertySource) enumerablePropertySource).getSource(), false);
+            configMap.merge((Map<?, ?>) copyOf(((NavigableMapPropertySource) enumerablePropertySource).getSource(), copies), false);
         } else {
             Map<String, Object> map = new LinkedHashMap<>();
 
@@ -118,7 +120,7 @@ public class PropertySourcesConfig extends NavigableMapConfig {
                 if (value instanceof ConfigObject && ((ConfigObject) value).isEmpty()) {
                     continue;
                 }
-                map.put(propertyName, copyOf(value));
+                map.put(propertyName, copyOf(value, copies));
             }
 
             configMap.merge(map, true);
@@ -126,26 +128,35 @@ public class PropertySourcesConfig extends NavigableMapConfig {
     }
 
     /**
-     * A copy of each list and map in a value of a property source, so the config never holds the source's own list,
-     * which a later indexed write, such as {@code app.list[1]} from a property source of higher precedence, would
-     * change in place.
+     * A copy of a value of a property source, with a copy of each list and map in it, so the config never holds the
+     * source's own list, which a later indexed write, such as {@code app.list[1]} from a property source of higher
+     * precedence, would change in place. A list or map the source holds under several keys, as under a flat key and in
+     * its nested map, is copied once, so the config holds one list under each of them, as it held the source's.
      */
-    private static Object copyOf(Object value) {
+    @SuppressWarnings("unchecked")
+    private static Object copyOf(Object value, Map<Object, Object> copies) {
+        if (!(value instanceof List || value instanceof Map)) {
+            return value;
+        }
+        Object copied = copies.get(value);
+        if (copied != null) {
+            return copied;
+        }
         if (value instanceof List) {
             List<Object> copy = new ArrayList<>();
+            copies.put(value, copy);
             for (Object element : (List<?>) value) {
-                copy.add(copyOf(element));
+                copy.add(copyOf(element, copies));
             }
             return copy;
         }
-        if (value instanceof Map) {
-            Map<Object, Object> copy = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
-                copy.put(entry.getKey(), copyOf(entry.getValue()));
-            }
-            return copy;
+        Map<Object, Object> copy = value instanceof NavigableMap ?
+                (Map<Object, Object>) (Map<?, ?>) ((NavigableMap) value).clone() : new LinkedHashMap<>();
+        copies.put(value, copy);
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+            copy.put(entry.getKey(), copyOf(entry.getValue(), copies));
         }
-        return value;
+        return copy;
     }
 
     public void setClassLoader(ClassLoader classLoader) {

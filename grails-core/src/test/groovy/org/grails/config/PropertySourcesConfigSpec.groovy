@@ -294,19 +294,22 @@ app:
         'an ordinary property source'  | new MapPropertySource('ordinary', ['app.origins': ['http://${exampleHost}']])
     }
 
-    void 'a list of an ordinary property source is held as a copy, so an indexed write from a source of higher precedence leaves the source as it is'() {
+    void 'a list from #description is held as a copy, so an indexed write from a source of higher precedence leaves the source as it is'() {
         given:
-        def origins = ['https://a.example.com', 'https://b.example.com']
         def propertySources = new MutablePropertySources()
         propertySources.addFirst(new MapPropertySource('higher', ['app.origins[1]': 'https://c.example.com']))
-        propertySources.addLast(new MapPropertySource('ordinary', ['app.origins': origins]))
+        propertySources.addLast(source)
 
         when:
         def config = new PropertySourcesConfig(propertySources)
 
-        then:
+        then: "the config holds the written element under each name of the list"
         config.getProperty('app.origins', List) == ['https://a.example.com', 'https://c.example.com']
-        origins == ['https://a.example.com', 'https://b.example.com']
+        config['app.origins'] == ['https://a.example.com', 'https://c.example.com']
+        config.navigate('app', 'origins') == ['https://a.example.com', 'https://c.example.com']
+
+        and: "the source keeps its own"
+        source.getProperty('app.origins') == ['https://a.example.com', 'https://b.example.com']
 
         when: "the source of higher precedence is removed and the config is built again"
         propertySources.remove('higher')
@@ -314,6 +317,12 @@ app:
 
         then:
         config.getProperty('app.origins', List) == ['https://a.example.com', 'https://b.example.com']
+
+        where:
+        description                   | source
+        'application.yml'             | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource('app:\n  origins:\n    - https://a.example.com\n    - https://b.example.com\n'.bytes)).first()
+        'application.groovy'          | new NavigableMapPropertySource('application.groovy', new NavigableMap().tap { merge([app: [origins: ['https://a.example.com', 'https://b.example.com']]], true) })
+        'an ordinary property source' | new MapPropertySource('ordinary', ['app.origins': ['https://a.example.com', 'https://b.example.com']])
     }
 
     void 'a list without a placeholder is held as given'() {
