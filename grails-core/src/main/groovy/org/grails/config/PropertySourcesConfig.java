@@ -22,7 +22,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 import groovy.util.ConfigObject;
@@ -143,10 +145,10 @@ public class PropertySourcesConfig extends NavigableMapConfig {
             return copied;
         }
         if (value instanceof List) {
-            List<Object> copy = new ArrayList<>();
+            List<Object> copy = shallowCopyOf((List<Object>) value);
             copies.put(value, copy);
-            for (Object element : (List<?>) value) {
-                copy.add(copyOf(element, copies));
+            for (ListIterator<Object> elements = copy.listIterator(); elements.hasNext();) {
+                elements.set(copyOf(elements.next(), copies));
             }
             return copy;
         }
@@ -157,6 +159,21 @@ public class PropertySourcesConfig extends NavigableMapConfig {
             copy.put(entry.getKey(), copyOf(entry.getValue(), copies));
         }
         return copy;
+    }
+
+    /**
+     * A list of the same kind as the one given, as the config held the source's own list before, or an
+     * {@link ArrayList} for a list that cannot be copied as its kind, such as an unmodifiable one.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Object> shallowCopyOf(List<Object> list) {
+        if (list instanceof ArrayList) {
+            return (List<Object>) ((ArrayList<Object>) list).clone();
+        }
+        if (list instanceof LinkedList) {
+            return (List<Object>) ((LinkedList<Object>) list).clone();
+        }
+        return new ArrayList<>(list);
     }
 
     public void setClassLoader(ClassLoader classLoader) {

@@ -308,7 +308,8 @@ app:
         config['app.origins'] == ['https://a.example.com', 'https://c.example.com']
         config.navigate('app', 'origins') == ['https://a.example.com', 'https://c.example.com']
 
-        and: "the source keeps its own"
+        and: "a list of the same kind, while the source keeps its own"
+        config.navigate('app', 'origins').getClass() == source.getProperty('app.origins').getClass()
         source.getProperty('app.origins') == ['https://a.example.com', 'https://b.example.com']
 
         when: "the source of higher precedence is removed and the config is built again"
@@ -321,8 +322,8 @@ app:
         where:
         description                   | source
         'application.yml'             | new YamlPropertySourceLoader().load('application.yml', new ByteArrayResource('app:\n  origins:\n    - https://a.example.com\n    - https://b.example.com\n'.bytes)).first()
-        'application.groovy'          | new NavigableMapPropertySource('application.groovy', new NavigableMap().tap { merge([app: [origins: ['https://a.example.com', 'https://b.example.com']]], true) })
-        'an ordinary property source' | new MapPropertySource('ordinary', ['app.origins': ['https://a.example.com', 'https://b.example.com']])
+        'application.groovy'          | new NavigableMapPropertySource('application.groovy', new NavigableMap().tap { merge([app: [origins: new LinkedList(['https://a.example.com', 'https://b.example.com'])]], true) })
+        'an ordinary property source' | new MapPropertySource('ordinary', ['app.origins': new LinkedList(['https://a.example.com', 'https://b.example.com'])])
     }
 
     void 'a list without a placeholder is held as given'() {
