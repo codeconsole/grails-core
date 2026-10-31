@@ -94,8 +94,8 @@ public abstract class NavigableMapConfig implements Config {
         protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey,
                 Object sourceValue, boolean parseFlatKeys, boolean isNestedSet) {
             Object value = sourceValue;
-            if (sourceValue instanceof CharSequence || sourceValue instanceof List
-                    || (sourceValue instanceof Map && isIndexed(sourceKey))) {
+            if (sourceValue instanceof CharSequence || sourceValue instanceof List ||
+                    (sourceValue instanceof Map && isIndexed(sourceKey))) {
                 value = resolved(path == null || path.isEmpty() ? sourceKey : path + '.' + sourceKey, sourceValue);
             }
             super.mergeMapEntry(rootMap, path, targetMap, sourceKey, value, parseFlatKeys, isNestedSet);
