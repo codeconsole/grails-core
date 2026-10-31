@@ -265,6 +265,28 @@ app:
         map.navigate('app', 'origins') == ['https://a.example.com', '${EXAMPLE_ORIGIN:https://default.example.com}']
     }
 
+    void 'a list of an ordinary property source is held as a copy, so an indexed write from a source of higher precedence leaves the source as it is'() {
+        given:
+        def origins = ['https://a.example.com', 'https://b.example.com']
+        def propertySources = new MutablePropertySources()
+        propertySources.addFirst(new MapPropertySource('higher', ['app.origins[1]': 'https://c.example.com']))
+        propertySources.addLast(new MapPropertySource('ordinary', ['app.origins': origins]))
+
+        when:
+        def config = new PropertySourcesConfig(propertySources)
+
+        then:
+        config.getProperty('app.origins', List) == ['https://a.example.com', 'https://c.example.com']
+        origins == ['https://a.example.com', 'https://b.example.com']
+
+        when: "the source of higher precedence is removed and the config is built again"
+        propertySources.remove('higher')
+        config = new PropertySourcesConfig(propertySources)
+
+        then:
+        config.getProperty('app.origins', List) == ['https://a.example.com', 'https://b.example.com']
+    }
+
     void 'a list without a placeholder is held as given'() {
         given:
         def origins = ['https://a.example.com', 8080]

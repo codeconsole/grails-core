@@ -65,12 +65,6 @@ public abstract class NavigableMapConfig implements Config {
     protected ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     protected ConfigurableConversionService conversionService = new DefaultConversionService();
 
-    /**
-     * Whether the merge resolves the placeholders in the values it writes. It does not while it merges values that are
-     * resolved already, so a placeholder an escape kept as text is not resolved a second time.
-     */
-    private boolean resolvingPlaceholders = true;
-
     protected NavigableMap configMap = new NavigableMap() {
 
         /**
@@ -100,7 +94,8 @@ public abstract class NavigableMapConfig implements Config {
         protected void mergeMapEntry(NavigableMap rootMap, String path, NavigableMap targetMap, String sourceKey,
                 Object sourceValue, boolean parseFlatKeys, boolean isNestedSet) {
             Object value = sourceValue;
-            if (resolvingPlaceholders && (sourceValue instanceof CharSequence || sourceValue instanceof List || sourceValue instanceof Map && isIndexed(sourceKey))) {
+            if (sourceValue instanceof CharSequence || sourceValue instanceof List
+                    || (sourceValue instanceof Map && isIndexed(sourceKey))) {
                 value = resolved(path == null || path.isEmpty() ? sourceKey : path + '.' + sourceKey, sourceValue);
             }
             super.mergeMapEntry(rootMap, path, targetMap, sourceKey, value, parseFlatKeys, isNestedSet);
@@ -281,19 +276,6 @@ public abstract class NavigableMapConfig implements Config {
     public Config merge(Map<String, Object> toMerge) {
         configMap.merge(toMerge, true);
         return this;
-    }
-
-    /**
-     * Merges values whose placeholders are resolved already, as those of a property source are once they are read,
-     * without resolving them a second time.
-     */
-    void mergeResolved(Map<String, Object> values) {
-        resolvingPlaceholders = false;
-        try {
-            configMap.merge(values, true);
-        } finally {
-            resolvingPlaceholders = true;
-        }
     }
 
     public Object asType(Class c) {

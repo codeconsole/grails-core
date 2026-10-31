@@ -118,30 +118,33 @@ public class PropertySourcesConfig extends NavigableMapConfig {
                 if (value instanceof ConfigObject && ((ConfigObject) value).isEmpty()) {
                     continue;
                 }
-                map.put(propertyName, processAndEvaluate(value));
+                map.put(propertyName, copyOf(value));
             }
 
-            mergeResolved(map);
+            configMap.merge(map, true);
         }
     }
 
-    private Object processAndEvaluate(Object value) {
-        if (value instanceof CharSequence) {
-            value = resolvePlaceholders(value.toString());
-        } else if (value instanceof List) {
-            List<Object> result = new ArrayList<>();
-            for (Object element : (List) value) {
-                result.add(processAndEvaluate(element));
+    /**
+     * A copy of each list and map in a value of a property source, so the config never holds the source's own list,
+     * which a later indexed write, such as {@code app.list[1]} from a property source of higher precedence, would
+     * change in place.
+     */
+    private static Object copyOf(Object value) {
+        if (value instanceof List) {
+            List<Object> copy = new ArrayList<>();
+            for (Object element : (List<?>) value) {
+                copy.add(copyOf(element));
             }
-            return result;
-        } else if (value instanceof Map) {
-            Map<Object, Object> result = new LinkedHashMap<>();
-            for (Object key : ((Map) value).keySet()) {
-                result.put(key, processAndEvaluate(((Map) value).get(key)));
-            }
-            return result;
+            return copy;
         }
-
+        if (value instanceof Map) {
+            Map<Object, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                copy.put(entry.getKey(), copyOf(entry.getValue()));
+            }
+            return copy;
+        }
         return value;
     }
 
